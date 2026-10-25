@@ -3,9 +3,6 @@
 App Android pessoal de tarefas, rotinas, lembretes e calendário de atividades.
 Kotlin + Jetpack Compose + Room + AlarmManager. 100% offline.
 
-Antes se chamava *Mordomo Pessoal* (`com.mordomo.app`). Desde a troca de nome o identificador é
-`com.kalendrys.app`: para o Android é outro app, que começa com o banco vazio.
-
 ## Arquitetura
 
 ```
