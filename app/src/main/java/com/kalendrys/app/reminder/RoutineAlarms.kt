@@ -33,7 +33,7 @@ class RoutineAlarms(private val context: Context) {
             minute = next.at.hour * 60 + next.at.minute,
         )
         if (next.routines.any { it.remind }) {
-            alarmManager.setExactOrInexact(triggerAt, operation)
+            alarmManager.setAlarmClockOrInexact(context, triggerAt, operation)
         } else {
             alarmManager.set(AlarmManager.RTC, triggerAt, operation)
         }

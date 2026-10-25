@@ -21,7 +21,7 @@ class ReminderScheduler(private val context: Context) {
             now = after,
             zone = ZoneId.systemDefault(),
         ) ?: return
-        alarmManager.setExactOrInexact(triggerAt, pendingIntent(task.id))
+        alarmManager.setAlarmClockOrInexact(context, triggerAt, pendingIntent(task.id))
     }
 
     fun cancel(taskId: Long) {

@@ -6,7 +6,7 @@ import android.content.Context
 import android.content.Intent
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.domain.ReminderRecurrence
-import com.kalendrys.app.reminder.setExactOrInexact
+import com.kalendrys.app.reminder.setAlarmClockOrInexact
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -24,7 +24,7 @@ class DailyScheduler(private val context: Context) {
         val summary = pendingIntent(DailyReceiver.ACTION_SUMMARY)
         if (settings.summaryEnabled) {
             val summaryAt = ReminderRecurrence.nextDailyAt(settings.summaryTime, now).atZone(zone).toInstant().toEpochMilli()
-            alarmManager.setExactOrInexact(summaryAt, summary)
+            alarmManager.setAlarmClockOrInexact(context, summaryAt, summary)
         } else {
             alarmManager.cancel(summary)
         }

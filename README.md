@@ -51,7 +51,7 @@ app/src/main/java/com/kalendrys/app/
 │   ├── calendar/            # Mês com marcadores, agenda do dia (rotinas, lembretes, conclusões)
 │   └── settings/            # Configurações: resumo diário (liga/desliga, horário), notificações, sobre
 ├── reminder/
-│   ├── ReminderScheduler.kt # AlarmManager (setExactAndAllowWhileIdle), só a próxima ocorrência
+│   ├── ReminderScheduler.kt # AlarmManager (setAlarmClock), só a próxima ocorrência
 │   ├── ReminderReceiver.kt  # Mostra a notificação (abre a tarefa) e agenda a ocorrência seguinte
 │   ├── RoutineAlarms.kt     # Um único alarme: o próximo início de bloco de rotina
 │   ├── RoutineAlarmReceiver.kt + RoutineNotifications.kt # aviso de início e "Concluir"
@@ -105,6 +105,15 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
   arquivada). Formato pensado para o Excel em português: separador `;`, CRLF e UTF-8 com BOM.
 - **Testar o resumo sem esperar o horário** (só no build de debug):
   `adb shell am broadcast -n com.kalendrys.app/.summary.DailyReceiver -a com.kalendrys.app.action.DAILY_SUMMARY`
+
+## Alarmes no horário
+
+Lembretes, avisos de rotina e o resumo usam `AlarmManager.setAlarmClock` (helper em
+`reminder/ExactAlarms.kt`), não `setExactAndAllowWhileIdle`: no ColorOS (realme) os alarmes
+exatos de apps de terceiros ganham uma janela de até 1 hora, mesmo com a bateria "Sem
+restrições", e os de despertador não. Por isso aparece o ícone de despertador na barra de status
+e o "próximo alarme" na tela de bloqueio. Conferir no aparelho com
+`adb shell dumpsys alarm | grep -A2 com.kalendrys.app` (o certo é `window=0`).
 
 ## Lembretes recorrentes
 
