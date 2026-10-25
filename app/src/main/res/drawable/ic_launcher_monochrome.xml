@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Camada dos ícones temáticos (Android 13+): o launcher usa só o alfa e pinta com a cor do tema.
+    Mesmas formas de ic_launcher_foreground; os dias apagados ficam translúcidos e o check é vazado.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group>
+        <clip-path android:pathData="M0,0H108V108H0Z
+            M39.85,32V36.85A3.95,3.95 0,0 0,43.8 40.8A3.95,3.95 0,0 0,47.75 36.85V32Z
+            M59.95,32V36.85A3.95,3.95 0,0 0,63.9 40.8A3.95,3.95 0,0 0,67.85 36.85V32Z
+            M58.7,68.2A12.3,12.3 0,1 0,83.3 68.2A12.3,12.3 0,1 0,58.7 68.2Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M41,34.3H66.8A10.4,10.4 0,0 1,77.2 44.7V65.5A10.4,10.4 0,0 1,66.8 75.9H41A10.4,10.4 0,0 1,30.6 65.5V44.7A10.4,10.4 0,0 1,41 34.3Z
+                M39.6,43.2H68.3A4.6,4.6 0,0 1,72.9 47.8V65.4A6,6 0,0 1,66.9 71.4H41A6,6 0,0 1,35 65.4V47.8A4.6,4.6 0,0 1,39.6 43.2Z" />
+    </group>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M41.5,31.8A2.3,2.3 0,0 1,46.1 31.8V36.6A2.3,2.3 0,0 1,41.5 36.6Z
+            M61.6,31.8A2.3,2.3 0,0 1,66.2 31.8V36.6A2.3,2.3 0,0 1,61.6 36.6Z
+            M52.9,49H56.6A1.8,1.8 0,0 1,58.4 50.8V54.5A1.8,1.8 0,0 1,56.6 56.3H52.9A1.8,1.8 0,0 1,51.1 54.5V50.8A1.8,1.8 0,0 1,52.9 49Z" />
+    <path
+        android:fillAlpha="0.4"
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M42,49H45.7A1.8,1.8 0,0 1,47.5 50.8V54.5A1.8,1.8 0,0 1,45.7 56.3H42A1.8,1.8 0,0 1,40.2 54.5V50.8A1.8,1.8 0,0 1,42 49Z
+            M42,59.3H45.7A1.8,1.8 0,0 1,47.5 61.1V64.8A1.8,1.8 0,0 1,45.7 66.6H42A1.8,1.8 0,0 1,40.2 64.8V61.1A1.8,1.8 0,0 1,42 59.3Z
+            M52.9,59.3H56.6A1.8,1.8 0,0 1,58.4 61.1V64.8A1.8,1.8 0,0 1,56.6 66.6H52.9A1.8,1.8 0,0 1,51.1 64.8V61.1A1.8,1.8 0,0 1,52.9 59.3Z" />
+    <!-- Selo com o check vazado (contorno do traço, no sentido anti-horário). -->
+    <group>
+        <clip-path android:pathData="M0,0H108V108H0Z
+            M67.84,67.37A1.5,1.5 0,0 0,65.66 69.43L69.48,73.46L76.27,66.55A1.5,1.5 0,0 0,74.13 64.45L69.52,69.14Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M60.7,68.2A10.3,10.3 0,1 1,81.3 68.2A10.3,10.3 0,1 1,60.7 68.2Z" />
+    </group>
+</vector>

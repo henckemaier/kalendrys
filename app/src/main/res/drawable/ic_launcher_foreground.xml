@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Logo do Kalendrys: calendário com argolas, grade 2×2 (um dia em destaque) e selo de concluído.
+    Dentro da área segura de 66dp. Os recortes em volta das argolas e do selo são transparentes
+    (clip-path com subcaminhos no sentido anti-horário), então mostram o fundo exato.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Corpo do calendário, recortado nas argolas e em volta do selo. -->
+    <group>
+        <clip-path android:pathData="M0,0H108V108H0Z
+            M39.85,32V36.85A3.95,3.95 0,0 0,43.8 40.8A3.95,3.95 0,0 0,47.75 36.85V32Z
+            M59.95,32V36.85A3.95,3.95 0,0 0,63.9 40.8A3.95,3.95 0,0 0,67.85 36.85V32Z
+            M58.7,68.2A12.3,12.3 0,1 0,83.3 68.2A12.3,12.3 0,1 0,58.7 68.2Z" />
+        <path
+            android:fillType="evenOdd"
+            android:pathData="M41,34.3H66.8A10.4,10.4 0,0 1,77.2 44.7V65.5A10.4,10.4 0,0 1,66.8 75.9H41A10.4,10.4 0,0 1,30.6 65.5V44.7A10.4,10.4 0,0 1,41 34.3Z
+                M39.6,43.2H68.3A4.6,4.6 0,0 1,72.9 47.8V65.4A6,6 0,0 1,66.9 71.4H41A6,6 0,0 1,35 65.4V47.8A4.6,4.6 0,0 1,39.6 43.2Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="40"
+                    android:startY="34"
+                    android:endX="70"
+                    android:endY="76"
+                    android:startColor="#FF2AA3FF"
+                    android:endColor="#FF0B47F0" />
+            </aapt:attr>
+        </path>
+    </group>
+
+    <!-- Argolas. -->
+    <path android:pathData="M41.5,31.8A2.3,2.3 0,0 1,46.1 31.8V36.6A2.3,2.3 0,0 1,41.5 36.6Z
+        M61.6,31.8A2.3,2.3 0,0 1,66.2 31.8V36.6A2.3,2.3 0,0 1,61.6 36.6Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="29.5"
+                android:endX="54"
+                android:endY="38.9"
+                android:startColor="#FF3CCBFF"
+                android:endColor="#FF1C9BFF" />
+        </aapt:attr>
+    </path>
+
+    <!-- Dias apagados da grade. -->
+    <path
+        android:fillColor="#FF173A8E"
+        android:pathData="M42,49H45.7A1.8,1.8 0,0 1,47.5 50.8V54.5A1.8,1.8 0,0 1,45.7 56.3H42A1.8,1.8 0,0 1,40.2 54.5V50.8A1.8,1.8 0,0 1,42 49Z
+            M42,59.3H45.7A1.8,1.8 0,0 1,47.5 61.1V64.8A1.8,1.8 0,0 1,45.7 66.6H42A1.8,1.8 0,0 1,40.2 64.8V61.1A1.8,1.8 0,0 1,42 59.3Z
+            M52.9,59.3H56.6A1.8,1.8 0,0 1,58.4 61.1V64.8A1.8,1.8 0,0 1,56.6 66.6H52.9A1.8,1.8 0,0 1,51.1 64.8V61.1A1.8,1.8 0,0 1,52.9 59.3Z" />
+
+    <!-- Dia em destaque. -->
+    <path android:pathData="M52.9,49H56.6A1.8,1.8 0,0 1,58.4 50.8V54.5A1.8,1.8 0,0 1,56.6 56.3H52.9A1.8,1.8 0,0 1,51.1 54.5V50.8A1.8,1.8 0,0 1,52.9 49Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54.75"
+                android:startY="49"
+                android:endX="54.75"
+                android:endY="56.3"
+                android:startColor="#FF18D8FF"
+                android:endColor="#FF00A8FF" />
+        </aapt:attr>
+    </path>
+
+    <!-- Selo de concluído. -->
+    <path android:pathData="M60.7,68.2A10.3,10.3 0,1 1,81.3 68.2A10.3,10.3 0,1 1,60.7 68.2Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="63.5"
+                android:startY="60.5"
+                android:endX="78.5"
+                android:endY="76"
+                android:startColor="#FF13D9FF"
+                android:endColor="#FF1D57FF" />
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M66.75,68.4L69.5,71.3L75.2,65.5"
+        android:strokeWidth="2.8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

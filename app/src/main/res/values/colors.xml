@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="window_background">#F9F9FF</color>
+    <color name="notification_accent">#415F91</color>
+
+    <!-- Prévias dos widgets no seletor: sempre escuras e semi-transparentes, como os widgets
+         (as cores reais vêm de KalendrysWidgets). -->
+    <color name="widget_preview_background">#BF0C0E13</color>
+    <color name="widget_preview_text">#E2E2E9</color>
+    <color name="widget_preview_text_secondary">#C4C6D0</color>
+    <color name="widget_preview_accent">#AAC7FF</color>
+    <!-- Verde das rotinas no tema escuro (RoutinePalette.dark(GREEN).accent). -->
+    <color name="widget_preview_routine">#B5E3A1</color>
+</resources>

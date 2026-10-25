@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kalendrys</string>
+
+    <!-- Navegação -->
+    <string name="tab_tasks">Tarefas</string>
+    <string name="tab_routines">Rotinas</string>
+    <string name="tab_calendar">Calendário</string>
+
+    <!-- Comuns -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancelar</string>
+    <string name="save">Salvar</string>
+    <string name="undo">Desfazer</string>
+    <string name="back">Voltar</string>
+    <string name="delete">Excluir</string>
+    <string name="yesterday">Ontem</string>
+
+    <!-- Tarefas -->
+    <string name="new_task">Nova tarefa</string>
+    <string name="new_task_on_day">Nova tarefa em %1$s</string>
+    <string name="task_title_label">Título</string>
+    <string name="task_notes_label">Observações (opcional)</string>
+    <string name="section_pending">Pendentes</string>
+    <string name="section_done_today">Concluídas hoje</string>
+    <string name="complete_task">Concluir tarefa</string>
+    <string name="done_today">Concluída hoje</string>
+    <string name="delete_task">Excluir tarefa</string>
+    <string name="task_completed">Tarefa concluída</string>
+    <string name="task_deleted">Tarefa excluída</string>
+    <string name="empty_tasks_title">Nenhuma tarefa</string>
+    <string name="empty_tasks_message">Crie uma tarefa para começar a organizar o seu dia.</string>
+
+    <!-- Detalhe da tarefa -->
+    <string name="task_detail_title">Detalhes da tarefa</string>
+    <string name="status_pending_today">Pendente hoje</string>
+    <string name="status_done_today_at">Concluída hoje às %1$s</string>
+    <string name="complete_today">Concluir</string>
+    <string name="task_created_on">Criada em %1$s</string>
+    <string name="history_title">Histórico de conclusões</string>
+    <string name="history_empty">Nenhuma conclusão registrada ainda.</string>
+    <string name="changes_saved">Alterações salvas</string>
+    <string name="delete_task_confirm_title">Excluir tarefa?</string>
+    <string name="delete_task_confirm_message">A tarefa e o lembrete serão removidos. As conclusões continuam no histórico do calendário.</string>
+    <string name="discard_changes_title">Descartar alterações?</string>
+    <string name="discard_changes_message">As alterações feitas nesta tarefa serão perdidas.</string>
+    <string name="discard">Descartar</string>
+    <string name="keep_editing">Continuar editando</string>
+    <string name="task_not_found_title">Tarefa não encontrada</string>
+    <string name="task_not_found_message">Ela pode ter sido excluída.</string>
+
+    <!-- Rotinas -->
+    <string name="new_routine">Nova rotina</string>
+    <string name="routines_empty_title">Nenhuma rotina</string>
+    <string name="routines_empty_message">Crie blocos de horário que se repetem, como treino, leitura ou skincare.</string>
+    <string name="routines_empty_day">Nenhuma rotina neste dia.</string>
+    <string name="routine_free_time">Tempo livre · %1$s</string>
+    <string name="routine_time_range">%1$s–%2$s (%3$s)</string>
+    <string name="routine_now">Agora</string>
+    <string name="routine_complete">Concluir %1$s</string>
+    <string name="routine_uncomplete">Desmarcar %1$s</string>
+    <string name="routine_completed">Rotina concluída</string>
+    <string name="routine_reminds">Avisa no início</string>
+    <string name="routine_week_previous">Semana anterior</string>
+    <string name="routine_week_next">Próxima semana</string>
+    <string name="routine_day_a11y">%1$s, %2$d de %3$d rotinas feitas</string>
+
+    <!-- Editor de rotina -->
+    <string name="routine_new_title">Nova rotina</string>
+    <string name="routine_edit_title">Editar rotina</string>
+    <string name="routine_icon">Ícone</string>
+    <string name="routine_color">Cor</string>
+    <string name="routine_start">Início</string>
+    <string name="routine_end">Termina às</string>
+    <string name="routine_duration">Duração</string>
+    <string name="routine_no_duration">Sem duração</string>
+    <string name="routine_end_next_day">%1$s (dia seguinte)</string>
+    <string name="routine_pick_start">Horário de início</string>
+    <string name="routine_pick_end">Horário de término</string>
+    <string name="routine_days">Dias</string>
+    <string name="routine_days_everyday">Todo dia</string>
+    <string name="routine_days_weekdays">Dias úteis</string>
+    <string name="routine_days_weekend">Fim de semana</string>
+    <string name="routine_days_none">Escolha ao menos um dia.</string>
+    <string name="routine_remind">Avisar no início</string>
+    <string name="routine_remind_description">Notificação na hora em que o bloco começa.</string>
+    <string name="routine_delete">Excluir rotina</string>
+    <string name="routine_delete_confirm_title">Excluir rotina?</string>
+    <string name="routine_delete_confirm_message">Ela some de hoje em diante. Os dias passados continuam mostrando o bloco e as conclusões.</string>
+    <string name="routine_discard_message">As alterações feitas nesta rotina serão perdidas.</string>
+    <string name="routine_not_found_title">Rotina não encontrada</string>
+    <string name="routine_not_found_message">Ela pode ter sido excluída.</string>
+    <string name="routine_icon_option">Ícone %1$s</string>
+    <string name="routine_color_option">Cor %1$s</string>
+    <!-- Na ordem de RoutineIcon. -->
+    <string-array name="routine_icon_labels">
+        <item>Estrela</item>
+        <item>Musculação</item>
+        <item>Corrida</item>
+        <item>Caminhada</item>
+        <item>Bicicleta</item>
+        <item>Ioga e meditação</item>
+        <item>Leitura</item>
+        <item>Estudo</item>
+        <item>Trabalho</item>
+        <item>Computador</item>
+        <item>Programação</item>
+        <item>Diário</item>
+        <item>Idiomas</item>
+        <item>Skincare</item>
+        <item>Banho</item>
+        <item>Refeição</item>
+        <item>Café</item>
+        <item>Água</item>
+        <item>Remédio</item>
+        <item>Sono</item>
+        <item>Manhã</item>
+        <item>Música</item>
+        <item>TV</item>
+        <item>Filme</item>
+        <item>Jogos</item>
+        <item>Pets</item>
+        <item>Limpeza</item>
+        <item>Lavanderia</item>
+        <item>Compras</item>
+        <item>Carro</item>
+        <item>Família</item>
+        <item>Oração</item>
+        <item>Finanças</item>
+        <item>Jardim</item>
+        <item>Ligação</item>
+    </string-array>
+    <!-- Na ordem de RoutineColor. -->
+    <string-array name="routine_color_labels">
+        <item>azul</item>
+        <item>verde-água</item>
+        <item>verde</item>
+        <item>amarelo</item>
+        <item>laranja</item>
+        <item>rosa</item>
+        <item>roxo</item>
+        <item>cinza</item>
+    </string-array>
+
+    <!-- Seletor de lembrete -->
+    <string name="reminder_set">Definir lembrete</string>
+    <string name="reminder_clear">Remover lembrete</string>
+    <string name="reminder_pick_time">Escolha o horário</string>
+    <string name="reminder_input_keyboard">Digitar horário</string>
+    <string name="reminder_input_dial">Usar relógio</string>
+    <string name="reminder_in_past">Escolha um horário no futuro.</string>
+    <string name="reminder_already_passed">Este lembrete já passou.</string>
+    <string name="reminder_notifications_off">As notificações do app estão desativadas; o lembrete não vai aparecer.</string>
+    <string name="reminder_today">Hoje</string>
+    <string name="reminder_tomorrow">Amanhã</string>
+    <string name="reminder_at">%1$s às %2$s</string>
+
+    <!-- Repetição do lembrete -->
+    <string name="repeat_title">Repetir</string>
+    <string name="repeat_none">Não repete</string>
+    <string name="repeat_daily">Todo dia</string>
+    <string name="repeat_weekdays">Dias úteis</string>
+    <string name="repeat_monthly">Todo dia %1$d</string>
+    <!-- Segunda a domingo, na ordem de java.time.DayOfWeek. -->
+    <string-array name="repeat_weekly">
+        <item>Toda segunda</item>
+        <item>Toda terça</item>
+        <item>Toda quarta</item>
+        <item>Toda quinta</item>
+        <item>Toda sexta</item>
+        <item>Todo sábado</item>
+        <item>Todo domingo</item>
+    </string-array>
+
+    <!-- Calendário -->
+    <string name="calendar_today">Hoje</string>
+    <string name="calendar_previous_month">Mês anterior</string>
+    <string name="calendar_next_month">Próximo mês</string>
+    <string name="calendar_completed">Concluídas</string>
+    <string name="calendar_reminders">Lembretes</string>
+    <string name="calendar_routines">Rotinas</string>
+    <string name="calendar_empty_day">Nenhuma atividade neste dia.</string>
+    <string name="calendar_deleted_task">Tarefa excluída</string>
+    <string name="calendar_a11y_completed">com conclusões</string>
+    <string name="calendar_a11y_reminders">com lembretes</string>
+
+    <!-- Configurações -->
+    <string name="settings_title">Configurações</string>
+    <string name="settings_section_summary">Resumo diário</string>
+    <string name="settings_summary_enabled">Receber resumo diário</string>
+    <string name="settings_summary_enabled_description">Notificação com as tarefas, os lembretes e as rotinas do dia.</string>
+    <string name="settings_summary_time">Horário</string>
+    <string name="settings_summary_time_description">Quando o resumo chega, todos os dias.</string>
+    <string name="settings_summary_time_pick">Horário do resumo</string>
+    <string name="settings_section_notifications">Notificações</string>
+    <string name="settings_notifications_system">Notificações do sistema</string>
+    <string name="settings_notifications_system_description">Sons, vibração e os canais Lembretes, Rotinas e Resumo diário.</string>
+    <string name="settings_notifications_off">Desativadas: lembretes, rotinas e resumo não vão aparecer.</string>
+    <string name="settings_section_data">Dados</string>
+    <string name="settings_export">Exportar histórico</string>
+    <string name="settings_export_description">Conclusões de tarefas e rotinas em CSV, para abrir no Excel ou no Google Planilhas.</string>
+    <string name="settings_export_empty">Ainda não há conclusões para exportar.</string>
+    <string name="settings_export_failed">Não foi possível salvar o arquivo.</string>
+    <plurals name="settings_export_done">
+        <item quantity="one">Histórico exportado: %d conclusão</item>
+        <item quantity="other">Histórico exportado: %d conclusões</item>
+    </plurals>
+    <string name="settings_section_about">Sobre</string>
+    <string name="settings_version">Versão</string>
+
+    <!-- Lembretes -->
+    <string name="reminder_channel_name">Lembretes</string>
+    <string name="reminder_text">Está na hora desta tarefa.</string>
+    <string name="routine_channel_name">Rotinas</string>
+    <string name="routine_channel_description">Aviso no início de cada bloco de rotina.</string>
+    <string name="routine_complete_action">Concluir</string>
+
+    <!-- Resumo diário -->
+    <string name="summary_channel_name">Resumo diário</string>
+    <string name="summary_channel_description">Notificação às 8h com as tarefas, os lembretes e as rotinas do dia.</string>
+    <string name="summary_title">Resumo do dia</string>
+    <plurals name="summary_pending">
+        <item quantity="one">%d tarefa pendente</item>
+        <item quantity="other">%d tarefas pendentes</item>
+    </plurals>
+    <plurals name="summary_reminders">
+        <item quantity="one">%d lembrete hoje</item>
+        <item quantity="other">%d lembretes hoje</item>
+    </plurals>
+    <plurals name="summary_routines">
+        <item quantity="one">%d rotina</item>
+        <item quantity="other">%d rotinas</item>
+    </plurals>
+    <plurals name="summary_more">
+        <item quantity="one">+ %d item</item>
+        <item quantity="other">+ %d itens</item>
+    </plurals>
+
+    <!-- Widgets -->
+    <string name="widget_tasks_label">Hoje</string>
+    <string name="widget_tasks_description">Tarefas e rotinas do dia, com conclusão rápida.</string>
+    <string name="widget_tasks_title">Hoje · %1$s</string>
+    <string name="widget_summary_label">Resumo do dia</string>
+    <string name="widget_summary_description">Quanto falta hoje e o que vem a seguir.</string>
+    <string name="widget_today">Hoje</string>
+    <string name="widget_empty">Nada pendente hoje.</string>
+    <string name="widget_complete">Concluir %1$s</string>
+    <string name="widget_next_reminder">A seguir</string>
+    <string name="widget_no_reminders">Nada agendado</string>
+    <string name="widget_routines_section">Rotinas</string>
+    <string name="widget_tomorrow_at">Amanhã, %1$s</string>
+    <string name="widget_pending_zero">pendentes</string>
+    <plurals name="widget_pending">
+        <item quantity="one">pendente</item>
+        <item quantity="other">pendentes</item>
+    </plurals>
+    <plurals name="widget_tasks_count">
+        <item quantity="one">%d tarefa</item>
+        <item quantity="other">%d tarefas</item>
+    </plurals>
+    <plurals name="widget_routines_count">
+        <item quantity="one">%d rotina</item>
+        <item quantity="other">%d rotinas</item>
+    </plurals>
+    <string name="widget_preview_tasks_title">Hoje · sáb., 24 out.</string>
+    <string name="widget_preview_tasks_subtitle">2 tarefas · 1 rotina</string>
+    <string name="widget_preview_task_1">Enviar proposta ao cliente</string>
+    <string name="widget_preview_task_2">Agendar reunião de equipe</string>
+    <string name="widget_preview_summary_count" translatable="false">3</string>
+    <string name="widget_preview_summary_reminder">17:20 · Treino</string>
+    <string name="widget_preview_summary_breakdown">2 tarefas · 1 rotina</string>
+    <string name="widget_preview_routine">Treino</string>
+    <string name="widget_preview_routine_time" translatable="false">17:20</string>
+</resources>

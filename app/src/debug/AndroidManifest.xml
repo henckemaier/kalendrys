@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Só no build de debug: permite disparar o resumo diário pelo adb, sem esperar as 8h.
+    A permissão DUMP restringe o envio ao shell/sistema; outros apps não conseguem acioná-lo.
+    adb shell am broadcast -n com.kalendrys.app/.summary.DailyReceiver -a com.kalendrys.app.action.DAILY_SUMMARY
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <receiver
+            android:name=".summary.DailyReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:replace="android:exported" />
+    </application>
+</manifest>
