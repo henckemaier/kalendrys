@@ -1,0 +1,103 @@
+package com.kalendrys.app.domain
+
+import com.kalendrys.app.data.local.entity.Task
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+
+/**
+ * Data, horário do lembrete e repetição de uma tarefa, como o formulário os edita. No banco
+ * viram `dueDate` + `reminderAt` (o horário nesse dia) + `repeat`; repetir exige uma data.
+ */
+data class TaskTiming(
+    val date: LocalDate?,
+    val time: LocalTime? = null,
+    val repeat: ReminderRepeat = ReminderRepeat.NONE,
+) {
+    val effectiveRepeat: ReminderRepeat get() = if (date == null) ReminderRepeat.NONE else repeat
+
+    fun reminderAt(zone: ZoneId): Long? =
+        if (date != null && time != null) date.atTime(time).atZone(zone).toInstant().toEpochMilli() else null
+
+    fun applyTo(task: Task, zone: ZoneId): Task =
+        task.copy(dueDate = date?.toEpochDay(), reminderAt = reminderAt(zone), repeat = effectiveRepeat)
+
+    companion object {
+        fun of(task: Task, zone: ZoneId) = TaskTiming(
+            date = task.dueDate?.let(LocalDate::ofEpochDay),
+            time = task.reminderAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalTime() },
+            repeat = task.repeat,
+        )
+    }
+}
+
+/** Em que dias cada tarefa acontece e como ela está num dia. Lógica pura, testada na JVM. */
+object TaskSchedule {
+
+    enum class Status {
+        /** Sem repetição, com data já passada e ainda não concluída. */
+        OVERDUE,
+
+        /** Acontece hoje e ainda não foi concluída hoje. */
+        TODAY,
+
+        /** Só acontece num dia futuro. */
+        UPCOMING,
+
+        /** Sem data e ainda não concluída. */
+        NO_DATE,
+
+        /** Concluída hoje (a de hoje, numa tarefa que se repete). */
+        DONE_TODAY,
+
+        /** Sem repetição e concluída num dia anterior: não aparece mais na lista. */
+        DONE,
+    }
+
+    fun dueDate(task: Task): LocalDate? = task.dueDate?.let(LocalDate::ofEpochDay)
+
+    fun occursOn(task: Task, date: LocalDate): Boolean {
+        val start = dueDate(task) ?: return false
+        return ReminderRecurrence.occursOn(date, start.atStartOfDay(), task.repeat)
+    }
+
+    /** Primeiro dia com a tarefa a partir de [from] (inclusive); `null` se não há mais nenhum. */
+    fun nextOccurrence(task: Task, from: LocalDate): LocalDate? {
+        val start = dueDate(task) ?: return null
+        if (task.repeat == ReminderRepeat.NONE) return start.takeIf { !it.isBefore(from) }
+        val first = maxOf(start, from)
+        return (0L until MAX_DAYS_TO_SEARCH).asSequence().map { first.plusDays(it) }.firstOrNull { occursOn(task, it) }
+    }
+
+    /**
+     * [doneEver]: a tarefa tem alguma conclusão (o que encerra uma tarefa sem repetição);
+     * [doneToday]: alguma conclusão hoje.
+     */
+    fun status(task: Task, today: LocalDate, doneEver: Boolean, doneToday: Boolean): Status {
+        if (task.repeat != ReminderRepeat.NONE && task.dueDate != null) {
+            return when {
+                occursOn(task, today) -> if (doneToday) Status.DONE_TODAY else Status.TODAY
+                else -> Status.UPCOMING
+            }
+        }
+        if (doneEver) return if (doneToday) Status.DONE_TODAY else Status.DONE
+        val due = dueDate(task) ?: return Status.NO_DATE
+        return when {
+            due.isBefore(today) -> Status.OVERDUE
+            due == today -> Status.TODAY
+            else -> Status.UPCOMING
+        }
+    }
+
+    /** Horário do lembrete no dia [date], se a tarefa tem lembrete e acontece nesse dia. */
+    fun reminderOn(task: Task, date: LocalDate, zone: ZoneId): LocalTime? {
+        val reminderAt = task.reminderAt ?: return null
+        if (!occursOn(task, date)) return null
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(reminderAt), zone).toLocalTime()
+    }
+
+    // A maior distância entre ocorrências é a mensal (até 31 dias).
+    private const val MAX_DAYS_TO_SEARCH = 62L
+}

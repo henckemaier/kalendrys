@@ -86,12 +86,9 @@ import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.tasks.NewTaskSheet
-import com.kalendrys.app.ui.tasks.ReminderTime
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -111,15 +108,15 @@ fun CalendarScreen(
     val listState = rememberLazyListState()
     val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     // Lembrete inicial do painel de nova tarefa; null = painel fechado.
-    var newTaskReminderAt by rememberSaveable { mutableStateOf<Long?>(null) }
+    var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
             // Dias passados não aceitam lembrete, então o botão só aparece de hoje em diante.
-            if (state.isLoaded && !state.selectedDate.isBefore(state.today)) {
+            if (state.isLoaded) {
                 ExtendedFloatingActionButton(
-                    onClick = { newTaskReminderAt = suggestedReminderFor(state.selectedDate) },
+                    onClick = { newTaskEpochDay = state.selectedDate.toEpochDay() },
                     expanded = fabExpanded,
                     icon = {
                         Icon(
@@ -170,23 +167,16 @@ fun CalendarScreen(
         }
     }
 
-    newTaskReminderAt?.let { initialReminderAt ->
+    newTaskEpochDay?.let { epochDay ->
         NewTaskSheet(
-            initialReminderAt = initialReminderAt,
-            onSave = { title, notes, reminderAt, repeat ->
-                viewModel.addTask(title, notes, reminderAt, repeat)
-                newTaskReminderAt = null
+            initialDate = LocalDate.ofEpochDay(epochDay),
+            onSave = { title, notes, timing, location ->
+                viewModel.addTask(title, notes, timing, location)
+                newTaskEpochDay = null
             },
-            onDismiss = { newTaskReminderAt = null },
+            onDismiss = { newTaskEpochDay = null },
         )
     }
-}
-
-/** Hoje: a próxima hora cheia; outros dias: 09:00 (mesma regra do seletor de lembrete). */
-private fun suggestedReminderFor(date: LocalDate): Long {
-    val zone = ZoneId.systemDefault()
-    val time = ReminderTime.suggestedTime(date, LocalDateTime.now(zone))
-    return ReminderTime.toEpochMillis(date, time, zone)
 }
 
 @Composable
@@ -582,14 +572,18 @@ private fun EntryContent(entry: Entry, icon: ImageVector, iconTint: Color) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Icon(
-            imageVector = if (entry.recurring) Icons.Outlined.Repeat else icon,
-            contentDescription = null,
-            tint = iconTint,
+            imageVector = when {
+                entry.done -> Icons.Filled.CheckCircle
+                entry.recurring -> Icons.Outlined.Repeat
+                else -> icon
+            },
+            contentDescription = if (entry.done) stringResource(R.string.calendar_completed) else null,
+            tint = if (entry.done) MaterialTheme.colorScheme.primary else iconTint,
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(16.dp))
         Text(
-            text = entry.time.format(TIME),
+            text = entry.time?.format(TIME) ?: stringResource(R.string.calendar_all_day),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(52.dp),
@@ -597,7 +591,8 @@ private fun EntryContent(entry: Entry, icon: ImageVector, iconTint: Color) {
         Text(
             text = entry.title ?: stringResource(R.string.calendar_deleted_task),
             style = MaterialTheme.typography.bodyLarge,
-            color = if (entry.title == null) {
+            textDecoration = if (entry.done) TextDecoration.LineThrough else null,
+            color = if (entry.title == null || entry.done) {
                 MaterialTheme.colorScheme.onSurfaceVariant
             } else {
                 MaterialTheme.colorScheme.onSurface

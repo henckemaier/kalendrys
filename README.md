@@ -62,6 +62,14 @@ baselineprofile/             # Gera o Baseline Profile e mede a abertura (Macrob
 O schema do Room fica versionado em `app/schemas/` (base para as migrações; a v4, das rotinas,
 é uma `@AutoMigration` conferida contra esses arquivos).
 
+## Tarefas
+
+Cada tarefa tem **data** (ou "sem data"), **repetição** (a partir da data), **lembrete** (um
+horário nesse dia), **observações** e **local** opcional (com atalho para abrir no mapa). Sem
+repetição, a tarefa é feita uma vez: concluída, sai das pendentes de vez. Com repetição, cada dia
+em que ela acontece tem a própria conclusão. A lista separa *Atrasadas*, *Hoje*, *Próximas*,
+*Sem data* e *Concluídas hoje* (`domain/TaskSchedule.kt`).
+
 ## Rotinas
 
 Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na aba **Rotinas**:
@@ -89,7 +97,8 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
   diário"), que pode ser desligado nas configurações de notificação do Android. Dias sem
   pendências não geram notificação.
 - **Widgets** (Jetpack Glance, paleta escura do app sobre fundo 75% opaco, em qualquer tema
-  do sistema): *Hoje* (4×2, tarefas e rotinas pendentes com conclusão direto no widget, toque
+  do sistema): *Calendário* (4×2, o mês com hoje marcado e, ao lado, as tarefas e rotinas do dia),
+  *Hoje* (4×2, tarefas e rotinas pendentes com conclusão direto no widget, toque
   abre a tarefa ou as rotinas, "+" cria uma tarefa) e *Resumo do dia* (2×2, quanto falta e o
   que vem a seguir). Atualizam a cada mudança no banco, quando um bloco começa e na virada do dia.
 - **Configurações** (engrenagem na barra das abas): ligar/desligar o resumo e escolher o

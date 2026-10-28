@@ -17,9 +17,10 @@ import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.ReminderRecurrence
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineSchedule
+import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.TaskTiming
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
@@ -37,13 +38,15 @@ class CalendarViewModel(
     private val routineRepository: RoutineRepository,
 ) : ViewModel() {
 
-    /** Um evento no dia: conclusão (do histórico) ou ocorrência de lembrete (de uma tarefa). */
+    /** Um evento no dia: conclusão (do histórico) ou tarefa marcada para o dia. */
     data class Entry(
         val taskId: Long,
         val title: String?,
-        val time: LocalTime,
+        /** Horário da conclusão ou do lembrete; null = tarefa sem horário (o dia todo). */
+        val time: LocalTime?,
         val epochMillis: Long,
         val recurring: Boolean = false,
+        val done: Boolean = false,
     )
 
     /** Um bloco de rotina no dia selecionado. */
@@ -89,7 +92,13 @@ class CalendarViewModel(
     }
 
     val uiState: StateFlow<UiState> =
-        combine(repository.tasks, routineRepository.routines, monthLogs, selectedDate) { tasks, routines, logs, selected ->
+        combine(
+            repository.tasks,
+            routineRepository.routines,
+            monthLogs,
+            selectedDate,
+            repository.completedTaskIds,
+        ) { tasks, routines, logs, selected, completedIds ->
             val zone = ZoneId.systemDefault()
             val titles = tasks.associate { it.id to it.title }
             // Tarefas excluídas continuam no histórico; ficam sem título (title = null).
@@ -106,7 +115,7 @@ class CalendarViewModel(
                 month = logs.month,
                 selectedDate = selected,
                 completedByDay = completed,
-                remindersByDay = remindersIn(logs.month, tasks, zone),
+                remindersByDay = tasksIn(logs.month, tasks, logs.tasks, completedIds, zone),
                 routineDoneDays = logs.routines.mapTo(HashSet()) { LocalDate.ofEpochDay(it.epochDay) },
                 routinesOnSelected = routines
                     .filter { RoutineSchedule.occursOn(it, selected, zone) }
@@ -115,25 +124,38 @@ class CalendarViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    /** Ocorrências de lembrete no mês visível; os recorrentes aparecem em cada dia em que tocam. */
-    private fun remindersIn(month: YearMonth, tasks: List<Task>, zone: ZoneId): Map<LocalDate, List<Entry>> {
+    /**
+     * Tarefas marcadas para cada dia do mês visível (as que se repetem, em cada dia em que
+     * acontecem), com o horário do lembrete e se já foram feitas.
+     */
+    private fun tasksIn(
+        month: YearMonth,
+        tasks: List<Task>,
+        monthLogs: List<CompletionLog>,
+        completedIds: Set<Long>,
+        zone: ZoneId,
+    ): Map<LocalDate, List<Entry>> {
+        val doneByDay = CalendarCalculator.groupByDay(monthLogs, zone) { it.completedAt }
+            .mapValues { (_, dayLogs) -> dayLogs.mapTo(HashSet()) { it.taskId } }
         val byDay = mutableMapOf<LocalDate, MutableList<Entry>>()
         for (task in tasks) {
-            val reminderAt = task.reminderAt ?: continue
-            val anchor = LocalDateTime.ofInstant(Instant.ofEpochMilli(reminderAt), zone)
-            val days = ReminderRecurrence.occurrencesBetween(anchor, task.reminderRepeat, month.atDay(1), month.atEndOfMonth())
+            val due = TaskSchedule.dueDate(task) ?: continue
+            val days = ReminderRecurrence.occurrencesBetween(due.atStartOfDay(), task.repeat, month.atDay(1), month.atEndOfMonth())
+            val repeats = task.repeat != ReminderRepeat.NONE
             for (day in days) {
-                val at = day.atTime(anchor.toLocalTime())
+                val time = TaskSchedule.reminderOn(task, day, zone)
                 byDay.getOrPut(day) { mutableListOf() } += Entry(
                     taskId = task.id,
                     title = task.title,
-                    time = at.toLocalTime(),
-                    epochMillis = at.atZone(zone).toInstant().toEpochMilli(),
-                    recurring = task.reminderRepeat != ReminderRepeat.NONE,
+                    time = time,
+                    epochMillis = day.atTime(time ?: LocalTime.MIDNIGHT).atZone(zone).toInstant().toEpochMilli(),
+                    recurring = repeats,
+                    done = if (repeats) doneByDay[day]?.contains(task.id) == true else task.id in completedIds,
                 )
             }
         }
-        return byDay.mapValues { (_, entries) -> entries.sortedBy { it.time } }
+        // As sem horário (o dia todo) primeiro, depois por horário.
+        return byDay.mapValues { (_, entries) -> entries.sortedWith(compareBy(nullsFirst()) { it.time }) }
     }
 
     fun select(date: LocalDate) {
@@ -150,9 +172,9 @@ class CalendarViewModel(
 
     fun goToToday() = select(LocalDate.now())
 
-    fun addTask(title: String, notes: String, reminderAt: Long?, repeat: ReminderRepeat) {
+    fun addTask(title: String, notes: String, timing: TaskTiming, location: String) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.addTask(title, notes, reminderAt, repeat) }
+        viewModelScope.launch { repository.addTask(title, notes, timing, location) }
     }
 
     private fun timeOf(epochMillis: Long, zone: ZoneId): LocalTime =

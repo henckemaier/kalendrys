@@ -28,6 +28,7 @@ class TodayRepository(
         val taskLogs: List<CompletionLog>,
         val routines: List<Routine>,
         val routineLogs: List<RoutineCompletion>,
+        val completedTaskIds: Set<Long>,
     )
 
     /**
@@ -44,6 +45,7 @@ class TodayRepository(
                 taskRepository.observeCompletionsBetween(today, tomorrow),
                 routineRepository.routines,
                 routineRepository.observeCompletionsBetween(today, tomorrow),
+                taskRepository.completedTaskIds,
                 ::Snapshot,
             ).transformLatest { snapshot ->
                 while (true) {
@@ -56,6 +58,7 @@ class TodayRepository(
                         zone = zone,
                         routines = snapshot.routines,
                         routineCompletions = snapshot.routineLogs,
+                        completedTaskIds = snapshot.completedTaskIds,
                     )
                     emit(overview)
                     // Depois da meia-noite quem recomeça tudo é o currentDate().

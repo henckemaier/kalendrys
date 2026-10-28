@@ -2,6 +2,10 @@
 
 package com.kalendrys.app.ui.taskdetail
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -60,13 +66,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.CompletionLog
-import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.taskdetail.TaskDetailViewModel.Event
-import com.kalendrys.app.ui.tasks.ReminderField
+import com.kalendrys.app.ui.tasks.LocationField
+import com.kalendrys.app.ui.tasks.TaskTimingField
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -152,9 +159,9 @@ fun TaskDetailScreen(
                 draft = draft,
                 onTitleChange = viewModel::updateTitle,
                 onNotesChange = viewModel::updateNotes,
-                onReminderChange = viewModel::updateReminder,
-                onRepeatChange = viewModel::updateRepeat,
-                onCompleteToday = viewModel::completeToday,
+                onTimingChange = viewModel::updateTiming,
+                onLocationChange = viewModel::updateLocation,
+                onComplete = viewModel::complete,
                 modifier = Modifier
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
@@ -212,12 +219,13 @@ private fun TaskDetailContent(
     draft: TaskDraft,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
-    onReminderChange: (Long?) -> Unit,
-    onRepeatChange: (ReminderRepeat) -> Unit,
-    onCompleteToday: () -> Unit,
+    onTimingChange: (TaskTiming) -> Unit,
+    onLocationChange: (String) -> Unit,
+    onComplete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val zone = ZoneId.systemDefault()
+    val zone = state.zone
+    val context = LocalContext.current
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -235,6 +243,15 @@ private fun TaskDetailContent(
                     .padding(bottom = SectionSpacing),
             )
         }
+        item(key = "timing") {
+            TaskTimingField(
+                timing = draft.timing,
+                onTimingChange = onTimingChange,
+                // O lembrete já salvo pode ter tocado; só um lembrete novo precisa estar no futuro.
+                warnIfPast = state.task?.let { !draft.keepsReminderOf(it, zone) } ?: true,
+                modifier = Modifier.padding(bottom = SectionSpacing),
+            )
+        }
         item(key = "notes") {
             OutlinedTextField(
                 value = draft.notes,
@@ -248,19 +265,24 @@ private fun TaskDetailContent(
                     .padding(bottom = SectionSpacing),
             )
         }
-        item(key = "reminder") {
-            ReminderField(
-                reminderAt = draft.reminderAt,
-                repeat = draft.reminderRepeat,
-                onReminderChange = onReminderChange,
-                onRepeatChange = onRepeatChange,
-                // O lembrete já salvo pode ter tocado; só um lembrete novo precisa estar no futuro.
-                warnIfPast = state.task?.let { !draft.keepsReminderOf(it) } ?: true,
+        item(key = "location") {
+            LocationField(
+                value = draft.location,
+                onValueChange = onLocationChange,
                 modifier = Modifier.padding(bottom = SectionSpacing),
+                trailing = if (draft.location.isNotBlank()) {
+                    {
+                        IconButton(onClick = { openInMaps(context, draft.location) }) {
+                            Icon(Icons.Outlined.Map, contentDescription = stringResource(R.string.task_open_map))
+                        }
+                    }
+                } else {
+                    null
+                },
             )
         }
         item(key = "status") {
-            TodayStatusCard(doneTodayAt = state.doneTodayAt, zone = zone, onCompleteToday = onCompleteToday)
+            StatusCard(doneAt = state.doneAt, repeats = state.repeats, zone = zone, onComplete = onComplete)
         }
         state.task?.let { task ->
             item(key = "created") {
@@ -316,9 +338,10 @@ private fun TaskDetailContent(
     }
 }
 
+/** Situação da tarefa: hoje (se ela se repete) ou de vez (se não se repete). */
 @Composable
-private fun TodayStatusCard(doneTodayAt: Long?, zone: ZoneId, onCompleteToday: () -> Unit) {
-    val done = doneTodayAt != null
+private fun StatusCard(doneAt: Long?, repeats: Boolean, zone: ZoneId, onComplete: () -> Unit) {
+    val done = doneAt != null
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -337,23 +360,39 @@ private fun TodayStatusCard(doneTodayAt: Long?, zone: ZoneId, onCompleteToday: (
             )
             Spacer(Modifier.width(16.dp))
             Text(
-                text = if (doneTodayAt != null) {
-                    stringResource(
+                text = when {
+                    doneAt == null -> stringResource(if (repeats) R.string.status_pending_today else R.string.status_pending)
+                    repeats -> stringResource(
                         R.string.status_done_today_at,
-                        Instant.ofEpochMilli(doneTodayAt).atZone(zone).format(TIME),
+                        Instant.ofEpochMilli(doneAt).atZone(zone).format(TIME),
                     )
-                } else {
-                    stringResource(R.string.status_pending_today)
+                    else -> {
+                        val at = Instant.ofEpochMilli(doneAt).atZone(zone)
+                        stringResource(R.string.status_done_on, historyDayLabel(at.toLocalDate()), at.format(TIME))
+                    }
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
             )
             if (!done) {
-                FilledTonalButton(onClick = onCompleteToday) {
+                FilledTonalButton(onClick = onComplete) {
                     Text(stringResource(R.string.complete_today))
                 }
             }
         }
+    }
+}
+
+/** Abre o local no app de mapas (busca pelo texto; não precisa de permissão de localização). */
+private fun openInMaps(context: Context, location: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(location)))
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        // Sem app de mapas: abre a busca no navegador.
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=" + Uri.encode(location))),
+        )
     }
 }
 

@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.kalendrys.app.ui.tasks
 
@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +24,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -70,13 +75,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.groupedItemShape
-import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
@@ -147,12 +154,16 @@ fun TaskListScreen(
                 modifier = Modifier.padding(innerPadding),
             )
             else -> {
-                val pendingTitle = stringResource(R.string.section_pending)
-                val doneTitle = stringResource(R.string.section_done_today)
-                val now = rememberCurrentMinute()
-                // Muda a cada minuto, mas é igual (equals) até a meia-noite: as linhas só recompõem na virada do dia.
-                val today = remember(now) { LocalDate.now() }
+                val today = state.today
                 val todayLabel = remember(today) { weekdayDateLabel(today) }
+                val sections = listOf(
+                    Triple("overdue", R.string.section_overdue, state.overdue),
+                    Triple("today", R.string.section_today, state.dueToday),
+                    Triple("upcoming", R.string.section_upcoming, state.upcoming),
+                    Triple("no_date", R.string.section_no_date, state.noDate),
+                    Triple("done", R.string.section_done_today, state.doneToday),
+                )
+                val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -160,35 +171,28 @@ fun TaskListScreen(
                         .padding(innerPadding),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 104.dp),
                 ) {
-                    item(key = "today", contentType = "today") {
+                    item(key = "today_label", contentType = "today") {
                         Text(
                             text = todayLabel,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    taskSection(
-                        key = "pending",
-                        title = pendingTitle,
-                        tasks = state.pending,
-                        done = false,
-                        today = today,
-                        now = now,
-                        onOpen = { onOpenTask(it.id) },
-                        onComplete = viewModel::complete,
-                        onDelete = viewModel::delete,
-                    )
-                    taskSection(
-                        key = "done",
-                        title = doneTitle,
-                        tasks = state.doneToday,
-                        done = true,
-                        today = today,
-                        now = now,
-                        onOpen = { onOpenTask(it.id) },
-                        onComplete = viewModel::complete,
-                        onDelete = viewModel::delete,
-                    )
+                    sections.forEach { (key, _, items) ->
+                        taskSection(
+                            key = key,
+                            title = titles.getValue(key),
+                            items = items,
+                            done = key == "done",
+                            overdue = key == "overdue",
+                            // Na seção "Hoje" a data é óbvia; nas outras ela aparece na linha.
+                            showDate = key == "overdue" || key == "upcoming",
+                            today = today,
+                            onOpen = { onOpenTask(it.id) },
+                            onComplete = viewModel::complete,
+                            onDelete = viewModel::delete,
+                        )
+                    }
                 }
             }
         }
@@ -196,8 +200,8 @@ fun TaskListScreen(
 
     if (showNewTask) {
         NewTaskSheet(
-            onSave = { title, notes, reminderAt, repeat ->
-                viewModel.addTask(title, notes, reminderAt, repeat)
+            onSave = { title, notes, timing, location ->
+                viewModel.addTask(title, notes, timing, location)
                 showNewTask = false
             },
             onDismiss = { showNewTask = false },
@@ -208,29 +212,30 @@ fun TaskListScreen(
 private fun LazyListScope.taskSection(
     key: String,
     title: String,
-    tasks: List<Task>,
+    items: List<TaskViewModel.Item>,
     done: Boolean,
+    overdue: Boolean,
+    showDate: Boolean,
     today: LocalDate,
-    now: Long,
     onOpen: (Task) -> Unit,
     onComplete: (Task) -> Unit,
     onDelete: (Task) -> Unit,
 ) {
-    if (tasks.isEmpty()) return
+    if (items.isEmpty()) return
     item(key = "header_$key", contentType = "header") {
-        SectionHeader(title = title, count = tasks.size, modifier = Modifier.animateItem())
+        SectionHeader(title = title, count = items.size, modifier = Modifier.animateItem())
     }
-    itemsIndexed(tasks, key = { _, task -> task.id }, contentType = { _, _ -> "task" }) { index, task ->
+    itemsIndexed(items, key = { _, item -> item.task.id }, contentType = { _, _ -> "task" }) { index, item ->
         SwipeableTaskRow(
-            task = task,
+            item = item,
             done = done,
+            overdue = overdue,
+            showDate = showDate,
             today = today,
-            // Só um Boolean por linha: o minuto que passa não recompõe linhas cujo estado não mudou.
-            reminderUpcoming = task.reminderRepeat != ReminderRepeat.NONE || (task.reminderAt ?: 0L) > now,
-            shape = groupedItemShape(index, tasks.size),
-            onOpen = { onOpen(task) },
-            onComplete = { onComplete(task) },
-            onDelete = { onDelete(task) },
+            shape = groupedItemShape(index, items.size),
+            onOpen = { onOpen(item.task) },
+            onComplete = { onComplete(item.task) },
+            onDelete = { onDelete(item.task) },
             modifier = Modifier
                 .animateItem()
                 .padding(bottom = 2.dp),
@@ -262,10 +267,11 @@ private fun SectionHeader(title: String, count: Int, modifier: Modifier = Modifi
 
 @Composable
 private fun SwipeableTaskRow(
-    task: Task,
+    item: TaskViewModel.Item,
     done: Boolean,
+    overdue: Boolean,
+    showDate: Boolean,
     today: LocalDate,
-    reminderUpcoming: Boolean,
     shape: Shape,
     onOpen: () -> Unit,
     onComplete: () -> Unit,
@@ -312,10 +318,11 @@ private fun SwipeableTaskRow(
         },
     ) {
         TaskRow(
-            task = task,
+            item = item,
             done = done,
+            overdue = overdue,
+            showDate = showDate,
             today = today,
-            reminderUpcoming = reminderUpcoming,
             shape = shape,
             onOpen = onOpen,
             onComplete = onComplete,
@@ -326,15 +333,17 @@ private fun SwipeableTaskRow(
 
 @Composable
 private fun TaskRow(
-    task: Task,
+    item: TaskViewModel.Item,
     done: Boolean,
+    overdue: Boolean,
+    showDate: Boolean,
     today: LocalDate,
-    reminderUpcoming: Boolean,
     shape: Shape,
     onOpen: () -> Unit,
     onComplete: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val task = item.task
     val deleteLabel = stringResource(R.string.delete_task)
     Surface(
         onClick = onOpen,
@@ -382,36 +391,66 @@ private fun TaskRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                task.reminderAt?.let { reminderAt ->
-                    ReminderBadge(reminderAt, task.reminderRepeat, reminderUpcoming, today)
-                }
+                TaskMeta(
+                    task = task,
+                    date = item.date.takeIf { showDate },
+                    reminderTime = item.reminderTime,
+                    overdue = overdue,
+                    today = today,
+                )
             }
         }
     }
 }
 
+/** Linha de detalhes: data (fora da seção "Hoje"), horário do lembrete, repetição e local. */
 @Composable
-private fun ReminderBadge(reminderAt: Long, repeat: ReminderRepeat, upcoming: Boolean, today: LocalDate) {
-    val recurring = repeat != ReminderRepeat.NONE
-    val color = if (upcoming) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+private fun TaskMeta(
+    task: Task,
+    date: LocalDate?,
+    reminderTime: LocalTime?,
+    overdue: Boolean,
+    today: LocalDate,
+) {
+    // Data em que a repetição se apoia (só existe se a tarefa se repete).
+    val repeatFrom = TaskSchedule.dueDate(task)?.takeIf { task.repeat != ReminderRepeat.NONE }
+    if (date == null && reminderTime == null && repeatFrom == null && task.location.isBlank()) return
+    val accent = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (date != null) {
+            MetaItem(Icons.Outlined.Event, dateLabel(date, today), accent)
+        }
+        if (reminderTime != null) {
+            MetaItem(Icons.Outlined.Notifications, reminderTime.format(TIME), accent)
+        }
+        if (repeatFrom != null) {
+            MetaItem(Icons.Outlined.Repeat, repeatLabel(task.repeat, repeatFrom), muted)
+        }
+        if (task.location.isNotBlank()) {
+            MetaItem(Icons.Outlined.Place, task.location, muted)
+        }
     }
+}
+
+@Composable
+private fun MetaItem(icon: ImageVector, text: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(
-            imageVector = if (recurring) Icons.Outlined.Repeat else Icons.Outlined.Notifications,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(14.dp),
-        )
+        Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
         Text(
-            text = reminderSummary(reminderAt, repeat, today),
+            text = text,
             style = MaterialTheme.typography.labelMedium,
             color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
+
+private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

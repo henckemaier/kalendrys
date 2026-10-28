@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Prévia estática exibida no seletor de widgets (Android 12+): mês de um lado, itens do dia do outro. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_background"
+    android:orientation="horizontal"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_preview_calendar_title"
+            android:textColor="@color/widget_preview_text"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp"
+            android:text="@string/widget_preview_calendar_grid"
+            android:textColor="@color/widget_preview_text_secondary"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:drawableStart="@drawable/ic_widget_circle"
+            android:drawablePadding="8dp"
+            android:drawableTint="@color/widget_preview_accent"
+            android:gravity="center_vertical"
+            android:text="@string/widget_preview_task_1"
+            android:textColor="@color/widget_preview_text"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:text="@string/widget_all_day"
+            android:textColor="@color/widget_preview_text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:drawableStart="@drawable/ic_widget_circle"
+            android:drawablePadding="8dp"
+            android:drawableTint="@color/widget_preview_routine"
+            android:gravity="center_vertical"
+            android:text="@string/widget_preview_routine"
+            android:textColor="@color/widget_preview_text"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:text="@string/widget_preview_routine_range"
+            android:textColor="@color/widget_preview_text_secondary"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

@@ -13,6 +13,7 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -35,17 +36,23 @@ class TaskDetailViewModel(
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
+    private val zone: ZoneId = ZoneId.systemDefault()
 
     data class UiState(
         val notFound: Boolean = false,
         val task: Task? = null,
         val draft: TaskDraft? = null,
         val history: List<CompletionLog> = emptyList(),
-        val doneTodayAt: Long? = null,
+        /**
+         * Quando foi feita: hoje, numa tarefa que se repete; a conclusão mais recente, numa que
+         * não se repete (feita uma vez, está encerrada). null = pendente.
+         */
+        val doneAt: Long? = null,
+        val zone: ZoneId = ZoneId.systemDefault(),
     ) {
-        val hasChanges: Boolean get() = task != null && draft != null && draft.differsFrom(task)
-        val canSave: Boolean
-            get() = task != null && draft != null && draft.canSaveOver(task, System.currentTimeMillis())
+        val repeats: Boolean get() = task != null && task.repeat != ReminderRepeat.NONE
+        val hasChanges: Boolean get() = task != null && draft != null && draft.differsFrom(task, zone)
+        val canSave: Boolean get() = task != null && draft != null && draft.canSaveOver(task, zone)
     }
 
     sealed interface Event {
@@ -60,24 +67,29 @@ class TaskDetailViewModel(
 
     val uiState: StateFlow<UiState> =
         combine(repository.observeTask(taskId), repository.observeCompletions(taskId), draft) { task, logs, draft ->
-            val zone = ZoneId.systemDefault()
             val today = LocalDate.now(zone)
+            val latest = logs.firstOrNull()
+            val doneAt = when {
+                latest == null -> null
+                task != null && task.repeat == ReminderRepeat.NONE -> latest.completedAt
+                Instant.ofEpochMilli(latest.completedAt).atZone(zone).toLocalDate() == today -> latest.completedAt
+                else -> null
+            }
             UiState(
                 // Depois de excluir, a tarefa some do banco mas o rascunho segue na tela até ela fechar.
                 notFound = task == null && draft == null,
                 task = task,
                 draft = draft,
                 history = logs,
-                doneTodayAt = logs.firstOrNull {
-                    Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() == today
-                }?.completedAt,
+                doneAt = doneAt,
+                zone = zone,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     init {
         viewModelScope.launch {
             val task = repository.observeTask(taskId).filterNotNull().first()
-            if (draft.value == null) draft.value = TaskDraft.from(task)
+            if (draft.value == null) draft.value = TaskDraft.from(task, zone)
         }
     }
 
@@ -85,23 +97,23 @@ class TaskDetailViewModel(
 
     fun updateNotes(notes: String) = draft.update { it?.copy(notes = notes) }
 
-    fun updateReminder(reminderAt: Long?) = draft.update { it?.copy(reminderAt = reminderAt) }
+    fun updateTiming(timing: TaskTiming) = draft.update { it?.copy(timing = timing) }
 
-    fun updateRepeat(repeat: ReminderRepeat) = draft.update { it?.copy(reminderRepeat = repeat) }
+    fun updateLocation(location: String) = draft.update { it?.copy(location = location) }
 
     fun save() {
         val task = uiState.value.task ?: return
         val current = draft.value ?: return
-        if (!current.canSaveOver(task, System.currentTimeMillis())) return
+        if (!current.canSaveOver(task, zone)) return
         viewModelScope.launch {
-            val updated = current.applyTo(task)
+            val updated = current.applyTo(task, zone)
             repository.updateTask(updated)
-            draft.value = TaskDraft.from(updated)
+            draft.value = TaskDraft.from(updated, zone)
             eventChannel.send(Event.Saved)
         }
     }
 
-    fun completeToday() {
+    fun complete() {
         viewModelScope.launch {
             val logId = repository.logCompletion(taskId)
             eventChannel.send(Event.Completed(logId))

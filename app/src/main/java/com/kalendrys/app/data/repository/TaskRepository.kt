@@ -5,12 +5,15 @@ import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderScheduler
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 
 /** Fonte única das tarefas: mantém banco e alarmes de lembrete sempre em sincronia. */
 class TaskRepository(
@@ -26,6 +29,9 @@ class TaskRepository(
     val completionsToday: Flow<List<CompletionLog>> =
         currentDate().flatMapLatest { today -> observeCompletionsBetween(today, today.plusDays(1)) }
 
+    /** Tarefas com alguma conclusão, em qualquer dia: as que não se repetem estão encerradas. */
+    val completedTaskIds: Flow<Set<Long>> = completionLogDao.observeCompletedTaskIds().map { it.toSet() }
+
     /** Conclusões entre [start] (inclusive) e [endExclusive], pelo dia local. */
     fun observeCompletionsBetween(start: LocalDate, endExclusive: LocalDate): Flow<List<CompletionLog>> {
         val zone = ZoneId.systemDefault()
@@ -40,24 +46,15 @@ class TaskRepository(
     /** Conclusões da tarefa, da mais recente para a mais antiga. */
     fun observeCompletions(taskId: Long): Flow<List<CompletionLog>> = completionLogDao.observeForTask(taskId)
 
-    /**
-     * Um lembrete único que já passou é descartado (não teria alarme para tocar); um recorrente
-     * com início no passado continua valendo a partir da próxima ocorrência.
-     */
     suspend fun addTask(
         title: String,
         notes: String = "",
-        reminderAt: Long? = null,
-        reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
+        timing: TaskTiming = TaskTiming(date = null),
+        location: String = "",
     ): Task {
-        val keptReminder = reminderAt?.takeIf {
-            reminderRepeat != ReminderRepeat.NONE || it > System.currentTimeMillis()
-        }
-        val task = Task(
-            title = title.trim(),
-            notes = notes.trim(),
-            reminderAt = keptReminder,
-            reminderRepeat = if (keptReminder == null) ReminderRepeat.NONE else reminderRepeat,
+        val task = timing.applyTo(
+            Task(title = title.trim(), notes = notes.trim(), location = location.trim()),
+            ZoneId.systemDefault(),
         )
         val saved = task.copy(id = taskDao.insert(task))
         scheduler.schedule(saved)
@@ -65,23 +62,31 @@ class TaskRepository(
     }
 
     /**
-     * Chamado quando um alarme toca: devolve a tarefa (para a notificação) e, se o lembrete é
-     * recorrente, já agenda a próxima ocorrência. `null` se a tarefa foi excluída.
+     * Chamado quando um alarme toca: devolve a tarefa se a notificação deve aparecer e, se ela se
+     * repete, já agenda a próxima ocorrência. `null` se foi excluída ou já está feita (a de hoje).
      */
     suspend fun onReminderFired(taskId: Long, now: Long = System.currentTimeMillis()): Task? {
         val task = taskDao.byId(taskId) ?: return null
-        if (task.reminderRepeat != ReminderRepeat.NONE) {
+        if (task.repeat != ReminderRepeat.NONE) {
             // A margem evita reagendar a mesma ocorrência que acabou de tocar.
             scheduler.schedule(task, after = now + FIRED_OCCURRENCE_MARGIN_MS)
+            val zone = ZoneId.systemDefault()
+            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val doneToday = completionLogDao.isCompletedBetween(
+                taskId = taskId,
+                start = today.atStartOfDay(zone).toInstant().toEpochMilli(),
+                end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+            )
+            return task.takeUnless { doneToday }
         }
-        return task
+        return task.takeUnless { completionLogDao.isCompleted(taskId) }
     }
 
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
     suspend fun updateTask(task: Task) {
         taskDao.update(task)
         scheduler.cancel(task.id)
-        scheduler.schedule(task)
+        if (!isFinished(task)) scheduler.schedule(task)
     }
 
     suspend fun deleteTask(task: Task) {
@@ -92,19 +97,39 @@ class TaskRepository(
     /** Reinsere uma tarefa excluída com o mesmo id, reconectando-a ao histórico de conclusões. */
     suspend fun restoreTask(task: Task) {
         taskDao.insert(task)
-        scheduler.schedule(task)
+        if (!isFinished(task)) scheduler.schedule(task)
     }
 
-    /** Devolve o id do evento, usado para desfazer a conclusão. */
-    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long =
-        completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
+    /**
+     * Devolve o id do evento, usado para desfazer a conclusão. Uma tarefa sem repetição fica
+     * encerrada: o lembrete dela, se ainda não tocou, é cancelado.
+     */
+    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
+        val logId = completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
+        val task = taskDao.byId(taskId)
+        if (task != null && task.repeat == ReminderRepeat.NONE) scheduler.cancel(taskId)
+        return logId
+    }
 
-    suspend fun undoCompletion(logId: Long) = completionLogDao.deleteById(logId)
+    /** Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. */
+    suspend fun undoCompletion(logId: Long) {
+        val log = completionLogDao.byId(logId) ?: return
+        completionLogDao.deleteById(logId)
+        val task = taskDao.byId(log.taskId) ?: return
+        if (!isFinished(task)) scheduler.schedule(task)
+    }
 
     /** Refaz todos os alarmes (reinício, atualização do app, mudança de fuso); chamado pelo BootReceiver. */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
-        scheduler.rescheduleAll(taskDao.withPendingReminder(now))
+        val finished = completionLogDao.completedTaskIds().toSet()
+        scheduler.rescheduleAll(
+            taskDao.withPendingReminder(now).filter { it.repeat != ReminderRepeat.NONE || it.id !in finished },
+        )
     }
+
+    /** Sem repetição e já concluída: não lembra mais. */
+    private suspend fun isFinished(task: Task): Boolean =
+        task.repeat == ReminderRepeat.NONE && completionLogDao.isCompleted(task.id)
 
     private companion object {
         const val FIRED_OCCURRENCE_MARGIN_MS = 60_000L

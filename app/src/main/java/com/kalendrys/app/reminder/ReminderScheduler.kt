@@ -17,7 +17,7 @@ class ReminderScheduler(private val context: Context) {
     fun schedule(task: Task, after: Long = System.currentTimeMillis()) {
         val triggerAt = ReminderRecurrence.nextTriggerMillis(
             reminderAt = task.reminderAt,
-            repeat = task.reminderRepeat,
+            repeat = task.repeat,
             now = after,
             zone = ZoneId.systemDefault(),
         ) ?: return

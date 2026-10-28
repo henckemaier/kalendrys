@@ -11,6 +11,7 @@ sealed interface LaunchRequest {
     data class OpenTask(val taskId: Long) : LaunchRequest
     data object NewTask : LaunchRequest
     data class OpenRoutines(val date: LocalDate) : LaunchRequest
+    data object OpenCalendar : LaunchRequest
 }
 
 /**
@@ -24,6 +25,7 @@ object AppLinks {
     private const val HOST_NEW_TASK = "new-task"
     private const val HOST_ROUTINES = "routines"
     private const val HOST_ROUTINE = "routine"
+    private const val HOST_CALENDAR = "calendar"
 
     fun openApp(context: Context): Intent = baseIntent(context)
 
@@ -37,6 +39,10 @@ object AppLinks {
     fun openRoutines(context: Context, date: LocalDate): Intent =
         baseIntent(context).setData(Uri.parse("$SCHEME://$HOST_ROUTINES/$date"))
 
+    /** A aba do calendário (ex.: toque no widget de calendário). */
+    fun openCalendar(context: Context): Intent =
+        baseIntent(context).setData(Uri.parse("$SCHEME://$HOST_CALENDAR"))
+
     /** Identifica a ação "Concluir" de um bloco num dia (não abre o app). */
     fun routineOccurrence(routineId: Long, epochDay: Long): Uri =
         Uri.parse("$SCHEME://$HOST_ROUTINE/$routineId/$epochDay")
@@ -47,6 +53,7 @@ object AppLinks {
             HOST_TASK -> data.lastPathSegment?.toLongOrNull()?.let { LaunchRequest.OpenTask(it) }
             HOST_NEW_TASK -> LaunchRequest.NewTask
             HOST_ROUTINES -> LaunchRequest.OpenRoutines(parseDate(data.lastPathSegment) ?: LocalDate.now())
+            HOST_CALENDAR -> LaunchRequest.OpenCalendar
             else -> null
         }
     }

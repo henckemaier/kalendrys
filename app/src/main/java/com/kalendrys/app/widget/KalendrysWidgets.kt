@@ -19,9 +19,15 @@ object KalendrysWidgets {
     /** Fundo escuro com 75% de opacidade: deixa o papel de parede aparecer sem perder a leitura. */
     val background = ColorProvider(Color(0xBF0C0E13))
 
+    /** Cores fixas da paleta escura usadas fora do GlanceTheme (pontos e o dia de hoje). */
+    val accent = Color(0xFFAAC7FF)
+    val onToday = Color(0xFF0A305F)
+    val overdue = Color(0xFFFFB4AB)
+
     suspend fun updateAll(context: Context) {
         TasksWidget().updateAll(context)
         SummaryWidget().updateAll(context)
+        CalendarWidget().updateAll(context)
     }
 
     private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

@@ -5,6 +5,7 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.AutoMigrationSpec
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.kalendrys.app.data.local.dao.CompletionLogDao
@@ -15,13 +16,19 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
+import java.time.Instant
+import java.time.ZoneId
 
 @Database(
     entities = [Task::class, CompletionLog::class, Routine::class, RoutineCompletion::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
-    // v4: rotinas. Só cria tabelas novas; o Room confere o SQL contra schemas/3.json e 4.json.
-    autoMigrations = [AutoMigration(from = 3, to = 4)],
+    // v4: rotinas (só tabelas novas). v5: data e local das tarefas. O Room confere o SQL
+    // gerado contra os arquivos de schemas/.
+    autoMigrations = [
+        AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5, spec = AppDatabase.TaskDatesSpec::class),
+    ],
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -32,6 +39,22 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineDao(): RoutineDao
 
     abstract fun routineCompletionDao(): RoutineCompletionDao
+
+    /**
+     * v5: antes a tarefa só tinha o lembrete. A que tinha lembrete ganha como data o dia dele;
+     * as outras ficam sem data — e, sem repetição, as já concluídas passam a contar como feitas.
+     */
+    class TaskDatesSpec : AutoMigrationSpec {
+        override fun onPostMigrate(db: SupportSQLiteDatabase) {
+            val zone = ZoneId.systemDefault()
+            db.query("SELECT id, reminderAt FROM tasks WHERE reminderAt IS NOT NULL").use { cursor ->
+                while (cursor.moveToNext()) {
+                    val day = Instant.ofEpochMilli(cursor.getLong(1)).atZone(zone).toLocalDate().toEpochDay()
+                    db.execSQL("UPDATE tasks SET dueDate = ? WHERE id = ?", arrayOf<Any>(day, cursor.getLong(0)))
+                }
+            }
+        }
+    }
 
     companion object {
         /** v2: lembretes recorrentes. Tarefas existentes ficam com lembrete único. */

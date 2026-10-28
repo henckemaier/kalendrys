@@ -7,9 +7,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -34,27 +39,35 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
+import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.coroutines.launch
 
 /**
- * Painel de criação de tarefa, usado pela lista e pelo calendário.
- * [initialReminderAt] já preenche o lembrete (ex.: o dia escolhido no calendário).
+ * Painel de criação de tarefa, usado pela lista e pelo calendário. A data já vem preenchida
+ * com [initialDate] (hoje, ou o dia escolhido no calendário) e pode ser trocada ou removida.
  */
 @Composable
 internal fun NewTaskSheet(
-    onSave: (title: String, notes: String, reminderAt: Long?, repeat: ReminderRepeat) -> Unit,
+    onSave: (title: String, notes: String, timing: TaskTiming, location: String) -> Unit,
     onDismiss: () -> Unit,
-    initialReminderAt: Long? = null,
+    initialDate: LocalDate? = LocalDate.now(),
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var title by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
-    var reminderAt by rememberSaveable { mutableStateOf(initialReminderAt) }
+    var location by rememberSaveable { mutableStateOf("") }
+    // Guardados separadamente: tipos simples sobrevivem à rotação sem um Saver próprio.
+    var epochDay by rememberSaveable { mutableStateOf(initialDate?.toEpochDay()) }
+    var minuteOfDay by rememberSaveable { mutableStateOf<Int?>(null) }
     var repeat by rememberSaveable { mutableStateOf(ReminderRepeat.NONE) }
-    // Só o lembrete único precisa estar no futuro; o recorrente segue da próxima ocorrência.
-    val reminderInPast = repeat == ReminderRepeat.NONE &&
-        reminderAt?.let { it <= System.currentTimeMillis() } == true
+    val timing = TaskTiming(
+        date = epochDay?.let(LocalDate::ofEpochDay),
+        time = minuteOfDay?.let { LocalTime.of(it / 60, it % 60) },
+        repeat = repeat,
+    )
     val focusRequester = remember { FocusRequester() }
 
     fun hideThen(action: () -> Unit) {
@@ -65,6 +78,7 @@ internal fun NewTaskSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -83,6 +97,14 @@ internal fun NewTaskSheet(
                     .fillMaxWidth()
                     .focusRequester(focusRequester),
             )
+            TaskTimingField(
+                timing = timing,
+                onTimingChange = { changed ->
+                    epochDay = changed.date?.toEpochDay()
+                    minuteOfDay = changed.time?.let { it.hour * 60 + it.minute }
+                    repeat = changed.repeat
+                },
+            )
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
@@ -92,12 +114,7 @@ internal fun NewTaskSheet(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
             )
-            ReminderField(
-                reminderAt = reminderAt,
-                repeat = repeat,
-                onReminderChange = { reminderAt = it },
-                onRepeatChange = { repeat = it },
-            )
+            LocationField(value = location, onValueChange = { location = it })
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -106,8 +123,8 @@ internal fun NewTaskSheet(
                     Text(stringResource(R.string.cancel))
                 }
                 Button(
-                    onClick = { hideThen { onSave(title, notes, reminderAt, repeat) } },
-                    enabled = title.isNotBlank() && !reminderInPast,
+                    onClick = { hideThen { onSave(title, notes, timing, location) } },
+                    enabled = title.isNotBlank(),
                 ) {
                     Text(stringResource(R.string.save))
                 }
@@ -115,4 +132,24 @@ internal fun NewTaskSheet(
         }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
     }
+}
+
+/** Local opcional (endereço ou nome do lugar); [trailing] serve para o atalho do mapa no detalhe. */
+@Composable
+internal fun LocationField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(stringResource(R.string.task_location_label)) },
+        singleLine = true,
+        leadingIcon = { Icon(Icons.Outlined.Place, contentDescription = null) },
+        trailingIcon = trailing,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        modifier = modifier.fillMaxWidth(),
+    )
 }

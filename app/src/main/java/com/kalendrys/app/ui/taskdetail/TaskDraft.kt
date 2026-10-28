@@ -1,49 +1,29 @@
 package com.kalendrys.app.ui.taskdetail
 
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
+import java.time.ZoneId
 
 /** Cópia editável de uma tarefa na tela de detalhe; só vai para o banco ao salvar. */
 data class TaskDraft(
     val title: String,
     val notes: String,
-    val reminderAt: Long?,
-    val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
+    val timing: TaskTiming,
+    val location: String = "",
 ) {
-    fun differsFrom(task: Task): Boolean =
-        title.trim() != task.title ||
-            notes.trim() != task.notes ||
-            reminderAt != task.reminderAt ||
-            reminderRepeat != task.reminderRepeat
+    fun applyTo(task: Task, zone: ZoneId): Task =
+        timing.applyTo(task.copy(title = title.trim(), notes = notes.trim(), location = location.trim()), zone)
+
+    fun differsFrom(task: Task, zone: ZoneId): Boolean = applyTo(task, zone) != task
 
     /** O lembrete ficou como estava salvo (mesmo horário e mesma repetição). */
-    fun keepsReminderOf(task: Task): Boolean =
-        reminderAt == task.reminderAt && reminderRepeat == task.reminderRepeat
+    fun keepsReminderOf(task: Task, zone: ZoneId): Boolean =
+        timing.reminderAt(zone) == task.reminderAt && timing.effectiveRepeat == task.repeat
 
-    /**
-     * Um lembrete único novo precisa estar no futuro. O que já estava salvo pode ter passado
-     * (já tocou) e continua aceito, para não bloquear a edição do título ou das observações;
-     * um recorrente sempre tem uma próxima ocorrência.
-     */
-    fun canSaveOver(task: Task, now: Long): Boolean =
-        differsFrom(task) &&
-            title.isNotBlank() &&
-            (
-                reminderAt == null ||
-                    reminderRepeat != ReminderRepeat.NONE ||
-                    keepsReminderOf(task) ||
-                    reminderAt > now
-                )
-
-    fun applyTo(task: Task): Task =
-        task.copy(
-            title = title.trim(),
-            notes = notes.trim(),
-            reminderAt = reminderAt,
-            reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else reminderRepeat,
-        )
+    /** Um lembrete que já passou não impede salvar: a tela só avisa que ele não vai tocar. */
+    fun canSaveOver(task: Task, zone: ZoneId): Boolean = title.isNotBlank() && differsFrom(task, zone)
 
     companion object {
-        fun from(task: Task) = TaskDraft(task.title, task.notes, task.reminderAt, task.reminderRepeat)
+        fun from(task: Task, zone: ZoneId) = TaskDraft(task.title, task.notes, TaskTiming.of(task, zone), task.location)
     }
 }

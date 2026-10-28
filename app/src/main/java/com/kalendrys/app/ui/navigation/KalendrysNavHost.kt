@@ -172,6 +172,7 @@ fun KalendrysNavHost(
             }
             // Se o editor de rotina estava aberto, a aba volta com ele (restoreState) e o dia
             // pedido só vale ao sair do editor.
+            LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)
             is LaunchRequest.OpenRoutines -> {
                 navController.openTab(AppTab.Routines)
                 routinesDateRequested = launchRequest.date

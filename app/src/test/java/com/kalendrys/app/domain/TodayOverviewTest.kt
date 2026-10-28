@@ -9,6 +9,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TodayOverviewTest {
@@ -21,19 +22,48 @@ class TodayOverviewTest {
     private fun millis(at: LocalDateTime) = at.atZone(zone).toInstant().toEpochMilli()
 
     private fun task(id: Long, title: String, reminder: LocalDateTime? = null, repeat: ReminderRepeat = ReminderRepeat.NONE) =
-        Task(id = id, title = title, reminderAt = reminder?.let(::millis), reminderRepeat = repeat)
+        Task(
+            id = id,
+            title = title,
+            dueDate = reminder?.toLocalDate()?.toEpochDay(),
+            reminderAt = reminder?.let(::millis),
+            repeat = repeat,
+        )
 
     private fun done(taskId: Long, at: LocalDateTime) = CompletionLog(taskId = taskId, completedAt = millis(at))
 
     @Test
-    fun `tarefa concluida hoje sai das pendentes e uma concluida ontem volta`() {
-        val tasks = listOf(task(1, "Ler e-mails"), task(2, "Treino"))
-        val logs = listOf(done(1, now.minusHours(1)), done(2, now.minusDays(1)))
+    fun `tarefa sem repeticao concluida nao volta e a que se repete volta no dia seguinte`() {
+        val tasks = listOf(
+            task(1, "Ler e-mails"),
+            task(2, "Pagar conta"),
+            task(3, "Treino", reminder = now.minusDays(5).withHour(18), repeat = ReminderRepeat.DAILY),
+        )
+        val logs = listOf(done(1, now.minusHours(1)), done(2, now.minusDays(1)), done(3, now.minusDays(1)))
 
-        val overview = TodayOverview.build(tasks, logs, now, zone)
+        val overview = TodayOverview.build(
+            tasks = tasks,
+            completions = logs,
+            now = now,
+            zone = zone,
+            completedTaskIds = setOf(1L, 2L, 3L),
+        )
 
-        assertEquals(listOf(2L), overview.pending.map { it.taskId })
+        assertEquals(listOf(3L), overview.pending.map { it.taskId })
         assertEquals(1, overview.doneCount)
+    }
+
+    @Test
+    fun `atrasada entra nas pendentes e a futura nao`() {
+        val tasks = listOf(
+            Task(id = 1, title = "Ontem", dueDate = now.toLocalDate().minusDays(1).toEpochDay()),
+            Task(id = 2, title = "Amanhã", dueDate = now.toLocalDate().plusDays(1).toEpochDay()),
+        )
+
+        val overview = TodayOverview.build(tasks, emptyList(), now, zone)
+
+        assertEquals(listOf(1L), overview.pending.map { it.taskId })
+        assertTrue(overview.pending.single().overdue)
     }
 
     @Test
@@ -48,7 +78,8 @@ class TodayOverviewTest {
 
         val overview = TodayOverview.build(tasks, emptyList(), now, zone)
 
-        assertEquals(listOf(4L, 2L, 1L, 3L, 5L), overview.pending.map { it.taskId })
+        // A de amanhã fica de fora; as sem data vêm depois das com horário.
+        assertEquals(listOf(4L, 2L, 1L, 3L), overview.pending.map { it.taskId })
         assertEquals(2, overview.remindersToday)
     }
 
@@ -63,7 +94,7 @@ class TodayOverviewTest {
         val overview = TodayOverview.build(tasks, emptyList(), now, zone)
 
         assertEquals(LocalTime.of(21, 0), overview.pending.first { it.taskId == 1L }.reminderToday)
-        assertNull(overview.pending.first { it.taskId == 2L }.reminderToday)
+        assertTrue(overview.pending.none { it.taskId == 2L })
     }
 
     @Test

@@ -21,7 +21,14 @@
     <string name="new_task_on_day">Nova tarefa em %1$s</string>
     <string name="task_title_label">Título</string>
     <string name="task_notes_label">Observações (opcional)</string>
-    <string name="section_pending">Pendentes</string>
+    <string name="section_overdue">Atrasadas</string>
+    <string name="section_today">Hoje</string>
+    <string name="section_upcoming">Próximas</string>
+    <string name="section_no_date">Sem data</string>
+    <string name="task_no_date">Sem data</string>
+    <string name="task_clear_date">Remover data</string>
+    <string name="task_location_label">Local (opcional)</string>
+    <string name="task_open_map">Abrir no mapa</string>
     <string name="section_done_today">Concluídas hoje</string>
     <string name="complete_task">Concluir tarefa</string>
     <string name="done_today">Concluída hoje</string>
@@ -34,6 +41,8 @@
     <!-- Detalhe da tarefa -->
     <string name="task_detail_title">Detalhes da tarefa</string>
     <string name="status_pending_today">Pendente hoje</string>
+    <string name="status_pending">Pendente</string>
+    <string name="status_done_on">Concluída: %1$s, %2$s</string>
     <string name="status_done_today_at">Concluída hoje às %1$s</string>
     <string name="complete_today">Concluir</string>
     <string name="task_created_on">Criada em %1$s</string>
@@ -148,7 +157,7 @@
     <string name="reminder_pick_time">Escolha o horário</string>
     <string name="reminder_input_keyboard">Digitar horário</string>
     <string name="reminder_input_dial">Usar relógio</string>
-    <string name="reminder_in_past">Escolha um horário no futuro.</string>
+    <string name="reminder_in_past">Esse horário já passou: o lembrete não vai tocar.</string>
     <string name="reminder_already_passed">Este lembrete já passou.</string>
     <string name="reminder_notifications_off">As notificações do app estão desativadas; o lembrete não vai aparecer.</string>
     <string name="reminder_today">Hoje</string>
@@ -177,12 +186,13 @@
     <string name="calendar_previous_month">Mês anterior</string>
     <string name="calendar_next_month">Próximo mês</string>
     <string name="calendar_completed">Concluídas</string>
-    <string name="calendar_reminders">Lembretes</string>
+    <string name="calendar_reminders">Tarefas</string>
+    <string name="calendar_all_day">Dia todo</string>
     <string name="calendar_routines">Rotinas</string>
     <string name="calendar_empty_day">Nenhuma atividade neste dia.</string>
     <string name="calendar_deleted_task">Tarefa excluída</string>
     <string name="calendar_a11y_completed">com conclusões</string>
-    <string name="calendar_a11y_reminders">com lembretes</string>
+    <string name="calendar_a11y_reminders">com tarefas</string>
 
     <!-- Configurações -->
     <string name="settings_title">Configurações</string>
@@ -248,6 +258,14 @@
     <string name="widget_next_reminder">A seguir</string>
     <string name="widget_no_reminders">Nada agendado</string>
     <string name="widget_routines_section">Rotinas</string>
+    <string name="widget_calendar_label">Calendário</string>
+    <string name="widget_calendar_description">O mês e o que você tem para hoje.</string>
+    <string name="widget_calendar_empty">Nada para hoje.</string>
+    <string name="widget_all_day">O dia todo</string>
+    <string name="widget_overdue">Atrasada</string>
+    <string name="widget_preview_calendar_title">28 de outubro</string>
+    <string name="widget_preview_calendar_grid" translatable="false">"D  S  T  Q  Q  S  S\n            1  2  3\n 4  5  6  7  8  9 10\n11 12 13 14 15 16 17\n18 19 20 21 22 23 24\n25 26 27 28 29 30 31"</string>
+    <string name="widget_preview_routine_range" translatable="false">17:20–17:35</string>
     <string name="widget_tomorrow_at">Amanhã, %1$s</string>
     <string name="widget_pending_zero">pendentes</string>
     <plurals name="widget_pending">

@@ -22,6 +22,22 @@ interface CompletionLogDao {
     @Query("SELECT * FROM completion_log WHERE taskId = :taskId ORDER BY completedAt DESC")
     fun observeForTask(taskId: Long): Flow<List<CompletionLog>>
 
+    /** Tarefas com alguma conclusão: uma tarefa sem repetição concluída uma vez está encerrada. */
+    @Query("SELECT DISTINCT taskId FROM completion_log")
+    fun observeCompletedTaskIds(): Flow<List<Long>>
+
+    @Query("SELECT DISTINCT taskId FROM completion_log")
+    suspend fun completedTaskIds(): List<Long>
+
+    @Query("SELECT * FROM completion_log WHERE id = :id")
+    suspend fun byId(id: Long): CompletionLog?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM completion_log WHERE taskId = :taskId)")
+    suspend fun isCompleted(taskId: Long): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM completion_log WHERE taskId = :taskId AND completedAt >= :start AND completedAt < :end)")
+    suspend fun isCompletedBetween(taskId: Long, start: Long, end: Long): Boolean
+
     /** O histórico inteiro, lido uma vez só para a exportação em CSV. */
     @Query("SELECT * FROM completion_log ORDER BY completedAt ASC")
     suspend fun all(): List<CompletionLog>

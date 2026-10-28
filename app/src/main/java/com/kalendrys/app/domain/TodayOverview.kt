@@ -13,7 +13,7 @@ import java.time.ZoneId
 /** O que importa hoje: base do resumo das 8h e dos widgets. */
 data class TodayOverview(
     val date: LocalDate,
-    /** Tarefas ainda não concluídas hoje: primeiro as com lembrete hoje (por horário), depois as demais. */
+    /** Tarefas para hoje (atrasadas, do dia e sem data): primeiro as com lembrete hoje, por horário. */
     val pending: List<PendingTask>,
     val doneCount: Int,
     /** Blocos de rotina de hoje, em ordem de horário, feitos ou não. */
@@ -30,6 +30,10 @@ data class TodayOverview(
         /** Horário em que o lembrete toca hoje; null se não toca hoje. */
         val reminderToday: LocalTime?,
         val recurring: Boolean,
+        /** Sem repetição e com a data já passada. */
+        val overdue: Boolean = false,
+        /** Tem data (é de hoje ou atrasada); as sem data também aparecem como pendentes. */
+        val dated: Boolean = true,
     )
 
     data class RoutineBlock(
@@ -59,6 +63,8 @@ data class TodayOverview(
             zone: ZoneId,
             routines: List<Routine> = emptyList(),
             routineCompletions: List<RoutineCompletion> = emptyList(),
+            /** Tarefas com alguma conclusão, em qualquer dia (encerra as que não se repetem). */
+            completedTaskIds: Set<Long> = emptySet(),
         ): TodayOverview {
             val today = now.toLocalDate()
             val doneToday = completions
@@ -68,21 +74,32 @@ data class TodayOverview(
                 .filter { it.epochDay == today.toEpochDay() }
                 .mapTo(HashSet()) { it.routineId }
 
+            val statuses = tasks.associate { task ->
+                task.id to TaskSchedule.status(
+                    task = task,
+                    today = today,
+                    doneEver = task.id in completedTaskIds || task.id in doneToday,
+                    doneToday = task.id in doneToday,
+                )
+            }
+            // Pendentes de hoje: atrasadas, as de hoje e as sem data (as futuras ficam de fora).
             val pending = tasks
-                .filter { it.id !in doneToday }
+                .filter { statuses[it.id] in PENDING_TODAY }
                 .map { task ->
-                    val anchor = task.anchor(zone)
                     PendingTask(
                         taskId = task.id,
                         title = task.title,
-                        reminderToday = anchor
-                            ?.takeIf { ReminderRecurrence.occursOn(today, it, task.reminderRepeat) }
-                            ?.toLocalTime(),
-                        recurring = task.reminderRepeat != ReminderRepeat.NONE,
+                        reminderToday = TaskSchedule.reminderOn(task, today, zone),
+                        recurring = task.repeat != ReminderRepeat.NONE,
+                        overdue = statuses[task.id] == TaskSchedule.Status.OVERDUE,
+                        dated = task.dueDate != null,
                     )
                 }
-                // sortedWith é estável: as tarefas sem lembrete hoje mantêm a ordem da lista.
-                .sortedWith(compareBy(nullsLast()) { it.reminderToday })
+                // Primeiro as com horário hoje (em ordem), depois atrasadas, as de hoje e as sem data.
+                .sortedWith(
+                    compareBy<PendingTask, LocalTime?>(nullsLast()) { it.reminderToday }
+                        .thenBy { statuses[it.taskId]?.let(PENDING_TODAY::indexOf) },
+                )
 
             val routineBlocks = routines
                 .filter { RoutineSchedule.occursOn(it, today, zone) }
@@ -98,15 +115,21 @@ data class TodayOverview(
                     )
                 }
 
+            // Tarefa ou bloco de hoje já feito não é mais "a seguir": vale a próxima ocorrência.
+            val endOfToday = today.plusDays(1).atStartOfDay().minusNanos(1)
             val nextTaskReminder = tasks
+                .filter { statuses[it.id] != TaskSchedule.Status.DONE }
                 .mapNotNull { task ->
                     val anchor = task.anchor(zone) ?: return@mapNotNull null
-                    ReminderRecurrence.nextOccurrence(anchor, task.reminderRepeat, now)
-                        ?.let { Upcoming(task.title, it, isRoutine = false) }
+                    val next = ReminderRecurrence.nextOccurrence(anchor, task.repeat, now) ?: return@mapNotNull null
+                    val at = when {
+                        next.toLocalDate() != today || task.id !in doneToday -> next
+                        task.repeat == ReminderRepeat.NONE -> return@mapNotNull null
+                        else -> ReminderRecurrence.nextOccurrence(anchor, task.repeat, endOfToday) ?: return@mapNotNull null
+                    }
+                    Upcoming(task.title, at, isRoutine = false)
                 }
                 .minByOrNull { it.at }
-            // Um bloco de hoje já feito não é mais "a seguir": vale a próxima ocorrência dele.
-            val endOfToday = today.plusDays(1).atStartOfDay().minusNanos(1)
             val nextRoutine = routines
                 .mapNotNull { routine ->
                     val next = RoutineSchedule.nextStart(routine, now, zone) ?: return@mapNotNull null
@@ -122,11 +145,17 @@ data class TodayOverview(
             return TodayOverview(
                 date = today,
                 pending = pending,
-                doneCount = tasks.count { it.id in doneToday },
+                doneCount = statuses.values.count { it == TaskSchedule.Status.DONE_TODAY },
                 routines = routineBlocks,
                 nextUp = listOfNotNull(nextTaskReminder, nextRoutine).minByOrNull { it.at },
             )
         }
+
+        private val PENDING_TODAY = listOf(
+            TaskSchedule.Status.TODAY,
+            TaskSchedule.Status.OVERDUE,
+            TaskSchedule.Status.NO_DATE,
+        )
 
         private fun timeOfDay(minute: Int): LocalTime = LocalTime.of(minute % 1440 / 60, minute % 60)
 
