@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -386,14 +387,17 @@ private fun StatusCard(doneAt: Long?, repeats: Boolean, zone: ZoneId, onComplete
 /** Abre o local no app de mapas (busca pelo texto; não precisa de permissão de localização). */
 private fun openInMaps(context: Context, location: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(location)))
-    try {
-        context.startActivity(intent)
-    } catch (_: ActivityNotFoundException) {
-        // Sem app de mapas: abre a busca no navegador.
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=" + Uri.encode(location))),
-        )
+    // Sem app de mapas, a busca no navegador; sem nenhum dos dois, avisa em vez de fechar o app.
+    val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=" + Uri.encode(location)))
+    val opened = listOf(intent, web).any { candidate ->
+        try {
+            context.startActivity(candidate)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        }
     }
+    if (!opened) Toast.makeText(context, R.string.task_no_map_app, Toast.LENGTH_SHORT).show()
 }
 
 @Composable

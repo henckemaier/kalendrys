@@ -49,12 +49,17 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     }
 
     val uiState: StateFlow<UiState> =
-        combine(repository.tasks, repository.completionsToday, repository.completedTaskIds) { tasks, logsToday, completed ->
+        combine(repository.tasks, repository.completionsToday, repository.lastCompletions) { tasks, logsToday, last ->
             val zone = ZoneId.systemDefault()
             val today = LocalDate.now(zone)
             val doneTodayIds = logsToday.mapTo(HashSet()) { it.taskId }
             val byStatus = tasks.groupBy { task ->
-                TaskSchedule.status(task, today, doneEver = task.id in completed, doneToday = task.id in doneTodayIds)
+                TaskSchedule.status(
+                    task = task,
+                    today = today,
+                    doneEver = TaskSchedule.isFinished(task, last[task.id], zone),
+                    doneToday = task.id in doneTodayIds,
+                )
             }
             fun items(status: Status, dateOf: (Task) -> LocalDate?) =
                 byStatus[status].orEmpty().map { Item(it, dateOf(it), TaskSchedule.reminderOn(it, dateOf(it) ?: today, zone)) }

@@ -63,8 +63,8 @@ data class TodayOverview(
             zone: ZoneId,
             routines: List<Routine> = emptyList(),
             routineCompletions: List<RoutineCompletion> = emptyList(),
-            /** Tarefas com alguma conclusão, em qualquer dia (encerra as que não se repetem). */
-            completedTaskIds: Set<Long> = emptySet(),
+            /** Última conclusão de cada tarefa, em qualquer dia (decide se as sem repetição estão encerradas). */
+            lastCompletions: Map<Long, Long> = emptyMap(),
         ): TodayOverview {
             val today = now.toLocalDate()
             val doneToday = completions
@@ -78,7 +78,7 @@ data class TodayOverview(
                 task.id to TaskSchedule.status(
                     task = task,
                     today = today,
-                    doneEver = task.id in completedTaskIds || task.id in doneToday,
+                    doneEver = TaskSchedule.isFinished(task, lastCompletions[task.id], zone),
                     doneToday = task.id in doneToday,
                 )
             }
@@ -118,7 +118,8 @@ data class TodayOverview(
             // Tarefa ou bloco de hoje já feito não é mais "a seguir": vale a próxima ocorrência.
             val endOfToday = today.plusDays(1).atStartOfDay().minusNanos(1)
             val nextTaskReminder = tasks
-                .filter { statuses[it.id] != TaskSchedule.Status.DONE }
+                // Sem repetição e encerrada (inclusive hoje): o lembrete foi cancelado.
+                .filterNot { TaskSchedule.isFinished(it, lastCompletions[it.id], zone) }
                 .mapNotNull { task ->
                     val anchor = task.anchor(zone) ?: return@mapNotNull null
                     val next = ReminderRecurrence.nextOccurrence(anchor, task.repeat, now) ?: return@mapNotNull null
@@ -152,8 +153,8 @@ data class TodayOverview(
         }
 
         private val PENDING_TODAY = listOf(
-            TaskSchedule.Status.TODAY,
             TaskSchedule.Status.OVERDUE,
+            TaskSchedule.Status.TODAY,
             TaskSchedule.Status.NO_DATE,
         )
 

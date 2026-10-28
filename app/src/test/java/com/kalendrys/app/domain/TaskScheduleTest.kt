@@ -52,6 +52,29 @@ class TaskScheduleTest {
         assertNull(TaskSchedule.nextOccurrence(task(null), today))
     }
 
+    private val zone = java.time.ZoneId.of("America/Sao_Paulo")
+
+    private fun millis(date: LocalDate) = date.atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
+
+    @Test
+    fun `encerrada so com conclusao no dia dela ou depois`() {
+        val due = task(today)
+        assertTrue(TaskSchedule.isFinished(due, millis(today), zone))
+        assertTrue(TaskSchedule.isFinished(due, millis(today.plusDays(1)), zone))
+        // Concluída e depois remarcada para frente: volta a ficar pendente.
+        assertFalse(TaskSchedule.isFinished(task(today.plusDays(7)), millis(today), zone))
+        assertFalse(TaskSchedule.isFinished(due, null, zone))
+        assertTrue(TaskSchedule.isFinished(task(null), millis(today.minusDays(30)), zone))
+    }
+
+    @Test
+    fun `que se repete nunca se encerra e deixar de repetir reabre`() {
+        val daily = task(today.minusDays(5), ReminderRepeat.DAILY)
+        assertFalse(TaskSchedule.isFinished(daily, millis(today), zone))
+        // Virou "não repete" para amanhã: as conclusões antigas não a encerram.
+        assertFalse(TaskSchedule.isFinished(task(today.plusDays(1)), millis(today.minusDays(1)), zone))
+    }
+
     @Test
     fun `acontece no dia so a partir da data`() {
         val daily = task(today, ReminderRepeat.DAILY)

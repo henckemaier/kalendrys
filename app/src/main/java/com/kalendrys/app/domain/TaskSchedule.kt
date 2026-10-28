@@ -66,13 +66,25 @@ object TaskSchedule {
     /** Primeiro dia com a tarefa a partir de [from] (inclusive); `null` se não há mais nenhum. */
     fun nextOccurrence(task: Task, from: LocalDate): LocalDate? {
         val start = dueDate(task) ?: return null
-        if (task.repeat == ReminderRepeat.NONE) return start.takeIf { !it.isBefore(from) }
-        val first = maxOf(start, from)
-        return (0L until MAX_DAYS_TO_SEARCH).asSequence().map { first.plusDays(it) }.firstOrNull { occursOn(task, it) }
+        // Estritamente depois do último instante do dia anterior = a partir de [from].
+        return ReminderRecurrence.nextOccurrence(start.atStartOfDay(), task.repeat, from.atStartOfDay().minusNanos(1))
+            ?.toLocalDate()
     }
 
     /**
-     * [doneEver]: a tarefa tem alguma conclusão (o que encerra uma tarefa sem repetição);
+     * Uma tarefa sem repetição está encerrada se foi concluída no dia dela ou depois (sem data:
+     * qualquer conclusão). Assim, mudar a data para frente — ou deixar de repetir — a reabre,
+     * sem apagar o histórico. Tarefas que se repetem nunca se encerram.
+     */
+    fun isFinished(task: Task, lastCompletedAt: Long?, zone: ZoneId): Boolean {
+        if (task.repeat != ReminderRepeat.NONE && task.dueDate != null) return false
+        val last = lastCompletedAt ?: return false
+        val due = dueDate(task) ?: return true
+        return !Instant.ofEpochMilli(last).atZone(zone).toLocalDate().isBefore(due)
+    }
+
+    /**
+     * [doneEver]: a tarefa está encerrada ([isFinished]; só vale para as sem repetição);
      * [doneToday]: alguma conclusão hoje.
      */
     fun status(task: Task, today: LocalDate, doneEver: Boolean, doneToday: Boolean): Status {
@@ -97,7 +109,4 @@ object TaskSchedule {
         if (!occursOn(task, date)) return null
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(reminderAt), zone).toLocalTime()
     }
-
-    // A maior distância entre ocorrências é a mensal (até 31 dias).
-    private const val MAX_DAYS_TO_SEARCH = 62L
 }

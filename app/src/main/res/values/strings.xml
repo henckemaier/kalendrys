@@ -29,6 +29,7 @@
     <string name="task_clear_date">Remover data</string>
     <string name="task_location_label">Local (opcional)</string>
     <string name="task_open_map">Abrir no mapa</string>
+    <string name="task_no_map_app">Nenhum app de mapa ou navegador para abrir o local.</string>
     <string name="section_done_today">Concluídas hoje</string>
     <string name="complete_task">Concluir tarefa</string>
     <string name="done_today">Concluída hoje</string>

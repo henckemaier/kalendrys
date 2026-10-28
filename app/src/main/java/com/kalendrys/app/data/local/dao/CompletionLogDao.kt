@@ -6,6 +6,9 @@ import androidx.room.Query
 import com.kalendrys.app.data.local.entity.CompletionLog
 import kotlinx.coroutines.flow.Flow
 
+/** Linha de [CompletionLogDao.observeLastCompletions]. */
+data class LastCompletion(val taskId: Long, val completedAt: Long)
+
 @Dao
 interface CompletionLogDao {
 
@@ -22,18 +25,18 @@ interface CompletionLogDao {
     @Query("SELECT * FROM completion_log WHERE taskId = :taskId ORDER BY completedAt DESC")
     fun observeForTask(taskId: Long): Flow<List<CompletionLog>>
 
-    /** Tarefas com alguma conclusão: uma tarefa sem repetição concluída uma vez está encerrada. */
-    @Query("SELECT DISTINCT taskId FROM completion_log")
-    fun observeCompletedTaskIds(): Flow<List<Long>>
+    /** Última conclusão de cada tarefa: decide se uma tarefa sem repetição está encerrada. */
+    @Query("SELECT taskId, MAX(completedAt) AS completedAt FROM completion_log GROUP BY taskId")
+    fun observeLastCompletions(): Flow<List<LastCompletion>>
 
-    @Query("SELECT DISTINCT taskId FROM completion_log")
-    suspend fun completedTaskIds(): List<Long>
+    @Query("SELECT taskId, MAX(completedAt) AS completedAt FROM completion_log GROUP BY taskId")
+    suspend fun lastCompletions(): List<LastCompletion>
+
+    @Query("SELECT MAX(completedAt) FROM completion_log WHERE taskId = :taskId")
+    suspend fun lastCompletion(taskId: Long): Long?
 
     @Query("SELECT * FROM completion_log WHERE id = :id")
     suspend fun byId(id: Long): CompletionLog?
-
-    @Query("SELECT EXISTS(SELECT 1 FROM completion_log WHERE taskId = :taskId)")
-    suspend fun isCompleted(taskId: Long): Boolean
 
     @Query("SELECT EXISTS(SELECT 1 FROM completion_log WHERE taskId = :taskId AND completedAt >= :start AND completedAt < :end)")
     suspend fun isCompletedBetween(taskId: Long, start: Long, end: Long): Boolean

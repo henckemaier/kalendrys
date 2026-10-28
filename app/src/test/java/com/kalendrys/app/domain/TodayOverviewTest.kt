@@ -46,7 +46,7 @@ class TodayOverviewTest {
             completions = logs,
             now = now,
             zone = zone,
-            completedTaskIds = setOf(1L, 2L, 3L),
+            lastCompletions = logs.associate { it.taskId to it.completedAt },
         )
 
         assertEquals(listOf(3L), overview.pending.map { it.taskId })

@@ -97,8 +97,8 @@ class CalendarViewModel(
             routineRepository.routines,
             monthLogs,
             selectedDate,
-            repository.completedTaskIds,
-        ) { tasks, routines, logs, selected, completedIds ->
+            repository.lastCompletions,
+        ) { tasks, routines, logs, selected, lastCompletions ->
             val zone = ZoneId.systemDefault()
             val titles = tasks.associate { it.id to it.title }
             // Tarefas excluídas continuam no histórico; ficam sem título (title = null).
@@ -115,7 +115,7 @@ class CalendarViewModel(
                 month = logs.month,
                 selectedDate = selected,
                 completedByDay = completed,
-                remindersByDay = tasksIn(logs.month, tasks, logs.tasks, completedIds, zone),
+                remindersByDay = tasksIn(logs.month, tasks, logs.tasks, lastCompletions, zone),
                 routineDoneDays = logs.routines.mapTo(HashSet()) { LocalDate.ofEpochDay(it.epochDay) },
                 routinesOnSelected = routines
                     .filter { RoutineSchedule.occursOn(it, selected, zone) }
@@ -132,7 +132,7 @@ class CalendarViewModel(
         month: YearMonth,
         tasks: List<Task>,
         monthLogs: List<CompletionLog>,
-        completedIds: Set<Long>,
+        lastCompletions: Map<Long, Long>,
         zone: ZoneId,
     ): Map<LocalDate, List<Entry>> {
         val doneByDay = CalendarCalculator.groupByDay(monthLogs, zone) { it.completedAt }
@@ -150,7 +150,11 @@ class CalendarViewModel(
                     time = time,
                     epochMillis = day.atTime(time ?: LocalTime.MIDNIGHT).atZone(zone).toInstant().toEpochMilli(),
                     recurring = repeats,
-                    done = if (repeats) doneByDay[day]?.contains(task.id) == true else task.id in completedIds,
+                    done = if (repeats) {
+                        doneByDay[day]?.contains(task.id) == true
+                    } else {
+                        TaskSchedule.isFinished(task, lastCompletions[task.id], zone)
+                    },
                 )
             }
         }

@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderScheduler
 import java.time.Instant
@@ -29,8 +30,9 @@ class TaskRepository(
     val completionsToday: Flow<List<CompletionLog>> =
         currentDate().flatMapLatest { today -> observeCompletionsBetween(today, today.plusDays(1)) }
 
-    /** Tarefas com alguma conclusão, em qualquer dia: as que não se repetem estão encerradas. */
-    val completedTaskIds: Flow<Set<Long>> = completionLogDao.observeCompletedTaskIds().map { it.toSet() }
+    /** Última conclusão de cada tarefa (taskId → epoch millis): ver [TaskSchedule.isFinished]. */
+    val lastCompletions: Flow<Map<Long, Long>> =
+        completionLogDao.observeLastCompletions().map { rows -> rows.associate { it.taskId to it.completedAt } }
 
     /** Conclusões entre [start] (inclusive) e [endExclusive], pelo dia local. */
     fun observeCompletionsBetween(start: LocalDate, endExclusive: LocalDate): Flow<List<CompletionLog>> {
@@ -79,7 +81,7 @@ class TaskRepository(
             )
             return task.takeUnless { doneToday }
         }
-        return task.takeUnless { completionLogDao.isCompleted(taskId) }
+        return task.takeUnless { isFinished(task) }
     }
 
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
@@ -102,13 +104,20 @@ class TaskRepository(
 
     /**
      * Devolve o id do evento, usado para desfazer a conclusão. Uma tarefa sem repetição fica
-     * encerrada: o lembrete dela, se ainda não tocou, é cancelado.
+     * encerrada: o lembrete dela, se ainda não tocou, é cancelado. Concluída antes do dia dela,
+     * ela passa a ser de hoje (foi feita hoje) e perde o lembrete futuro.
      */
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
-        val logId = completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
         val task = taskDao.byId(taskId)
-        if (task != null && task.repeat == ReminderRepeat.NONE) scheduler.cancel(taskId)
-        return logId
+        if (task != null && task.repeat == ReminderRepeat.NONE) {
+            scheduler.cancel(taskId)
+            val zone = ZoneId.systemDefault()
+            val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate().toEpochDay()
+            if (task.dueDate != null && task.dueDate > day) {
+                taskDao.update(task.copy(dueDate = day, reminderAt = null))
+            }
+        }
+        return completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
     }
 
     /** Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. */
@@ -121,15 +130,16 @@ class TaskRepository(
 
     /** Refaz todos os alarmes (reinício, atualização do app, mudança de fuso); chamado pelo BootReceiver. */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
-        val finished = completionLogDao.completedTaskIds().toSet()
+        val zone = ZoneId.systemDefault()
+        val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
         scheduler.rescheduleAll(
-            taskDao.withPendingReminder(now).filter { it.repeat != ReminderRepeat.NONE || it.id !in finished },
+            taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) },
         )
     }
 
-    /** Sem repetição e já concluída: não lembra mais. */
+    /** Sem repetição e já concluída (no dia dela ou depois): não lembra mais. */
     private suspend fun isFinished(task: Task): Boolean =
-        task.repeat == ReminderRepeat.NONE && completionLogDao.isCompleted(task.id)
+        TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), ZoneId.systemDefault())
 
     private companion object {
         const val FIRED_OCCURRENCE_MARGIN_MS = 60_000L

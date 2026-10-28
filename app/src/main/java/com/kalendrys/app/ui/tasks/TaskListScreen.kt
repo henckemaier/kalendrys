@@ -361,7 +361,9 @@ private fun TaskRow(
                 .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onComplete, enabled = !done) {
+            // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora.
+            val canComplete = !done && !(task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today)
+            IconButton(onClick = onComplete, enabled = canComplete) {
                 Icon(
                     imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
                     contentDescription = stringResource(if (done) R.string.done_today else R.string.complete_task),

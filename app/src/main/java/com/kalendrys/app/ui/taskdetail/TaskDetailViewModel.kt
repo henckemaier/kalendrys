@@ -13,6 +13,7 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
 import java.time.Instant
 import java.time.LocalDate
@@ -71,7 +72,8 @@ class TaskDetailViewModel(
             val latest = logs.firstOrNull()
             val doneAt = when {
                 latest == null -> null
-                task != null && task.repeat == ReminderRepeat.NONE -> latest.completedAt
+                task != null && task.repeat == ReminderRepeat.NONE ->
+                    latest.completedAt.takeIf { TaskSchedule.isFinished(task, it, zone) }
                 Instant.ofEpochMilli(latest.completedAt).atZone(zone).toLocalDate() == today -> latest.completedAt
                 else -> null
             }
