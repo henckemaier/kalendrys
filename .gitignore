@@ -11,3 +11,7 @@ captures/
 *.hprof
 # Permissões locais do Claude Code (por máquina)
 .claude/settings.local.json
+# Chave de upload da Play Store e senhas — NUNCA versionar (use keystore.properties.example)
+keystore.properties
+*.jks
+*.keystore

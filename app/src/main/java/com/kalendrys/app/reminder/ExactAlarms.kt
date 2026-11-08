@@ -3,7 +3,10 @@ package com.kalendrys.app.reminder
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import com.kalendrys.app.AppLinks
 
 /**
@@ -22,6 +25,27 @@ internal fun AlarmManager.setAlarmClockOrInexact(context: Context, triggerAtMill
     }
     setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent(context)), operation)
 }
+
+/**
+ * O sistema deixa este app agendar alarmes no horário exato?
+ *
+ * Abaixo do Android 12 (SDK 31) a permissão não existe e sempre é concedida. A partir daí o
+ * usuário pode revogar "Alarmes e lembretes" fora do app, então vale reler em `onResume`.
+ * Com a permissão negada, [setAlarmClockOrInexact] degrada para alarmes inexatos e os avisos
+ * podem atrasar.
+ */
+fun canScheduleExactAlarms(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+    val manager = context.getSystemService(AlarmManager::class.java)
+    return manager?.canScheduleExactAlarms() ?: true
+}
+
+/**
+ * Intent para a tela "Alarmes e lembretes" do sistema, já filtrada neste app, onde o usuário
+ * concede a permissão de alarme exato. Só faz sentido no Android 12+ (SDK 31+).
+ */
+fun requestExactAlarmPermissionIntent(context: Context): Intent =
+    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.fromParts("package", context.packageName, null))
 
 /** O que abre ao tocar no "próximo alarme" do sistema: o app. */
 private fun showIntent(context: Context): PendingIntent =
