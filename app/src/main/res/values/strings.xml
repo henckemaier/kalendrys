@@ -250,7 +250,7 @@
     <string name="settings_update_downloading">Baixando… %1$d%%</string>
     <string name="settings_update_installing">Abra a instalação para concluir a atualização.</string>
     <string name="settings_update_needs_permission">Permita instalar apps desconhecidos e toque de novo.</string>
-    <string name="settings_update_failed">Não foi possível verificar. Confira a conexão e tente de novo.</string>
+    <string name="settings_update_failed">Não foi possível verificar atualizações agora. Tente novamente mais tarde.</string>
 
     <!-- Lembretes -->
     <string name="reminder_channel_name">Lembretes</string>
