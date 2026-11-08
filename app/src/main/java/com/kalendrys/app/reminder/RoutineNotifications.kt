@@ -18,9 +18,9 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 /** Aviso de início de um bloco de rotina, com a ação "Concluir". */
-class RoutineNotifications(private val context: Context) {
+open class RoutineNotifications(private val context: Context) {
 
-    fun show(routine: Routine, date: LocalDate) {
+    open fun show(routine: Routine, date: LocalDate) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -58,7 +58,7 @@ class RoutineNotifications(private val context: Context) {
         NotificationManagerCompat.from(context).notify(TAG, requestCode, notification)
     }
 
-    fun cancel(routineId: Long) {
+    open fun cancel(routineId: Long) {
         NotificationManagerCompat.from(context).cancel(TAG, routineId.toInt())
     }
 
