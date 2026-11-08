@@ -81,19 +81,6 @@ android {
         compose = true
         buildConfig = true // versão exibida em Configurações > Sobre
     }
-
-    // Os schemas versionados do Room viram assets do teste unitário para o MigrationTestHelper
-    // (rodando no Robolectric) encontrar os JSONs de cada versão.
-    sourceSets {
-        getByName("test").assets.srcDirs(files("$projectDir/schemas"))
-    }
-
-    testOptions {
-        unitTests {
-            // Robolectric precisa dos recursos/assets mesclados (schemas, manifest) no classpath.
-            isIncludeAndroidResources = true
-        }
-    }
 }
 
 // Relatórios de estabilidade/skipping do Compose, sob demanda:
@@ -140,12 +127,6 @@ dependencies {
     baselineProfile(project(":baselineprofile"))
 
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
-    testImplementation(libs.androidx.room.testing)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.androidx.junit) // AndroidJUnit4 para os testes de Room/Robolectric
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
