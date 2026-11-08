@@ -22,7 +22,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +66,7 @@ import com.kalendrys.app.reminder.canScheduleExactAlarms
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.settings.SettingsViewModel.BackupEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.ExportEvent
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.collectLatest
@@ -79,6 +83,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
+    var showRestoreConfirm by rememberSaveable { mutableStateOf(false) }
     // Relidos ao voltar das configurações do sistema, onde o usuário pode ter mudado as permissões.
     var notificationsEnabled by remember { mutableStateOf(true) }
     var exactAlarmsAllowed by remember { mutableStateOf(true) }
@@ -92,6 +97,13 @@ fun SettingsScreen(
     val createFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) viewModel.exportTo(uri)
     }
+    val createBackupFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) viewModel.exportBackupTo(uri)
+    }
+    // Alguns provedores rotulam o .json como octet-stream; aceitamos ambos para o arquivo aparecer.
+    val openBackupFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.restoreBackupFrom(uri)
+    }
     val res = context.resources
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.export.collectLatest { event ->
@@ -102,6 +114,21 @@ fun SettingsScreen(
                 )
                 ExportEvent.NothingToExport -> snackbarHostState.showSnackbar(res.getString(R.string.settings_export_empty))
                 ExportEvent.Failed -> snackbarHostState.showSnackbar(res.getString(R.string.settings_export_failed))
+            }
+        }
+    }
+    LaunchedEffect(viewModel, snackbarHostState) {
+        viewModel.backup.collectLatest { event ->
+            when (event) {
+                is BackupEvent.ChooseExportFile -> createBackupFile.launch(event.suggestedName)
+                is BackupEvent.Exported -> snackbarHostState.showSnackbar(
+                    res.getQuantityString(R.plurals.settings_backup_export_done, event.stats.total, event.stats.total),
+                )
+                is BackupEvent.Restored -> snackbarHostState.showSnackbar(
+                    res.getQuantityString(R.plurals.settings_backup_restore_done, event.stats.total, event.stats.total),
+                )
+                BackupEvent.ExportFailed -> snackbarHostState.showSnackbar(res.getString(R.string.settings_backup_export_failed))
+                BackupEvent.RestoreFailed -> snackbarHostState.showSnackbar(res.getString(R.string.settings_backup_restore_failed))
             }
         }
     }
@@ -200,10 +227,40 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_export),
                     supporting = stringResource(R.string.settings_export_description),
                     onClick = viewModel::requestExport,
-                    shape = groupedItemShape(0, 1),
+                    shape = groupedItemShape(0, 3),
                     trailing = {
                         Icon(
                             imageVector = Icons.Outlined.FileDownload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+            item(key = "backup_export") {
+                SettingsRow(
+                    title = stringResource(R.string.settings_backup_export),
+                    supporting = stringResource(R.string.settings_backup_export_description),
+                    onClick = viewModel::requestBackupExport,
+                    shape = groupedItemShape(1, 3),
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.Outlined.FileUpload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+            item(key = "backup_restore") {
+                SettingsRow(
+                    title = stringResource(R.string.settings_restore),
+                    supporting = stringResource(R.string.settings_restore_description),
+                    onClick = { showRestoreConfirm = true },
+                    shape = groupedItemShape(2, 3),
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.Outlined.SettingsBackupRestore,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -232,6 +289,28 @@ fun SettingsScreen(
                 showTimePicker = false
             },
             onDismiss = { showTimePicker = false },
+        )
+    }
+
+    // Restaurar é destrutivo (substitui tudo): confirma antes de abrir o seletor de arquivo.
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = false },
+            title = { Text(stringResource(R.string.settings_restore_confirm_title)) },
+            text = { Text(stringResource(R.string.settings_restore_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = false
+                    openBackupFile.launch(arrayOf("application/json", "application/octet-stream"))
+                }) {
+                    Text(stringResource(R.string.settings_restore_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
         )
     }
 }

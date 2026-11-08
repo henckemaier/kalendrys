@@ -14,8 +14,16 @@ interface RoutineCompletionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(completion: RoutineCompletion): Long
 
+    /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(completions: List<RoutineCompletion>)
+
     @Query("DELETE FROM routine_completion WHERE routineId = :routineId AND epochDay = :epochDay")
     suspend fun delete(routineId: Long, epochDay: Long)
+
+    /** Apaga todas as conclusões de rotina (restauro de backup limpa antes de reinserir). */
+    @Query("DELETE FROM routine_completion")
+    suspend fun clear()
 
     @Query("SELECT * FROM routine_completion WHERE epochDay >= :startEpochDay AND epochDay < :endEpochDay")
     fun observeBetween(startEpochDay: Long, endEpochDay: Long): Flow<List<RoutineCompletion>>

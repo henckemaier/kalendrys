@@ -29,6 +29,14 @@ interface RoutineDao {
     @Insert
     suspend fun insert(routine: Routine): Long
 
+    /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
+    @Insert
+    suspend fun insertAll(routines: List<Routine>)
+
     @Update
     suspend fun update(routine: Routine)
+
+    /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
+    @Query("DELETE FROM routines")
+    suspend fun clear()
 }
