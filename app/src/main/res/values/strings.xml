@@ -38,6 +38,10 @@
     <string name="task_deleted">Tarefa excluída</string>
     <string name="empty_tasks_title">Nenhuma tarefa</string>
     <string name="empty_tasks_message">Crie uma tarefa para começar a organizar o seu dia.</string>
+    <string name="task_search_hint">Buscar tarefas</string>
+    <string name="task_search_clear">Limpar busca</string>
+    <string name="empty_search_title">Nenhuma tarefa encontrada</string>
+    <string name="empty_search_message">Tente outro termo ou ajuste os filtros.</string>
 
     <!-- Detalhe da tarefa -->
     <string name="task_detail_title">Detalhes da tarefa</string>
