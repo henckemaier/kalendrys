@@ -15,6 +15,8 @@ import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
 import com.kalendrys.app.summary.DailyScheduler
+import com.kalendrys.app.update.UpdateChecker
+import com.kalendrys.app.update.UpdateInstaller
 import com.kalendrys.app.widget.KalendrysWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +58,11 @@ class KalendrysApp : Application() {
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(settingsDataStore) }
 
     val dailyScheduler: DailyScheduler by lazy { DailyScheduler(this) }
+
+    /** Atualizador in-app (botão manual em Configurações): checagem e instalação via GitHub Releases. */
+    val updateChecker: UpdateChecker by lazy { UpdateChecker() }
+
+    val updateInstaller: UpdateInstaller by lazy { UpdateInstaller(this) }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
