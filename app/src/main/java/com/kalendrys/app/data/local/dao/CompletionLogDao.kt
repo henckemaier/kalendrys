@@ -15,8 +15,16 @@ interface CompletionLogDao {
     @Insert
     suspend fun insert(log: CompletionLog): Long
 
+    /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
+    @Insert
+    suspend fun insertAll(logs: List<CompletionLog>)
+
     @Query("DELETE FROM completion_log WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** Apaga o histórico inteiro (restauro de backup limpa antes de reinserir). */
+    @Query("DELETE FROM completion_log")
+    suspend fun clear()
 
     /** Conclusões em [start, end) — usa o índice de completedAt; nunca carrega o histórico todo. */
     @Query("SELECT * FROM completion_log WHERE completedAt >= :start AND completedAt < :end ORDER BY completedAt ASC")

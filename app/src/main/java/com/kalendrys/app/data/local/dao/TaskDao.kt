@@ -30,9 +30,17 @@ interface TaskDao {
     @Insert
     suspend fun insert(task: Task): Long
 
+    /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
+    @Insert
+    suspend fun insertAll(tasks: List<Task>)
+
     @Update
     suspend fun update(task: Task)
 
     @Delete
     suspend fun delete(task: Task)
+
+    /** Apaga todas as tarefas (restauro de backup limpa antes de reinserir). */
+    @Query("DELETE FROM tasks")
+    suspend fun clear()
 }
