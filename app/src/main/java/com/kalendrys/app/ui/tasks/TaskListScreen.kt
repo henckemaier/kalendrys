@@ -19,18 +19,25 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -45,6 +52,8 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +104,8 @@ fun TaskListScreen(
     viewModel: TaskViewModel = viewModel(factory = TaskViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val filters by viewModel.filters.collectAsStateWithLifecycle()
     var showNewTask by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(openNewTask) {
         if (openNewTask) {
@@ -147,51 +158,69 @@ fun TaskListScreen(
     ) { innerPadding ->
         when {
             !state.isLoaded -> Unit
-            state.isEmpty -> EmptyState(
+            // Sem nenhuma tarefa criada: vazio "comece por aqui" (sem busca nem filtros).
+            !state.hasTasks -> EmptyState(
                 icon = Icons.Outlined.TaskAlt,
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
                 modifier = Modifier.padding(innerPadding),
             )
-            else -> {
-                val today = state.today
-                val todayLabel = remember(today) { weekdayDateLabel(today) }
-                val sections = listOf(
-                    Triple("overdue", R.string.section_overdue, state.overdue),
-                    Triple("today", R.string.section_today, state.dueToday),
-                    Triple("upcoming", R.string.section_upcoming, state.upcoming),
-                    Triple("no_date", R.string.section_no_date, state.noDate),
-                    Triple("done", R.string.section_done_today, state.doneToday),
+            else -> Column(modifier = Modifier.padding(innerPadding)) {
+                TaskSearchBar(
+                    query = query,
+                    onQueryChange = viewModel::setQuery,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
                 )
-                val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 104.dp),
-                ) {
-                    item(key = "today_label", contentType = "today") {
-                        Text(
-                            text = todayLabel,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    sections.forEach { (key, _, items) ->
-                        taskSection(
-                            key = key,
-                            title = titles.getValue(key),
-                            items = items,
-                            done = key == "done",
-                            overdue = key == "overdue",
-                            // Na seção "Hoje" a data é óbvia; nas outras ela aparece na linha.
-                            showDate = key == "overdue" || key == "upcoming",
-                            today = today,
-                            onOpen = { onOpenTask(it.id) },
-                            onComplete = viewModel::complete,
-                            onDelete = viewModel::delete,
-                        )
+                TaskFilterChips(
+                    selected = filters,
+                    onToggle = viewModel::toggleFilter,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                if (state.isEmpty) {
+                    // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto.
+                    EmptyState(
+                        icon = Icons.Outlined.SearchOff,
+                        title = stringResource(R.string.empty_search_title),
+                        message = stringResource(R.string.empty_search_message),
+                    )
+                } else {
+                    val today = state.today
+                    val todayLabel = remember(today) { weekdayDateLabel(today) }
+                    val sections = listOf(
+                        Triple("overdue", R.string.section_overdue, state.overdue),
+                        Triple("today", R.string.section_today, state.dueToday),
+                        Triple("upcoming", R.string.section_upcoming, state.upcoming),
+                        Triple("no_date", R.string.section_no_date, state.noDate),
+                        Triple("done", R.string.section_done_today, state.doneToday),
+                    )
+                    val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 104.dp),
+                    ) {
+                        item(key = "today_label", contentType = "today") {
+                            Text(
+                                text = todayLabel,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        sections.forEach { (key, _, items) ->
+                            taskSection(
+                                key = key,
+                                title = titles.getValue(key),
+                                items = items,
+                                done = key == "done",
+                                overdue = key == "overdue",
+                                // Na seção "Hoje" a data é óbvia; nas outras ela aparece na linha.
+                                showDate = key == "overdue" || key == "upcoming",
+                                today = today,
+                                onOpen = { onOpenTask(it.id) },
+                                onComplete = viewModel::complete,
+                                onDelete = viewModel::delete,
+                            )
+                        }
                     }
                 }
             }
@@ -206,6 +235,79 @@ fun TaskListScreen(
             },
             onDismiss = { showNewTask = false },
         )
+    }
+}
+
+/** Campo de busca filled, no estilo dos cards da lista; o X aparece quando há texto. */
+@Composable
+private fun TaskSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text(stringResource(R.string.task_search_hint)) },
+        leadingIcon = {
+            Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.task_search_clear))
+                }
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+        ),
+    )
+}
+
+/** Chips de seção (seleção múltipla). Nenhum ligado = mostra tudo; ligados = só aquelas seções. */
+@Composable
+private fun TaskFilterChips(
+    selected: Set<TaskViewModel.Filter>,
+    onToggle: (TaskViewModel.Filter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chips = listOf(
+        TaskViewModel.Filter.OVERDUE to R.string.section_overdue,
+        TaskViewModel.Filter.TODAY to R.string.section_today,
+        TaskViewModel.Filter.UPCOMING to R.string.section_upcoming,
+        TaskViewModel.Filter.NO_DATE to R.string.section_no_date,
+    )
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        chips.forEach { (filter, label) ->
+            val isSelected = filter in selected
+            FilterChip(
+                selected = isSelected,
+                onClick = { onToggle(filter) },
+                label = { Text(stringResource(label)) },
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize),
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+        }
     }
 }
 
