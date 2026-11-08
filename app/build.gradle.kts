@@ -25,6 +25,23 @@ val uploadKeyPassword = uploadKey("keyPassword", "KALENDRYS_UPLOAD_KEY_PASSWORD"
 val hasUploadKeystore = uploadStoreFile != null && uploadStorePassword != null &&
     uploadKeyAlias != null && uploadKeyPassword != null
 
+// Versionamento (regra em docs/VERSIONING.md). O versionName em SemVer MAJOR.MINOR.PATCH é a
+// ÚNICA fonte: o versionCode é DERIVADO pela fórmula MAJOR*10000 + MINOR*100 + PATCH, com
+// MINOR e PATCH em 0..99, garantindo um inteiro estritamente crescente sem contagem manual.
+// Isto SUBSTITUI a convenção anterior (T3) de incrementar o versionCode manualmente em +1 —
+// mesmo espírito (SemVer + código monotônico), mecânica agora automática. Para subir de versão,
+// edite SOMENTE appVersionName; o release é publicado por push da tag "v$appVersionName"
+// (ver .github/workflows/release.yml).
+val appVersionName = "1.0.0"
+val appVersionCode = appVersionName.split(".").let { parts ->
+    require(parts.size == 3) { "versionName deve ser MAJOR.MINOR.PATCH, recebido: $appVersionName" }
+    val (major, minor, patch) = parts.map(String::toInt)
+    require(minor in 0..99 && patch in 0..99) {
+        "MINOR e PATCH devem estar em 0..99 para o versionCode derivado: $appVersionName"
+    }
+    major * 10000 + minor * 100 + patch
+}
+
 android {
     namespace = "com.kalendrys.app"
     compileSdk = 35
@@ -33,11 +50,10 @@ android {
         applicationId = "com.kalendrys.app"
         minSdk = 26
         targetSdk = 35
-        // Convenção: a cada publicação na Play Store, incrementar versionCode em +1 (inteiro,
-        // nunca reutilizado nem diminuído) e ajustar versionName para o nome visível (SemVer:
-        // MAJOR.MINOR.PATCH). Ex.: próxima publicação → versionCode = 2, versionName = "1.0.1".
-        versionCode = 1
-        versionName = "1.0"
+        // versionName/versionCode derivados acima (ver appVersionName). Para subir de versão,
+        // edite appVersionName; o versionCode é recalculado pela fórmula automaticamente.
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
