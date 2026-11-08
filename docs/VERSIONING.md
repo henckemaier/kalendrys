@@ -17,6 +17,8 @@ Sempre três componentes numéricos (ex.: `1.2.0`, nunca `1.2`).
 
 Restrição para o `versionCode` derivado funcionar: `0 ≤ MINOR ≤ 99` e `0 ≤ PATCH ≤ 99`.
 Ao chegar em `x.y.99` + 1 correção, sobe-se o `MINOR` (vira `x.(y+1).0`).
+Simetricamente, ao chegar em `x.99.z` e surgir uma feature nova, sobe-se o `MAJOR` (o `MINOR`
+não passa de 99): vira `(x+1).0.0` — a monotonicidade do `versionCode` é preservada.
 
 ## 2. `versionCode` — **derivado** do `versionName`
 
