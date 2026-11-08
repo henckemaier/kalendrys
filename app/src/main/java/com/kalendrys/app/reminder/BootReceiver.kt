@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.widget.KalendrysWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -12,6 +13,11 @@ import kotlinx.coroutines.launch
  * Refaz os alarmes quando eles se perdem ou podem ter ficado errados: o AlarmManager os apaga
  * no reinício, e a "próxima ocorrência" de um recorrente é calculada a partir do relógio e do
  * fuso do aparelho — se o relógio estava errado ao agendar, a ocorrência agendada também está.
+ *
+ * Também redesenha os widgets: no reinício o Glance restaura os RemoteViews salvos (que podem ser
+ * de ontem) e, com `updatePeriodMillis=0` e o `keepWidgetsInSync` ignorando a primeira emissão,
+ * nada os atualizaria até a próxima mudança no banco ou a virada do dia às 00:01 — deixando o
+ * widget preso no dia anterior após um boot que cruzou a meia-noite.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -23,6 +29,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 app.repository.rescheduleReminders()
                 app.routineRepository.scheduleNextAlarm()
+                KalendrysWidgets.updateAll(context)
             } finally {
                 pendingResult.finish()
             }
