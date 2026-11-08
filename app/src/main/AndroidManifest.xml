@@ -2,13 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- USE_EXACT_ALARM (API 33+) é concedida na instalação, sem o usuário ir às configurações.
-         A Play Store só a aceita em apps de alarme/calendário: se o app for publicado,
-         trocar por SCHEDULE_EXACT_ALARM + pedido em Configurações > Alarmes e lembretes. -->
-    <uses-permission
-        android:name="android.permission.SCHEDULE_EXACT_ALARM"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Alarmes no horário exato (lembretes, avisos de rotina, resumo diário).
+         SCHEDULE_EXACT_ALARM é o padrão aceito pela Play Store sem declarar o app como
+         alarme/calendário: no Android 12/13+ a permissão vem de um pedido em runtime
+         (Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM), tratado na UI de Configurações.
+         Antes NÃO declarávamos para 33+ e usávamos USE_EXACT_ALARM (concedida na instalação),
+         que a Play Store só libera para apps de alarme/calendário; removida para evitar a
+         exigência de política. Sem maxSdkVersion: declarada em todas as versões >= 23.
+         Se revogada, reminder/ExactAlarms.kt degrada para alarme inexato em vez de crashar. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application

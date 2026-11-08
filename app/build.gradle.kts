@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +7,23 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.baselineprofile)
 }
+
+// Chave de upload da Play Store, lida de keystore.properties (fora do git) ou de variáveis de
+// ambiente (CI). Veja keystore.properties.example para gerar a chave e preencher os campos.
+// Ausente → o release continua assinado com a chave de debug (comportamento pessoal atual).
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+}
+fun uploadKey(prop: String, env: String): String? =
+    keystoreProps.getProperty(prop) ?: System.getenv(env)
+
+val uploadStoreFile = uploadKey("storeFile", "KALENDRYS_UPLOAD_STORE_FILE")
+val uploadStorePassword = uploadKey("storePassword", "KALENDRYS_UPLOAD_STORE_PASSWORD")
+val uploadKeyAlias = uploadKey("keyAlias", "KALENDRYS_UPLOAD_KEY_ALIAS")
+val uploadKeyPassword = uploadKey("keyPassword", "KALENDRYS_UPLOAD_KEY_PASSWORD")
+val hasUploadKeystore = uploadStoreFile != null && uploadStorePassword != null &&
+    uploadKeyAlias != null && uploadKeyPassword != null
 
 android {
     namespace = "com.kalendrys.app"
@@ -14,8 +33,24 @@ android {
         applicationId = "com.kalendrys.app"
         minSdk = 26
         targetSdk = 35
+        // Convenção: a cada publicação na Play Store, incrementar versionCode em +1 (inteiro,
+        // nunca reutilizado nem diminuído) e ajustar versionName para o nome visível (SemVer:
+        // MAJOR.MINOR.PATCH). Ex.: próxima publicação → versionCode = 2, versionName = "1.0.1".
         versionCode = 1
         versionName = "1.0"
+    }
+
+    signingConfigs {
+        // Chave de upload só é registrada quando keystore.properties / variáveis de ambiente
+        // estão presentes; caso contrário o release cai na chave de debug (abaixo).
+        if (hasUploadKeystore) {
+            create("upload") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -26,10 +61,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // App pessoal, instalado fora da Play Store: assinado com a mesma chave do debug para
-            // atualizar por cima da versão já instalada sem perder os dados. Para publicar na
-            // Play Store, criar uma chave de upload própria e trocar esta linha.
-            signingConfig = signingConfigs.getByName("debug")
+            // Com a chave de upload configurada (keystore.properties / env), assina para a Play
+            // Store. Sem ela, mantém o comportamento pessoal: assina com a chave de debug, para
+            // instalar por cima da versão já instalada sem perder os dados.
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
 
