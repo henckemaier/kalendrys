@@ -12,6 +12,11 @@
          Se revogada, reminder/ExactAlarms.kt degrada para alarme inexato em vez de crashar. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Atualizador in-app (botão manual em Configurações): consulta a GitHub Releases API e baixa
+         o APK. INTERNET é usada SÓ aqui (o resto do app é offline). REQUEST_INSTALL_PACKAGES é
+         exigida no Android 8+ para instalar o APK baixado; a confirmação final é do sistema. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".KalendrysApp"
@@ -54,6 +59,12 @@
 
         <receiver
             android:name=".summary.DailyReceiver"
+            android:exported="false" />
+
+        <!-- Callback do PackageInstaller (status da sessão de instalação do atualizador).
+             exported=false: só recebe o PendingIntent que o próprio app cria. -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
             android:exported="false" />
 
         <receiver

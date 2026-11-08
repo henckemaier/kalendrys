@@ -242,6 +242,15 @@
     <string name="settings_restore_confirm_action">Restaurar</string>
     <string name="settings_section_about">Sobre</string>
     <string name="settings_version">Versão</string>
+    <string name="settings_update">Buscar atualizações</string>
+    <string name="settings_update_description">Verifica no GitHub se há uma versão mais nova.</string>
+    <string name="settings_update_checking">Verificando…</string>
+    <string name="settings_update_uptodate">Você está na versão mais recente.</string>
+    <string name="settings_update_available">Nova versão %1$s disponível. Toque para baixar.</string>
+    <string name="settings_update_downloading">Baixando… %1$d%%</string>
+    <string name="settings_update_installing">Abra a instalação para concluir a atualização.</string>
+    <string name="settings_update_needs_permission">Permita instalar apps desconhecidos e toque de novo.</string>
+    <string name="settings_update_failed">Não foi possível verificar atualizações agora. Tente novamente mais tarde.</string>
 
     <!-- Lembretes -->
     <string name="reminder_channel_name">Lembretes</string>

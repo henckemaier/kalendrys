@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -68,6 +69,7 @@ import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.settings.SettingsViewModel.BackupEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.ExportEvent
+import com.kalendrys.app.ui.settings.SettingsViewModel.UpdateUi
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.collectLatest
 
@@ -80,6 +82,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val updateState by viewModel.update.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
@@ -269,11 +272,20 @@ fun SettingsScreen(
             }
 
             item(key = "about_header") { SectionHeader(stringResource(R.string.settings_section_about)) }
+            item(key = "update") {
+                UpdateRow(
+                    state = updateState,
+                    shape = groupedItemShape(0, 2),
+                    onCheck = viewModel::checkForUpdates,
+                    onDownload = viewModel::downloadUpdate,
+                    onGrantPermission = viewModel::grantInstallPermission,
+                )
+            }
             item(key = "version") {
                 SettingsRow(
                     title = stringResource(R.string.settings_version),
                     supporting = BuildConfig.VERSION_NAME,
-                    shape = groupedItemShape(0, 1),
+                    shape = groupedItemShape(1, 2),
                 )
             }
         }
@@ -322,6 +334,51 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+    )
+}
+
+/**
+ * Linha "Buscar atualizações": o texto de apoio e o toque mudam conforme o estado do atualizador.
+ * Toque pede checagem (ou baixa a nova versão / abre a permissão), e nunca age sozinha — sem o
+ * toque, nada acontece. Enquanto verifica ou baixa, a linha fica sem clique.
+ */
+@Composable
+private fun UpdateRow(
+    state: UpdateUi,
+    shape: Shape,
+    onCheck: () -> Unit,
+    onDownload: (String) -> Unit,
+    onGrantPermission: () -> Unit,
+) {
+    val supporting = when (state) {
+        UpdateUi.Idle -> stringResource(R.string.settings_update_description)
+        UpdateUi.Checking -> stringResource(R.string.settings_update_checking)
+        UpdateUi.UpToDate -> stringResource(R.string.settings_update_uptodate)
+        is UpdateUi.Available -> stringResource(R.string.settings_update_available, state.versionName)
+        is UpdateUi.Downloading -> stringResource(R.string.settings_update_downloading, state.percent)
+        UpdateUi.AwaitingInstall -> stringResource(R.string.settings_update_installing)
+        UpdateUi.NeedsPermission -> stringResource(R.string.settings_update_needs_permission)
+        UpdateUi.Failed -> stringResource(R.string.settings_update_failed)
+    }
+    val onClick: (() -> Unit)? = when (state) {
+        UpdateUi.Checking, is UpdateUi.Downloading -> null
+        is UpdateUi.Available -> ({ onDownload(state.apkUrl) })
+        UpdateUi.NeedsPermission -> onGrantPermission
+        else -> onCheck
+    }
+    SettingsRow(
+        title = stringResource(R.string.settings_update),
+        supporting = supporting,
+        supportingIsError = state == UpdateUi.Failed,
+        onClick = onClick,
+        shape = shape,
+        trailing = {
+            Icon(
+                imageVector = if (state is UpdateUi.Available) Icons.Outlined.FileDownload else Icons.Outlined.SystemUpdate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
     )
 }
 
