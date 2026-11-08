@@ -16,11 +16,11 @@ import java.time.ZoneId
  * Se algum bloco daquele horário avisa, o alarme é exato e acorda o aparelho; senão ele só serve
  * para redesenhar os widgets ("a seguir") e espera o aparelho acordar.
  */
-class RoutineAlarms(private val context: Context) {
+open class RoutineAlarms(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    fun scheduleNext(routines: List<Routine>, after: LocalDateTime) {
+    open fun scheduleNext(routines: List<Routine>, after: LocalDateTime) {
         val zone = ZoneId.systemDefault()
         val next = RoutineSchedule.nextStart(routines, after, zone)
         if (next == null) {

@@ -8,13 +8,18 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRecurrence
 import java.time.ZoneId
 
-/** Mantém no AlarmManager só a próxima ocorrência de cada lembrete. */
-class ReminderScheduler(private val context: Context) {
+/**
+ * Mantém no AlarmManager só a próxima ocorrência de cada lembrete.
+ *
+ * `open` para os testes do [com.kalendrys.app.data.repository.TaskRepository] poderem usar um
+ * fake que apenas registra as chamadas, sem depender do AlarmManager real.
+ */
+open class ReminderScheduler(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
     /** Agenda a próxima ocorrência depois de [after]; não faz nada se o lembrete já acabou. */
-    fun schedule(task: Task, after: Long = System.currentTimeMillis()) {
+    open fun schedule(task: Task, after: Long = System.currentTimeMillis()) {
         val triggerAt = ReminderRecurrence.nextTriggerMillis(
             reminderAt = task.reminderAt,
             repeat = task.repeat,
@@ -24,11 +29,11 @@ class ReminderScheduler(private val context: Context) {
         alarmManager.setAlarmClockOrInexact(context, triggerAt, pendingIntent(task.id))
     }
 
-    fun cancel(taskId: Long) {
+    open fun cancel(taskId: Long) {
         alarmManager.cancel(pendingIntent(taskId))
     }
 
-    fun rescheduleAll(tasks: List<Task>) {
+    open fun rescheduleAll(tasks: List<Task>) {
         tasks.forEach { schedule(it) }
     }
 

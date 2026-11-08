@@ -81,6 +81,20 @@ android {
         compose = true
         buildConfig = true // versão exibida em Configurações > Sobre
     }
+
+    // Os schemas versionados do Room entram como assets só da variante debug: o Robolectric lê
+    // os assets mesclados do debug (android_merged_assets), então o MigrationTestHelper encontra
+    // os JSONs de cada versão no `:app:testDebugUnitTest` — e o APK de release não os carrega.
+    sourceSets {
+        getByName("debug").assets.srcDirs(files("$projectDir/schemas"))
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric precisa dos recursos/assets mesclados (schemas, manifest) no classpath.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 // Relatórios de estabilidade/skipping do Compose, sob demanda:
@@ -127,6 +141,12 @@ dependencies {
     baselineProfile(project(":baselineprofile"))
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.junit) // AndroidJUnit4 para os testes de Room/Robolectric
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
