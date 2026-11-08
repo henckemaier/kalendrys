@@ -12,6 +12,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -38,6 +39,12 @@ sealed interface InstallOutcome {
  * Fluxo de permissão: no Android 8+ é preciso REQUEST_INSTALL_PACKAGES (manifest) e o consentimento
  * "instalar apps desconhecidos" ([canInstall]); sem ele, [requestInstallPermission] leva o usuário à
  * tela do sistema. A instalação nunca começa sozinha — só a partir do botão em Configurações.
+ *
+ * ESCOPO (assinatura): atualizar in-place via PackageInstaller exige que o APK novo tenha a MESMA
+ * chave do app já instalado. Ou seja, o atualizador funciona para quem instalou o próprio APK do
+ * GitHub (assinado com a chave "upload"). Uma cópia instalada pela Play Store (Play App Signing,
+ * chave diferente) ou um build de debug local NÃO atualizam in-place: o sistema recusa com
+ * STATUS_FAILURE por divergência de assinatura — sem crash, é o comportamento esperado.
  */
 class UpdateInstaller(private val context: Context) {
 
@@ -58,10 +65,17 @@ class UpdateInstaller(private val context: Context) {
     suspend fun downloadAndInstall(apkUrl: String, onProgress: (Int) -> Unit): InstallOutcome =
         withContext(Dispatchers.IO) {
             if (!canInstall()) return@withContext InstallOutcome.NeedsPermission
+            // Caminho de instalação: só aceita https. Blinda o cast para HttpsURLConnection (uma URL
+            // não-https lançaria ClassCastException, que não é IOException e quebraria o coroutine).
+            if (!apkUrl.startsWith("https://", ignoreCase = true)) return@withContext InstallOutcome.Failed
             try {
                 streamApkIntoSession(apkUrl, onProgress)
                 InstallOutcome.HandedToSystem
-            } catch (e: IOException) {
+            } catch (e: CancellationException) {
+                throw e // nunca engolir cancelamento de coroutine
+            } catch (e: Exception) {
+                // Reforço: IOException (rede/arquivo), mas também qualquer falha inesperada do
+                // PackageInstaller vira Failed em vez de derrubar o app.
                 InstallOutcome.Failed
             }
         }
