@@ -207,6 +207,9 @@
     <string name="settings_notifications_system">Notificações do sistema</string>
     <string name="settings_notifications_system_description">Sons, vibração e os canais Lembretes, Rotinas e Resumo diário.</string>
     <string name="settings_notifications_off">Desativadas: lembretes, rotinas e resumo não vão aparecer.</string>
+    <string name="settings_exact_alarms_title">Alarmes no horário exato</string>
+    <string name="settings_exact_alarms_warning">Sem esta permissão, lembretes, avisos de rotina e o resumo diário podem chegar com atraso.</string>
+    <string name="settings_exact_alarms_action">Permitir alarmes exatos</string>
     <string name="settings_section_data">Dados</string>
     <string name="settings_export">Exportar histórico</string>
     <string name="settings_export_description">Conclusões de tarefas e rotinas em CSV, para abrir no Excel ou no Google Planilhas.</string>
