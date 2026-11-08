@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.StrictMode
 import com.kalendrys.app.data.local.AppDatabase
+import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -25,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -56,6 +58,26 @@ class KalendrysApp : Application() {
     val historyExporter: HistoryExporter by lazy { HistoryExporter(database, contentResolver) }
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(settingsDataStore) }
+
+    /**
+     * Backup/restauro completo. Depois de restaurar (substitui tudo), reagenda os alarmes e
+     * atualiza os widgets pelos caminhos idempotentes de sempre — senão o aparelho novo fica
+     * com os dados mas sem nenhum alarme. O resumo diário se reagenda sozinho ([keepDailyAlarmsInSync]
+     * observa o DataStore), mas chamamos [DailyScheduler] aqui também para valer na hora.
+     */
+    val backupManager: BackupManager by lazy {
+        BackupManager(
+            database = database,
+            contentResolver = contentResolver,
+            settings = settingsRepository,
+            afterRestore = {
+                repository.rescheduleReminders()
+                routineRepository.scheduleNextAlarm()
+                dailyScheduler.scheduleAll(settingsRepository.settings.first())
+                KalendrysWidgets.updateAll(this)
+            },
+        )
+    }
 
     val dailyScheduler: DailyScheduler by lazy { DailyScheduler(this) }
 

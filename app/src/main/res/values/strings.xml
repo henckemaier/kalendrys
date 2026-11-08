@@ -38,6 +38,10 @@
     <string name="task_deleted">Tarefa excluída</string>
     <string name="empty_tasks_title">Nenhuma tarefa</string>
     <string name="empty_tasks_message">Crie uma tarefa para começar a organizar o seu dia.</string>
+    <string name="task_search_hint">Buscar tarefas</string>
+    <string name="task_search_clear">Limpar busca</string>
+    <string name="empty_search_title">Nenhuma tarefa encontrada</string>
+    <string name="empty_search_message">Tente outro termo ou ajuste os filtros.</string>
 
     <!-- Detalhe da tarefa -->
     <string name="task_detail_title">Detalhes da tarefa</string>
@@ -219,6 +223,23 @@
         <item quantity="one">Histórico exportado: %d conclusão</item>
         <item quantity="other">Histórico exportado: %d conclusões</item>
     </plurals>
+    <string name="settings_backup_export">Exportar backup</string>
+    <string name="settings_backup_export_description">Todos os dados (tarefas, rotinas, conclusões e ajustes) em um arquivo, para passar a outro aparelho.</string>
+    <string name="settings_backup_export_failed">Não foi possível salvar o backup.</string>
+    <plurals name="settings_backup_export_done">
+        <item quantity="one">Backup salvo: %d item</item>
+        <item quantity="other">Backup salvo: %d itens</item>
+    </plurals>
+    <string name="settings_restore">Restaurar backup</string>
+    <string name="settings_restore_description">Substitui os dados atuais pelos de um arquivo de backup.</string>
+    <string name="settings_backup_restore_failed">Não foi possível restaurar: arquivo inválido ou incompatível.</string>
+    <plurals name="settings_backup_restore_done">
+        <item quantity="one">Backup restaurado: %d item</item>
+        <item quantity="other">Backup restaurado: %d itens</item>
+    </plurals>
+    <string name="settings_restore_confirm_title">Restaurar backup?</string>
+    <string name="settings_restore_confirm_message">Isto apaga as tarefas, rotinas e conclusões atuais deste aparelho e coloca no lugar os dados do arquivo. Não dá para desfazer.</string>
+    <string name="settings_restore_confirm_action">Restaurar</string>
     <string name="settings_section_about">Sobre</string>
     <string name="settings_version">Versão</string>
     <string name="settings_update">Buscar atualizações</string>
