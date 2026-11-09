@@ -207,4 +207,61 @@ class DayTimelineTest {
             .single()
         assertEquals(9 * 60, block.startMinute)
     }
+
+    private fun build(vararg routines: Routine, tasks: List<Task>) =
+        DayTimeline.build(routines.toList(), emptySet(), day, zone, tasks = tasks)
+
+    @Test
+    fun `intervalo curto entre rotina e tarefa fica tracejado sem linha de tempo livre`() {
+        // Rotina 07:00–07:30, tarefa às 07:40: 10 min de folga (< 30) → tracejado, sem Gap.
+        val items = build(routine(1, "07:00", 30), tasks = listOf(task(10, "07:40")))
+        assertTrue(items.filterIsInstance<Gap>().isEmpty())
+        assertEquals(Link.DASHED, items.filterIsInstance<Block>().single().linkBelow)
+        assertEquals(Link.DASHED, items.filterIsInstance<TaskItem>().single().linkAbove)
+    }
+
+    @Test
+    fun `intervalo de 30 min ou mais entre rotina e tarefa vira linha de tempo livre`() {
+        // Rotina 07:00–07:30, tarefa às 09:00: 90 min de folga (>= 30) → tracejado + Gap.
+        val items = build(routine(1, "07:00", 30), tasks = listOf(task(10, "09:00")))
+        assertEquals(Gap(startMinute = 7 * 60 + 30, minutes = 90), items.filterIsInstance<Gap>().single())
+        assertEquals(Link.DASHED, items.filterIsInstance<Block>().single().linkBelow)
+        assertEquals(Link.DASHED, items.filterIsInstance<TaskItem>().single().linkAbove)
+    }
+
+    @Test
+    fun `entre tarefas a ligacao segue a folga como entre rotinas`() {
+        // 08:00, 08:10 (10 min → tracejado sem Gap) e 09:00 (50 min → tracejado + Gap).
+        val items = DayTimeline.build(
+            emptyList(),
+            emptySet(),
+            day,
+            zone,
+            tasks = listOf(task(10, "08:00"), task(11, "08:10"), task(12, "09:00")),
+        )
+        val tasks = items.filterIsInstance<TaskItem>()
+        assertEquals(listOf(Link.NONE, Link.DASHED, Link.DASHED), tasks.map { it.linkAbove })
+        assertEquals(Gap(startMinute = 8 * 60 + 10, minutes = 50), items.filterIsInstance<Gap>().single())
+    }
+
+    @Test
+    fun `tarefa dentro do span de uma rotina encosta com linha cheia e sem gap`() {
+        // Rotina 09:00–10:00, tarefa às 09:30: começa antes do fim → encostada (SOLID), sem Gap.
+        val items = build(routine(1, "09:00", 60), tasks = listOf(task(10, "09:30")))
+        assertTrue(items.filterIsInstance<Gap>().isEmpty())
+        val block = items.filterIsInstance<Block>().single()
+        val taskItem = items.filterIsInstance<TaskItem>().single()
+        assertEquals(Link.SOLID, block.linkBelow)
+        assertEquals(Link.SOLID, taskItem.linkAbove)
+        assertEquals(Link.NONE, taskItem.linkBelow)
+    }
+
+    @Test
+    fun `no mesmo minuto a rotina com duracao vem antes da tarefa pontual`() {
+        val items = build(routine(1, "08:00", 30), tasks = listOf(task(10, "08:00")))
+        assertTrue(items.first() is Block)
+        assertTrue(items[1] is TaskItem)
+        // A tarefa cai dentro do span da rotina → encostada, sem intervalo.
+        assertEquals(Link.SOLID, (items[1] as TaskItem).linkAbove)
+    }
 }

@@ -114,6 +114,8 @@ private val TimeColumnWidth = 44.dp
 private val TrackWidth = 64.dp
 private val PillWidth = 48.dp
 private val PillShape = RoundedCornerShape(percent = 50)
+// O losango (16.dp girado 45°) ocupa ~22.6.dp na diagonal; a trilha abre essa folga para a linha.
+private val DiamondTrackGap = 24.dp
 
 @Composable
 fun RoutinesScreen(
@@ -651,6 +653,7 @@ private fun TaskRow(
     onToggle: () -> Unit,
 ) {
     val accent = MaterialTheme.colorScheme.secondary
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
     val task = item.task
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -677,7 +680,10 @@ private fun TaskRow(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .width(TrackWidth)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                // Mesma trilha dos blocos: a linha (cheia/tracejada) continua pela tarefa, sem duplicar —
+                // o losango só abre a folga no meio. Vazia (Link.NONE) quando a tarefa fica solta.
+                .drawBehind { drawLinks(item.linkAbove, item.linkBelow, DiamondTrackGap.toPx(), lineColor) },
         ) {
             Diamond(filled = item.done, color = accent)
         }

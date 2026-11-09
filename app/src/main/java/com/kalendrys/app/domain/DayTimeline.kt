@@ -53,14 +53,18 @@ object DayTimeline {
     }
 
     /**
-     * Uma tarefa pontual no horário do seu lembrete. Ao contrário da rotina (que se repete e liga
-     * aos vizinhos), ela fica solta na trilha: a tela a desenha com destaque oposto ao do bloco.
+     * Uma tarefa pontual no horário do seu lembrete. É um ponto na trilha (duração 0): liga aos
+     * vizinhos pela mesma regra dos blocos, mas a tela a desenha com destaque oposto ao do bloco.
      */
     data class TaskItem(
         val task: Task,
         override val startMinute: Int,
         val done: Boolean,
+        val linkAbove: Link,
+        val linkBelow: Link,
     ) : Item {
+        /** Ponto no tempo: termina onde começa. */
+        val endMinute: Int get() = startMinute
         override val key: String get() = "task_${task.id}"
     }
 
@@ -76,72 +80,72 @@ object DayTimeline {
         doneTaskIds: Set<Long> = emptySet(),
         overrides: Map<Long, List<RoutineOverride>> = emptyMap(),
     ): List<Item> {
-        val routineItems = buildRoutineItems(routines, doneIds, date, zone, overrides)
-        val taskItems = tasks
-            .mapNotNull { task ->
-                val time = TaskSchedule.reminderOn(task, date, zone) ?: return@mapNotNull null
-                TaskItem(task = task, startMinute = time.hour * 60 + time.minute, done = task.id in doneTaskIds)
-            }
-            .sortedWith(compareBy({ it.startMinute }, { it.task.id }))
+        // Cada rotina (já honrando SKIP/RESCHEDULE) e cada tarefa com horário, como pontos [start, end]
+        // na mesma trilha: a rotina ocupa a sua duração, a tarefa é um ponto (end = start).
+        val entries = ArrayList<Entry>(routines.size + tasks.size)
+        routines.forEach { routine ->
+            val ov = overrides[routine.id].orEmpty()
+            if (!RoutineSchedule.occursOn(routine, date, zone, ov)) return@forEach
+            val start = RoutineSchedule.startOn(routine, date, ov)
+            val startMinute = start.hour * 60 + start.minute
+            entries += Entry(
+                startMinute = startMinute,
+                endMinute = startMinute + routine.durationMinutes,
+                isRoutine = true,
+                orderId = routine.id,
+            ) { above, below -> Block(routine, routine.id in doneIds, startMinute, above, below) }
+        }
+        tasks.forEach { task ->
+            val time = TaskSchedule.reminderOn(task, date, zone) ?: return@forEach
+            val startMinute = time.hour * 60 + time.minute
+            entries += Entry(
+                startMinute = startMinute,
+                endMinute = startMinute,
+                isRoutine = false,
+                orderId = task.id,
+            ) { above, below -> TaskItem(task, startMinute, task.id in doneTaskIds, above, below) }
+        }
+        if (entries.isEmpty()) return emptyList()
+        // Ordem estável por horário; no mesmo minuto a rotina (com duração) vem antes da tarefa pontual.
+        entries.sortWith(compareBy({ it.startMinute }, { if (it.isRoutine) 0 else 1 }, { it.orderId }))
 
-        if (taskItems.isEmpty()) return routineItems
-        if (routineItems.isEmpty()) return taskItems
-        // Mescla estável por horário: mantém a ordem (e os intervalos) das rotinas e intercala as tarefas.
-        return (routineItems + taskItems).sortedBy { it.startMinute }
-    }
-
-    private fun buildRoutineItems(
-        routines: List<Routine>,
-        doneIds: Set<Long>,
-        date: LocalDate,
-        zone: ZoneId,
-        overrides: Map<Long, List<RoutineOverride>>,
-    ): List<Item> {
-        // Cada rotina que acontece no dia (já honrando SKIP/RESCHEDULE) com o seu início efetivo.
-        val day = routines
-            .mapNotNull { routine ->
-                val ov = overrides[routine.id].orEmpty()
-                if (!RoutineSchedule.occursOn(routine, date, zone, ov)) return@mapNotNull null
-                val start = RoutineSchedule.startOn(routine, date, ov)
-                routine to (start.hour * 60 + start.minute)
-            }
-            .sortedWith(compareBy({ it.second }, { it.first.id }))
-        if (day.isEmpty()) return emptyList()
-
-        fun endOf(index: Int): Int = day[index].second + day[index].first.durationMinutes
-
-        // Um bloco "encosta" no anterior se começa antes de tudo o que veio antes terminar.
-        val contiguous = BooleanArray(day.size)
-        val gapBefore = IntArray(day.size)
-        var latestEnd = endOf(0)
-        for (i in 1 until day.size) {
-            val start = day[i].second
+        // Um item "encosta" no anterior se começa antes de tudo o que veio antes terminar (gap <= 0).
+        val contiguous = BooleanArray(entries.size)
+        val gapBefore = IntArray(entries.size)
+        var latestEnd = entries[0].endMinute
+        for (i in 1 until entries.size) {
+            val start = entries[i].startMinute
             contiguous[i] = start <= latestEnd
             gapBefore[i] = (start - latestEnd).coerceAtLeast(0)
-            latestEnd = maxOf(latestEnd, endOf(i))
+            latestEnd = maxOf(latestEnd, entries[i].endMinute)
         }
 
-        val items = ArrayList<Item>(day.size * 2)
-        day.forEachIndexed { i, (routine, startMinute) ->
+        val items = ArrayList<Item>(entries.size * 2)
+        entries.forEachIndexed { i, entry ->
             if (i > 0 && gapBefore[i] >= MIN_GAP_MINUTES) {
-                items += Gap(startMinute = startMinute - gapBefore[i], minutes = gapBefore[i])
+                items += Gap(startMinute = entry.startMinute - gapBefore[i], minutes = gapBefore[i])
             }
-            items += Block(
-                routine = routine,
-                done = routine.id in doneIds,
-                startMinute = startMinute,
-                linkAbove = when {
-                    i == 0 -> Link.NONE
-                    contiguous[i] -> Link.SOLID
-                    else -> Link.DASHED
-                },
-                linkBelow = when {
-                    i == day.lastIndex -> Link.NONE
-                    contiguous[i + 1] -> Link.SOLID
-                    else -> Link.DASHED
-                },
-            )
+            val linkAbove = when {
+                i == 0 -> Link.NONE
+                contiguous[i] -> Link.SOLID
+                else -> Link.DASHED
+            }
+            val linkBelow = when {
+                i == entries.lastIndex -> Link.NONE
+                contiguous[i + 1] -> Link.SOLID
+                else -> Link.DASHED
+            }
+            items += entry.toItem(linkAbove, linkBelow)
         }
         return items
     }
+
+    /** Um item da trilha reduzido ao que o cálculo de intervalo/ligação precisa, com a fábrica do [Item] final. */
+    private class Entry(
+        val startMinute: Int,
+        val endMinute: Int,
+        val isRoutine: Boolean,
+        val orderId: Long,
+        val toItem: (linkAbove: Link, linkBelow: Link) -> Item,
+    )
 }
