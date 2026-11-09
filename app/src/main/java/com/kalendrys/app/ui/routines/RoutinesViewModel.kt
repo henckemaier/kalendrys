@@ -92,8 +92,14 @@ class RoutinesViewModel(
         }
 
     val uiState: StateFlow<UiState> =
-        combine(repository.routines, taskRepository.tasks, weekCompletions, selectedDate) {
-                routines, tasks, (weekStart, routineDone, taskCompletions), selected ->
+        combine(
+            repository.routines,
+            repository.scheduledRoutines,
+            taskRepository.tasks,
+            weekCompletions,
+            selectedDate,
+        ) { routines, scheduled, tasks, weekLogs, selected ->
+            val (weekStart, routineDone, taskCompletions) = weekLogs
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
             if (selected.isBefore(weekStart) || !selected.isBefore(weekStart.plusDays(DAYS_IN_WEEK))) {
                 return@combine null
@@ -109,15 +115,19 @@ class RoutinesViewModel(
                 isLoaded = true,
                 today = LocalDate.now(),
                 selectedDate = selected,
+                // Só as rotinas agendadas (não pausadas) entram na trilha e nos dots de agendamento; as
+                // pausadas continuam acessíveis no calendário (gestão) para o usuário retomar.
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
-                    weekDay(date, routines, routineDone[date.toEpochDay()].orEmpty(), zone)
+                    weekDay(date, scheduled, routineDone[date.toEpochDay()].orEmpty(), zone)
                 },
-                timeline = DayTimeline.build(routines, routineDoneToday, selected, zone, tasks, taskDoneToday),
+                timeline = DayTimeline.build(scheduled, routineDoneToday, selected, zone, tasks, taskDoneToday),
                 untimedTasks = tasks
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
                     .sortedBy { it.title.lowercase() }
                     .map { DayTask(it, it.id in taskDoneToday) },
+                // O estado vazio olha TODAS as rotinas (inclusive pausadas): ter uma rotina pausada
+                // não é "sem rotinas".
                 hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
             )
         }.filterNotNull().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
