@@ -84,6 +84,24 @@ class TaskRepository(
         return task.takeUnless { isFinished(task) }
     }
 
+    /**
+     * Tarefa para reexibir num adiamento ("Adiar"): a versão atual do banco, ou `null` se ela foi
+     * excluída, encerrada ou (recorrente) já concluída hoje. Só lê — não mexe em alarmes nem no
+     * banco; o alarme one-off do adiamento é agendado fora, pelo próprio receiver.
+     */
+    suspend fun taskForReminder(taskId: Long, now: Long = System.currentTimeMillis()): Task? {
+        val task = taskDao.byId(taskId) ?: return null
+        if (task.repeat == ReminderRepeat.NONE) return task.takeUnless { isFinished(task) }
+        val zone = ZoneId.systemDefault()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val doneToday = completionLogDao.isCompletedBetween(
+            taskId = taskId,
+            start = today.atStartOfDay(zone).toInstant().toEpochMilli(),
+            end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+        )
+        return task.takeUnless { doneToday }
+    }
+
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
     suspend fun updateTask(task: Task) {
         taskDao.update(task)

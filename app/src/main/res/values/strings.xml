@@ -258,6 +258,8 @@
     <!-- Lembretes -->
     <string name="reminder_channel_name">Lembretes</string>
     <string name="reminder_text">Está na hora desta tarefa.</string>
+    <string name="reminder_complete_action">Concluir</string>
+    <string name="reminder_snooze_action">Adiar %d min</string>
     <string name="missed_reminders_title">Lembretes perdidos</string>
     <plurals name="missed_reminders_text">
         <item quantity="one">%d lembrete não chegou enquanto o aparelho esteve indisponível.</item>
