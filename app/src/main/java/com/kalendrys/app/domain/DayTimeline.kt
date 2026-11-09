@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import java.time.LocalDate
 import java.time.ZoneId
@@ -9,6 +10,9 @@ import java.time.ZoneId
  * A linha do tempo de um dia: os blocos de rotina em ordem, os intervalos livres entre eles e as
  * tarefas pontuais (com horário) daquele dia. Lógica pura, para a tela de rotinas desenhar sem
  * calcular nada. As tarefas sem horário não entram aqui — a tela as mostra numa faixa à parte.
+ *
+ * Honra as exceções pontuais (T20): uma ocorrência com `SKIP` some do dia, e uma `RESCHEDULE` entra
+ * (ou sai) no horário/dia efetivo — por isso cada [Block] carrega o seu início já resolvido.
  */
 object DayTimeline {
 
@@ -34,13 +38,13 @@ object DayTimeline {
     data class Block(
         val routine: Routine,
         val done: Boolean,
+        /** Início efetivo no dia (honra uma remarcação), em minutos desde a meia-noite. */
+        override val startMinute: Int,
         val linkAbove: Link,
         val linkBelow: Link,
     ) : Item {
-        override val startMinute: Int get() = routine.startMinute
-
         /** Pode passar de 1440 (bloco que termina depois da meia-noite). */
-        val endMinute: Int get() = routine.endMinute
+        val endMinute: Int get() = startMinute + routine.durationMinutes
         override val key: String get() = "routine_${routine.id}"
     }
 
@@ -70,8 +74,9 @@ object DayTimeline {
         zone: ZoneId,
         tasks: List<Task> = emptyList(),
         doneTaskIds: Set<Long> = emptySet(),
+        overrides: Map<Long, List<RoutineOverride>> = emptyMap(),
     ): List<Item> {
-        val routineItems = buildRoutineItems(routines, doneIds, date, zone)
+        val routineItems = buildRoutineItems(routines, doneIds, date, zone, overrides)
         val taskItems = tasks
             .mapNotNull { task ->
                 val time = TaskSchedule.reminderOn(task, date, zone) ?: return@mapNotNull null
@@ -90,31 +95,41 @@ object DayTimeline {
         doneIds: Set<Long>,
         date: LocalDate,
         zone: ZoneId,
+        overrides: Map<Long, List<RoutineOverride>>,
     ): List<Item> {
+        // Cada rotina que acontece no dia (já honrando SKIP/RESCHEDULE) com o seu início efetivo.
         val day = routines
-            .filter { RoutineSchedule.occursOn(it, date, zone) }
-            .sortedWith(compareBy({ it.startMinute }, { it.id }))
+            .mapNotNull { routine ->
+                val ov = overrides[routine.id].orEmpty()
+                if (!RoutineSchedule.occursOn(routine, date, zone, ov)) return@mapNotNull null
+                val start = RoutineSchedule.startOn(routine, date, ov)
+                routine to (start.hour * 60 + start.minute)
+            }
+            .sortedWith(compareBy({ it.second }, { it.first.id }))
         if (day.isEmpty()) return emptyList()
+
+        fun endOf(index: Int): Int = day[index].second + day[index].first.durationMinutes
 
         // Um bloco "encosta" no anterior se começa antes de tudo o que veio antes terminar.
         val contiguous = BooleanArray(day.size)
         val gapBefore = IntArray(day.size)
-        var latestEnd = day.first().endMinute
+        var latestEnd = endOf(0)
         for (i in 1 until day.size) {
-            val start = day[i].startMinute
+            val start = day[i].second
             contiguous[i] = start <= latestEnd
             gapBefore[i] = (start - latestEnd).coerceAtLeast(0)
-            latestEnd = maxOf(latestEnd, day[i].endMinute)
+            latestEnd = maxOf(latestEnd, endOf(i))
         }
 
         val items = ArrayList<Item>(day.size * 2)
-        day.forEachIndexed { i, routine ->
+        day.forEachIndexed { i, (routine, startMinute) ->
             if (i > 0 && gapBefore[i] >= MIN_GAP_MINUTES) {
-                items += Gap(startMinute = routine.startMinute - gapBefore[i], minutes = gapBefore[i])
+                items += Gap(startMinute = startMinute - gapBefore[i], minutes = gapBefore[i])
             }
             items += Block(
                 routine = routine,
                 done = routine.id in doneIds,
+                startMinute = startMinute,
                 linkAbove = when {
                     i == 0 -> Link.NONE
                     contiguous[i] -> Link.SOLID

@@ -3,6 +3,7 @@ package com.kalendrys.app.domain
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import java.time.Instant
 import java.time.LocalDate
@@ -65,6 +66,8 @@ data class TodayOverview(
             routineCompletions: List<RoutineCompletion> = emptyList(),
             /** Última conclusão de cada tarefa, em qualquer dia (decide se as sem repetição estão encerradas). */
             lastCompletions: Map<Long, Long> = emptyMap(),
+            /** Exceções por rotina (T20): um `SKIP` some do retrato e um `RESCHEDULE` muda o dia/horário. */
+            overrides: Map<Long, List<RoutineOverride>> = emptyMap(),
         ): TodayOverview {
             val today = now.toLocalDate()
             val doneToday = completions
@@ -102,18 +105,21 @@ data class TodayOverview(
                 )
 
             val routineBlocks = routines
-                .filter { RoutineSchedule.occursOn(it, today, zone) }
-                .sortedWith(compareBy({ it.startMinute }, { it.id }))
-                .map { routine ->
+                .mapNotNull { routine ->
+                    val ov = overrides[routine.id].orEmpty()
+                    if (!RoutineSchedule.occursOn(routine, today, zone, ov)) return@mapNotNull null
+                    val start = RoutineSchedule.startOn(routine, today, ov)
+                    val startMinute = start.hour * 60 + start.minute
                     RoutineBlock(
                         routineId = routine.id,
                         title = routine.title,
-                        start = timeOfDay(routine.startMinute),
-                        end = routine.takeIf { it.durationMinutes > 0 }?.let { timeOfDay(it.endMinute) },
+                        start = start.toLocalTime(),
+                        end = routine.takeIf { it.durationMinutes > 0 }?.let { timeOfDay(startMinute + it.durationMinutes) },
                         color = RoutineColor.fromKey(routine.color),
                         done = routine.id in routinesDoneToday,
                     )
                 }
+                .sortedWith(compareBy({ it.start }, { it.routineId }))
 
             // Tarefa ou bloco de hoje já feito não é mais "a seguir": vale a próxima ocorrência.
             val endOfToday = today.plusDays(1).atStartOfDay().minusNanos(1)
@@ -137,9 +143,10 @@ data class TodayOverview(
                 .minByOrNull { it.at }
             val nextRoutine = routines
                 .mapNotNull { routine ->
-                    val next = RoutineSchedule.nextStart(routine, now, zone) ?: return@mapNotNull null
+                    val ov = overrides[routine.id].orEmpty()
+                    val next = RoutineSchedule.nextStart(routine, now, zone, ov) ?: return@mapNotNull null
                     val at = if (next.toLocalDate() == today && routine.id in routinesDoneToday) {
-                        RoutineSchedule.nextStart(routine, endOfToday, zone) ?: return@mapNotNull null
+                        RoutineSchedule.nextStart(routine, endOfToday, zone, ov) ?: return@mapNotNull null
                     } else {
                         next
                     }

@@ -512,13 +512,13 @@ private fun BlockRow(
                 .clearAndSetSemantics {},
         ) {
             Text(
-                text = minuteOfDayLabel(routine.startMinute),
+                text = minuteOfDayLabel(block.startMinute),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (hasDuration) {
                 Text(
-                    text = minuteOfDayLabel(routine.endMinute),
+                    text = minuteOfDayLabel(block.endMinute),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -565,7 +565,7 @@ private fun BlockRow(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = routineTimeRange(routine),
+                    text = routineTimeRange(block.startMinute, routine.durationMinutes),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

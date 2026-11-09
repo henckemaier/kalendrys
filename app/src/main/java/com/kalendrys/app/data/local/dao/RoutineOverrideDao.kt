@@ -7,12 +7,17 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RoutineOverrideDao {
 
     @Query("SELECT * FROM routine_override ORDER BY epochDay, id")
     suspend fun all(): List<RoutineOverride>
+
+    /** As exceções de forma reativa, para o display (hub/calendário) refletir skip/remarcação na hora. */
+    @Query("SELECT * FROM routine_override ORDER BY epochDay, id")
+    fun observeAll(): Flow<List<RoutineOverride>>
 
     /** Uma exceção por rotina/dia (índice único); regravar a mesma substitui a anterior. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
