@@ -30,9 +30,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -124,6 +126,10 @@ fun RoutineEditorScreen(
                 actions = {
                     if (state.draft != null) {
                         if (!state.isNew) {
+                            val copyTitle = stringResource(R.string.routine_copy_suffix, state.routine?.title.orEmpty())
+                            IconButton(onClick = { viewModel.duplicate(copyTitle) }) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.routine_duplicate))
+                            }
                             IconButton(onClick = { showDeleteDialog = true }) {
                                 Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.routine_delete))
                             }
@@ -214,6 +220,27 @@ private fun EditorContent(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
     ) {
         item(key = "preview") { Preview(draft) }
+        if (viewModel.isNew) {
+            item(key = "templates") {
+                SectionTitle(stringResource(R.string.routine_templates))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RoutineTemplate.entries.forEach { template ->
+                        val label = stringResource(template.titleRes)
+                        AssistChip(
+                            onClick = { viewModel.applyDraft(template.toDraft(label)) },
+                            label = { Text(label) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = template.icon.imageVector,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
         item(key = "title") {
             OutlinedTextField(
                 value = draft.title,
