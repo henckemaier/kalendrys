@@ -29,10 +29,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -40,6 +49,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -84,7 +94,10 @@ import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
 import java.time.DayOfWeek
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
@@ -126,6 +139,19 @@ fun RoutineEditorScreen(
                 actions = {
                     if (state.draft != null) {
                         if (!state.isNew) {
+                            val copyTitle = stringResource(R.string.routine_copy_suffix, state.routine?.title.orEmpty())
+                            IconButton(onClick = { viewModel.duplicate(copyTitle) }) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.routine_duplicate))
+                            }
+                            val paused = state.routine?.pausedAt != null
+                            IconButton(onClick = viewModel::togglePause) {
+                                Icon(
+                                    if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                                    contentDescription = stringResource(
+                                        if (paused) R.string.routine_resume else R.string.routine_pause,
+                                    ),
+                                )
+                            }
                             IconButton(onClick = { showDeleteDialog = true }) {
                                 Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.routine_delete))
                             }
@@ -212,12 +238,35 @@ private fun EditorContent(
 ) {
     var showStartPicker by rememberSaveable { mutableStateOf(false) }
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
+    var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
+    var showEndDatePicker by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
     ) {
         item(key = "preview") { Preview(draft) }
+        if (viewModel.isNew) {
+            item(key = "templates") {
+                SectionTitle(stringResource(R.string.routine_templates))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RoutineTemplate.entries.forEach { template ->
+                        val label = stringResource(template.titleRes)
+                        AssistChip(
+                            onClick = { viewModel.applyDraft(template.toDraft(label)) },
+                            label = { Text(label) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = template.icon.imageVector,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
         item(key = "title") {
             OutlinedTextField(
                 value = draft.title,
@@ -323,6 +372,36 @@ private fun EditorContent(
                 )
             }
         }
+        item(key = "recurrence") {
+            SectionTitle(stringResource(R.string.routine_repeat))
+            WeekIntervalStepper(
+                weeks = draft.weekInterval,
+                onChange = viewModel::updateWeekInterval,
+            )
+            SectionTitle(stringResource(R.string.routine_validity))
+            DateRow(
+                label = stringResource(R.string.routine_start_date),
+                value = draft.startEpochDay?.let(::formatEpochDay) ?: stringResource(R.string.routine_date_any),
+                index = 0,
+                onClick = { showStartDatePicker = true },
+                onClear = draft.startEpochDay?.let { { viewModel.updateStartDate(null) } },
+            )
+            DateRow(
+                label = stringResource(R.string.routine_end_date),
+                value = draft.endEpochDay?.let(::formatEpochDay) ?: stringResource(R.string.routine_date_none),
+                index = 1,
+                onClick = { showEndDatePicker = true },
+                onClear = draft.endEpochDay?.let { { viewModel.updateEndDate(null) } },
+            )
+            if (!draft.datesValid) {
+                Text(
+                    text = stringResource(R.string.routine_dates_invalid),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                )
+            }
+        }
         item(key = "remind") {
             RemindRow(
                 checked = draft.remind,
@@ -368,6 +447,26 @@ private fun EditorContent(
                 showEndPicker = false
             },
             onDismiss = { showEndPicker = false },
+        )
+    }
+    if (showStartDatePicker) {
+        RoutineDatePicker(
+            initialEpochDay = draft.startEpochDay,
+            onConfirm = {
+                viewModel.updateStartDate(it)
+                showStartDatePicker = false
+            },
+            onDismiss = { showStartDatePicker = false },
+        )
+    }
+    if (showEndDatePicker) {
+        RoutineDatePicker(
+            initialEpochDay = draft.endEpochDay ?: draft.startEpochDay,
+            onConfirm = {
+                viewModel.updateEndDate(it)
+                showEndDatePicker = false
+            },
+            onDismiss = { showEndDatePicker = false },
         )
     }
 }
@@ -502,6 +601,102 @@ private fun TimeRow(label: String, value: String, index: Int, onClick: () -> Uni
         }
     }
 }
+
+@Composable
+private fun WeekIntervalStepper(weeks: Int, onChange: (Int) -> Unit) {
+    val label = if (weeks <= 1) {
+        stringResource(R.string.routine_week_interval_weekly)
+    } else {
+        stringResource(R.string.routine_week_interval_every, weeks)
+    }
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { contentDescription = label },
+            )
+            IconButton(
+                onClick = { onChange(weeks - 1) },
+                enabled = weeks > 1,
+            ) {
+                Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.routine_week_decrease))
+            }
+            IconButton(
+                onClick = { onChange(weeks + 1) },
+                enabled = weeks < RoutineDraft.MAX_WEEK_INTERVAL,
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.routine_week_increase))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateRow(label: String, value: String, index: Int, onClick: () -> Unit, onClear: (() -> Unit)?) {
+    Surface(
+        onClick = onClick,
+        shape = groupedItemShape(index, 2),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(text = value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+            if (onClear != null) {
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.routine_date_clear))
+                }
+            } else {
+                Spacer(Modifier.width(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoutineDatePicker(initialEpochDay: Long?, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = (initialEpochDay ?: LocalDate.now().toEpochDay()) * MILLIS_PER_DAY,
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = { state.selectedDateMillis?.let { onConfirm(it / MILLIS_PER_DAY) } },
+                enabled = state.selectedDateMillis != null,
+            ) { Text(stringResource(R.string.ok)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    ) {
+        DatePicker(state = state)
+    }
+}
+
+private const val MILLIS_PER_DAY = 86_400_000L
+private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+
+private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFormatter)
 
 @Composable
 private fun DayPicker(mask: Int, onToggle: (DayOfWeek) -> Unit) {

@@ -1,10 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.kalendrys.app.ui.routines
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -119,6 +121,7 @@ fun RoutinesScreen(
     onNewRoutine: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     requestedDate: LocalDate? = null,
     onRequestedDateHandled: () -> Unit = {},
     viewModel: RoutinesViewModel = viewModel(factory = RoutinesViewModel.Factory),
@@ -220,6 +223,7 @@ fun RoutinesScreen(
                 listState = listState,
                 onOpenRoutine = onOpenRoutine,
                 onOpenTask = onOpenTask,
+                onOpenException = onOpenException,
                 onToggle = viewModel::toggle,
                 onToggleTask = viewModel::toggleTask,
                 modifier = Modifier.padding(innerPadding),
@@ -378,6 +382,7 @@ private fun Timeline(
     listState: LazyListState,
     onOpenRoutine: (Long) -> Unit,
     onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     onToggle: (DayTimeline.Block) -> Unit,
     onToggleTask: (Task, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -448,6 +453,12 @@ private fun Timeline(
                     canComplete = state.canComplete,
                     // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar.
                     onOpen = if (item.routine.archivedAt == null) ({ onOpenRoutine(item.routine.id) }) else null,
+                    // Pressionar e segurar numa ocorrência abre a exceção (pular/remarcar só aquele dia).
+                    onLongPress = if (item.routine.archivedAt == null) {
+                        ({ onOpenException(item.routine.id, state.selectedDate.toEpochDay()) })
+                    } else {
+                        null
+                    },
                     onToggle = { onToggle(item) },
                 )
                 is DayTimeline.Gap -> GapRow(item)
@@ -471,6 +482,7 @@ private fun BlockRow(
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
+    onLongPress: (() -> Unit)?,
     onToggle: () -> Unit,
 ) {
     val routine = block.routine
@@ -483,7 +495,13 @@ private fun BlockRow(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(16.dp))
-            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier),
+            .then(
+                if (onOpen != null) {
+                    Modifier.combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Column(
             verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,

@@ -62,4 +62,32 @@ class RoutineDraftTest {
         assertEquals(5L, created.createdAt)
         assertEquals(RoutineDraft.DEFAULT_DURATION_MINUTES, created.durationMinutes)
     }
+
+    @Test
+    fun `recorrencia rica vai e volta entre rascunho e rotina`() {
+        val rich = routine.copy(weekInterval = 2, startEpochDay = 20_000, endEpochDay = 20_100)
+        val draft = RoutineDraft.from(rich)
+        assertEquals(2, draft.weekInterval)
+        assertEquals(20_000L, draft.startEpochDay)
+        assertEquals(20_100L, draft.endEpochDay)
+        assertEquals(rich, draft.applyTo(rich))
+    }
+
+    @Test
+    fun `intervalo de semanas fica preso entre 1 e o maximo ao aplicar`() {
+        val base = RoutineDraft.from(routine)
+        assertEquals(1, base.copy(weekInterval = 0).applyTo(routine).weekInterval)
+        assertEquals(RoutineDraft.MAX_WEEK_INTERVAL, base.copy(weekInterval = 999).applyTo(routine).weekInterval)
+    }
+
+    @Test
+    fun `data final antes da inicial invalida o rascunho`() {
+        val draft = RoutineDraft.from(routine)
+        assertTrue(draft.copy(startEpochDay = 20_000, endEpochDay = 20_000).datesValid)
+        assertTrue(draft.copy(startEpochDay = 20_000, endEpochDay = 20_010).datesValid)
+        assertFalse(draft.copy(startEpochDay = 20_010, endEpochDay = 20_000).isValid)
+        // Só uma das pontas definida nunca é inválida.
+        assertTrue(draft.copy(startEpochDay = 20_010, endEpochDay = null).datesValid)
+        assertTrue(draft.copy(startEpochDay = null, endEpochDay = 20_000).datesValid)
+    }
 }

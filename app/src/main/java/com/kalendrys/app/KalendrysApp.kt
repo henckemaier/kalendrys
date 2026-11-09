@@ -48,13 +48,14 @@ class KalendrysApp : Application() {
         RoutineRepository(
             database.routineDao(),
             database.routineCompletionDao(),
+            database.routineOverrideDao(),
             RoutineAlarms(this),
             routineNotifications,
         )
     }
 
     val routineCategoryRepository: RoutineCategoryRepository by lazy {
-        RoutineCategoryRepository(database.routineCategoryDao(), database.routineDao())
+        RoutineCategoryRepository(database)
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */

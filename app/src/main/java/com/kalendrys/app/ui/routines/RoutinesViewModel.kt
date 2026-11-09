@@ -101,12 +101,13 @@ class RoutinesViewModel(
 
     val uiState: StateFlow<UiState> =
         combine(
-            repository.routines,
+            combine(repository.routines, repository.scheduledRoutines) { all, scheduled -> all to scheduled },
             taskRepository.tasks,
             weekCompletions,
             categoryRepository.categories,
             combine(selectedDate, selectedCategoryId) { date, category -> date to category },
-        ) { routines, tasks, weekLogs, categories, selection ->
+        ) { sources, tasks, weekLogs, categories, selection ->
+            val (routines, scheduled) = sources
             val (weekStart, routineDone, taskCompletions) = weekLogs
             val (selected, rawCategory) = selection
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
@@ -122,14 +123,16 @@ class RoutinesViewModel(
                 .mapValues { (_, ids) -> ids.toSet() }
             val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
             val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
-            // Com um filtro por categoria, só as rotinas daquela categoria aparecem; as tarefas (que
-            // não têm categoria) ficam de fora até o filtro voltar para "todas".
-            val visibleRoutines = if (category == null) routines else routines.filter { it.categoryId == category }
+            // Base da trilha = só as rotinas AGENDADAS (não pausadas); o filtro de categoria, quando
+            // ativo, restringe mais ainda. As tarefas (sem categoria) saem com filtro ativo.
+            val visibleRoutines =
+                if (category == null) scheduled else scheduled.filter { it.categoryId == category }
             val visibleTasks = if (category == null) tasks else emptyList()
             UiState(
                 isLoaded = true,
                 today = LocalDate.now(),
                 selectedDate = selected,
+                // Pausada não entra na trilha nem nos dots; continua no calendário (gestão) para retomar.
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
                     weekDay(date, visibleRoutines, routineDone[date.toEpochDay()].orEmpty(), zone)
@@ -139,6 +142,7 @@ class RoutinesViewModel(
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
                     .sortedBy { it.title.lowercase() }
                     .map { DayTask(it, it.id in taskDoneToday) },
+                // O estado vazio olha TODAS as rotinas (inclusive pausadas): ter uma pausada não é "sem rotinas".
                 hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
                 categories = categories,
                 selectedCategoryId = category,
