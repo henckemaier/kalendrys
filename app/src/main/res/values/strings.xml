@@ -323,6 +323,8 @@
     <string name="routine_channel_name">Rotinas</string>
     <string name="routine_channel_description">Aviso no início de cada bloco de rotina.</string>
     <string name="routine_complete_action">Concluir</string>
+    <string name="routine_skip_action">Pular</string>
+    <string name="routine_snooze_action">Adiar %d min</string>
 
     <!-- Resumo diário -->
     <string name="summary_channel_name">Resumo diário</string>

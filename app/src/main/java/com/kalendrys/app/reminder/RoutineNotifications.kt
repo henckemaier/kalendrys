@@ -13,6 +13,7 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.RoutineSnooze
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -33,24 +34,27 @@ open class RoutineNotifications(private val context: Context) {
             AppLinks.openRoutines(context, date),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Uri próprio por rotina e dia: extras não diferenciam PendingIntents.
-        val completeIntent = PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            Intent(context, RoutineAlarmReceiver::class.java)
-                .setAction(RoutineAlarmReceiver.ACTION_COMPLETE)
-                .setData(AppLinks.routineOccurrence(routine.id, date.toEpochDay()))
-                .putExtra(RoutineAlarmReceiver.EXTRA_ROUTINE_ID, routine.id)
-                .putExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, date.toEpochDay()),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
         val notification = NotificationCompat.Builder(context, KalendrysApp.ROUTINE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(routine.title)
             .setContentText(timeLabel(routine))
             .setContentIntent(tapIntent)
-            .addAction(0, context.getString(R.string.routine_complete_action), completeIntent)
+            .addAction(
+                0,
+                context.getString(R.string.routine_complete_action),
+                action(context, RoutineAlarmReceiver.ACTION_COMPLETE, routine.id, date, AppLinks.routineOccurrence(routine.id, date.toEpochDay())),
+            )
+            .addAction(
+                0,
+                context.getString(R.string.routine_skip_action),
+                action(context, RoutineAlarmReceiver.ACTION_SKIP, routine.id, date, AppLinks.routineSkip(routine.id, date.toEpochDay())),
+            )
+            .addAction(
+                0,
+                context.getString(R.string.routine_snooze_action, RoutineSnooze.DEFAULT_MINUTES),
+                action(context, RoutineAlarmReceiver.ACTION_SNOOZE, routine.id, date, AppLinks.routineSnooze(routine.id, date.toEpochDay())),
+            )
             .setAutoCancel(true)
             // Some sozinha quando o bloco termina; sem duração, depois de uma hora.
             .setTimeoutAfter(maxOf(routine.durationMinutes, NO_DURATION_TIMEOUT_MINUTES) * 60_000L)
@@ -61,6 +65,25 @@ open class RoutineNotifications(private val context: Context) {
     open fun cancel(routineId: Long) {
         NotificationManagerCompat.from(context).cancel(TAG, routineId.toInt())
     }
+
+    // Uri próprio por rotina, dia e ação: extras não diferenciam PendingIntents, o Uri sim.
+    private fun action(
+        context: Context,
+        action: String,
+        routineId: Long,
+        date: LocalDate,
+        data: android.net.Uri,
+    ): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            routineId.toInt(),
+            Intent(context, RoutineAlarmReceiver::class.java)
+                .setAction(action)
+                .setData(data)
+                .putExtra(RoutineAlarmReceiver.EXTRA_ROUTINE_ID, routineId)
+                .putExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, date.toEpochDay()),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     private fun timeLabel(routine: Routine): String {
         val start = timeOf(routine.startMinute)

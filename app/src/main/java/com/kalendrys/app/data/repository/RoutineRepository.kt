@@ -65,6 +65,19 @@ class RoutineRepository(
         completionDao.delete(routineId, date.toEpochDay())
     }
 
+    /**
+     * Bloco a reexibir num adiamento ("Adiar") do aviso: a rotina se ela ainda existe, está ativa,
+     * ocorre em [date] e não foi concluída nesse dia — senão `null`. Só leitura; confere
+     * existência/conclusão como paridade do T13 (não decide exceções — isso é do [RoutineSchedule]).
+     */
+    suspend fun routineForNotification(routineId: Long, date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Routine? {
+        val routine = routineDao.byId(routineId) ?: return null
+        if (routine.archivedAt != null) return null
+        if (!RoutineSchedule.occursOn(routine, date, zone)) return null
+        if (routine.id in completionDao.doneOn(date.toEpochDay())) return null
+        return routine
+    }
+
     // --- Exceções pontuais (T20): pular/remarcar UMA ocorrência sem desligar a rotina. ---
 
     /** A exceção daquele dia, se houver (para a tela de exceção mostrar o estado atual). */
