@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -20,19 +21,24 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +79,7 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
     var nextAlarmMillis by remember { mutableStateOf<Long?>(null) }
     var exactAllowed by remember { mutableStateOf(true) }
     var batteryUnrestricted by remember { mutableStateOf(true) }
+    var showBatterySheet by rememberSaveable { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         nextAlarmMillis = nextAlarmClockTriggerMillis(context)
         exactAllowed = canScheduleExactAlarms(context)
@@ -136,7 +143,8 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
                     onFix = if (batteryUnrestricted) {
                         null
                     } else {
-                        { context.startActivity(ignoreBatteryOptimizationsSettingsIntent()) }
+                        // T15: em vez de abrir a lista do sistema direto, mostra o passo guiado.
+                        { showBatterySheet = true }
                     },
                 )
             }
@@ -149,6 +157,16 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
                 )
             }
         }
+    }
+
+    if (showBatterySheet) {
+        BatteryExemptionSheet(
+            onOpenSettings = {
+                context.startActivity(ignoreBatteryOptimizationsSettingsIntent())
+                showBatterySheet = false
+            },
+            onDismiss = { showBatterySheet = false },
+        )
     }
 }
 
@@ -252,6 +270,67 @@ private fun StatusIcon(level: DiagStatus) {
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Passo guiado da isenção de bateria (T15). Explica POR QUE isentar melhora a confiabilidade dos
+ * lembretes e orienta a achar o Kalendrys na lista do sistema e desativar a otimização. O botão
+ * dispara só o deep-link [ignoreBatteryOptimizationsSettingsIntent] (a lista geral do sistema) —
+ * sem a permissão REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. O status em si é a linha do diagnóstico;
+ * esta folha é só a orientação.
+ */
+@Composable
+private fun BatteryExemptionSheet(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.battery_flow_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.battery_flow_why),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(20.dp))
+            StepRow(1, stringResource(R.string.battery_flow_step1))
+            StepRow(2, stringResource(R.string.battery_flow_step2))
+            StepRow(3, stringResource(R.string.battery_flow_step3))
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                Icon(imageVector = Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.battery_flow_open))
+            }
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(stringResource(R.string.battery_flow_dismiss))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepRow(number: Int, text: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.padding(vertical = 4.dp),
+    ) {
+        Text(
+            text = "$number.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
