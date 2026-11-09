@@ -10,6 +10,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineCategory
+import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
@@ -35,6 +37,7 @@ import kotlinx.coroutines.launch
 class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: RoutineRepository,
+    private val categoryRepository: RoutineCategoryRepository,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -47,6 +50,8 @@ class RoutineEditorViewModel(
         val draft: RoutineDraft? = null,
         /** Como o rascunho começou; para uma rotina nova, mudar algo já pede confirmação ao sair. */
         val initialDraft: RoutineDraft? = null,
+        /** Categorias disponíveis para atribuir à rotina. */
+        val categories: List<RoutineCategory> = emptyList(),
     ) {
         val hasChanges: Boolean
             get() = when {
@@ -69,7 +74,7 @@ class RoutineEditorViewModel(
     private val routine: Flow<Routine?> = if (isNew) flowOf(null) else repository.observeRoutine(routineId)
 
     val uiState: StateFlow<UiState> =
-        combine(routine, draft, initialDraft) { routine, draft, initial ->
+        combine(routine, draft, initialDraft, categoryRepository.categories) { routine, draft, initial, categories ->
             UiState(
                 isNew = isNew,
                 // Depois de excluir, a rotina continua no banco (arquivada) mas o editor já fechou.
@@ -77,6 +82,7 @@ class RoutineEditorViewModel(
                 routine = routine,
                 draft = draft,
                 initialDraft = initial,
+                categories = categories,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -115,6 +121,15 @@ class RoutineEditorViewModel(
 
     fun updateRemind(remind: Boolean) = draft.update { it?.copy(remind = remind) }
 
+    fun updateCategory(categoryId: Long?) = draft.update { it?.copy(categoryId = categoryId) }
+
+    fun updateWeekInterval(weeks: Int) =
+        draft.update { it?.copy(weekInterval = weeks.coerceIn(1, RoutineDraft.MAX_WEEK_INTERVAL)) }
+
+    fun updateStartDate(epochDay: Long?) = draft.update { it?.copy(startEpochDay = epochDay) }
+
+    fun updateEndDate(epochDay: Long?) = draft.update { it?.copy(endEpochDay = epochDay) }
+
     fun save() {
         val state = uiState.value
         val current = state.draft ?: return
@@ -134,11 +149,48 @@ class RoutineEditorViewModel(
         }
     }
 
+    /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
+    fun applyDraft(newDraft: RoutineDraft) {
+        draft.value = newDraft
+    }
+
+    /**
+     * Duplica a rotina salva como uma nova ([copyTitle], novo id e data de criação), preservando os
+     * demais campos (inclusive os que o editor não mostra). Só vale para uma rotina existente.
+     */
+    fun duplicate(copyTitle: String) {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados.
+            repository.add(
+                existing.copy(
+                    id = NEW_ROUTINE_ID,
+                    title = copyTitle,
+                    createdAt = System.currentTimeMillis(),
+                    archivedAt = null,
+                    pausedAt = null,
+                ),
+            )
+            eventChannel.send(Event.Closed)
+        }
+    }
+
+    /**
+     * Pausa a rotina (para de agendar/avisar, mas mantém config + histórico) ou a retoma, conforme
+     * o estado atual. Não fecha o editor: o botão reflete o novo estado quando a rotina reemite.
+     */
+    fun togglePause() {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            if (existing.pausedAt == null) repository.pause(existing) else repository.resume(existing)
+        }
+    }
+
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutineEditorViewModel(createSavedStateHandle(), app.routineRepository)
+                RoutineEditorViewModel(createSavedStateHandle(), app.routineRepository, app.routineCategoryRepository)
             }
         }
     }

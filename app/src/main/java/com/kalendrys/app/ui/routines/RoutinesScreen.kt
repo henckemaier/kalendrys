@@ -1,10 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.kalendrys.app.ui.routines
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -31,10 +34,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.EventRepeat
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -51,15 +57,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -75,6 +87,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.RoutineCategory
+import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DurationFormat
@@ -86,6 +100,7 @@ import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
 import com.kalendrys.app.ui.routines.RoutinesViewModel.UiState
 import com.kalendrys.app.ui.routines.RoutinesViewModel.WeekDay
 import java.time.LocalDate
@@ -105,6 +120,8 @@ fun RoutinesScreen(
     onOpenRoutine: (Long) -> Unit,
     onNewRoutine: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     requestedDate: LocalDate? = null,
     onRequestedDateHandled: () -> Unit = {},
     viewModel: RoutinesViewModel = viewModel(factory = RoutinesViewModel.Factory),
@@ -122,6 +139,7 @@ fun RoutinesScreen(
         }
     }
     val completedMessage = stringResource(R.string.routine_completed)
+    val taskCompletedMessage = stringResource(R.string.task_completed)
     val undoLabel = stringResource(R.string.undo)
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.completed.collectLatest { completed ->
@@ -131,6 +149,16 @@ fun RoutinesScreen(
                 duration = SnackbarDuration.Short,
             )
             if (result == SnackbarResult.ActionPerformed) viewModel.undo(completed)
+        }
+    }
+    LaunchedEffect(viewModel, snackbarHostState) {
+        viewModel.taskCompleted.collectLatest { logId ->
+            val result = snackbarHostState.showSnackbar(
+                message = taskCompletedMessage,
+                actionLabel = undoLabel,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoTaskCompletion(logId)
         }
     }
 
@@ -154,12 +182,19 @@ fun RoutinesScreen(
                     ),
                     scrollBehavior = scrollBehavior,
                 )
-                if (state.isLoaded && state.hasRoutines) {
+                if (state.isLoaded && state.hasContent) {
                     WeekStrip(
                         state = state,
                         onSelect = viewModel::select,
                         onPreviousWeek = viewModel::previousWeek,
                         onNextWeek = viewModel::nextWeek,
+                    )
+                }
+                if (state.isLoaded && state.categories.isNotEmpty()) {
+                    CategoryFilterRow(
+                        categories = state.categories,
+                        selectedId = state.selectedCategoryId,
+                        onSelect = viewModel::selectCategory,
                     )
                 }
             }
@@ -177,7 +212,7 @@ fun RoutinesScreen(
     ) { innerPadding ->
         when {
             !state.isLoaded -> Unit
-            !state.hasRoutines -> EmptyState(
+            !state.hasContent -> EmptyState(
                 icon = Icons.Outlined.EventRepeat,
                 title = stringResource(R.string.routines_empty_title),
                 message = stringResource(R.string.routines_empty_message),
@@ -187,8 +222,44 @@ fun RoutinesScreen(
                 state = state,
                 listState = listState,
                 onOpenRoutine = onOpenRoutine,
+                onOpenTask = onOpenTask,
+                onOpenException = onOpenException,
                 onToggle = viewModel::toggle,
+                onToggleTask = viewModel::toggleTask,
                 modifier = Modifier.padding(innerPadding),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryFilterRow(
+    categories: List<RoutineCategory>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+    ) {
+        item(key = "category_all") {
+            FilterChip(
+                selected = selectedId == null,
+                onClick = { onSelect(null) },
+                label = { Text(stringResource(R.string.routine_category_filter_all)) },
+            )
+        }
+        items(categories, key = { it.id }) { category ->
+            FilterChip(
+                selected = selectedId == category.id,
+                onClick = { onSelect(category.id) },
+                label = { Text(category.name) },
+                leadingIcon = {
+                    Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
+                },
             )
         }
     }
@@ -310,19 +381,51 @@ private fun Timeline(
     state: UiState,
     listState: LazyListState,
     onOpenRoutine: (Long) -> Unit,
+    onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     onToggle: (DayTimeline.Block) -> Unit,
+    onToggleTask: (Task, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val now = rememberCurrentMinute()
     // Muda a cada minuto; cada linha recebe só um Boolean e só recompõe quando o bloco entra ou sai de andamento.
     val nowMinute = remember(now) { LocalTime.now().let { it.hour * 60 + it.minute } }
+    var tasksExpanded by rememberSaveable { mutableStateOf(true) }
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
         // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 104.dp),
     ) {
-        if (state.timeline.isEmpty()) {
+        if (state.untimedTasks.isNotEmpty()) {
+            item(key = "today_tasks_header", contentType = "tasks_header") {
+                DayTasksHeader(
+                    title = if (state.isShowingToday) {
+                        stringResource(R.string.routines_day_tasks_today)
+                    } else {
+                        stringResource(R.string.routines_day_tasks)
+                    },
+                    count = state.untimedTasks.size,
+                    expanded = tasksExpanded,
+                    onToggle = { tasksExpanded = !tasksExpanded },
+                )
+            }
+            if (tasksExpanded) {
+                items(
+                    items = state.untimedTasks,
+                    key = { "band_${it.task.id}" },
+                    contentType = { "band_task" },
+                ) { dayTask ->
+                    DayTaskRow(
+                        dayTask = dayTask,
+                        canComplete = state.canComplete,
+                        onOpen = { onOpenTask(dayTask.task.id) },
+                        onToggle = { onToggleTask(dayTask.task, dayTask.done) },
+                    )
+                }
+            }
+        }
+        if (state.timeline.isEmpty() && state.untimedTasks.isEmpty()) {
             item(key = "empty_day", contentType = "empty_day") {
                 Text(
                     text = stringResource(R.string.routines_empty_day),
@@ -335,7 +438,13 @@ private fun Timeline(
         items(
             items = state.timeline,
             key = { it.key },
-            contentType = { if (it is DayTimeline.Block) "block" else "gap" },
+            contentType = {
+                when (it) {
+                    is DayTimeline.Block -> "block"
+                    is DayTimeline.Gap -> "gap"
+                    is DayTimeline.TaskItem -> "task"
+                }
+            },
         ) { item ->
             when (item) {
                 is DayTimeline.Block -> BlockRow(
@@ -344,9 +453,21 @@ private fun Timeline(
                     canComplete = state.canComplete,
                     // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar.
                     onOpen = if (item.routine.archivedAt == null) ({ onOpenRoutine(item.routine.id) }) else null,
+                    // Pressionar e segurar numa ocorrência abre a exceção (pular/remarcar só aquele dia).
+                    onLongPress = if (item.routine.archivedAt == null) {
+                        ({ onOpenException(item.routine.id, state.selectedDate.toEpochDay()) })
+                    } else {
+                        null
+                    },
                     onToggle = { onToggle(item) },
                 )
                 is DayTimeline.Gap -> GapRow(item)
+                is DayTimeline.TaskItem -> TaskRow(
+                    item = item,
+                    canComplete = state.canComplete,
+                    onOpen = { onOpenTask(item.task.id) },
+                    onToggle = { onToggleTask(item.task, item.done) },
+                )
             }
         }
     }
@@ -361,6 +482,7 @@ private fun BlockRow(
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
+    onLongPress: (() -> Unit)?,
     onToggle: () -> Unit,
 ) {
     val routine = block.routine
@@ -373,7 +495,13 @@ private fun BlockRow(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(16.dp))
-            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier),
+            .then(
+                if (onOpen != null) {
+                    Modifier.combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Column(
             verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,
@@ -384,13 +512,13 @@ private fun BlockRow(
                 .clearAndSetSemantics {},
         ) {
             Text(
-                text = minuteOfDayLabel(routine.startMinute),
+                text = minuteOfDayLabel(block.startMinute),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (hasDuration) {
                 Text(
-                    text = minuteOfDayLabel(routine.endMinute),
+                    text = minuteOfDayLabel(block.endMinute),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -437,7 +565,7 @@ private fun BlockRow(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = routineTimeRange(routine),
+                    text = routineTimeRange(block.startMinute, routine.durationMinutes),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -509,6 +637,183 @@ private fun GapRow(gap: DayTimeline.Gap) {
             modifier = Modifier.padding(start = 8.dp),
         )
     }
+}
+
+/**
+ * Uma tarefa pontual na trilha. Destaque OPOSTO ao do bloco de rotina (pílula sólida + círculo):
+ * cartão de borda tracejada + marcador losango, para ler como um evento único que não se repete.
+ */
+@Composable
+private fun TaskRow(
+    item: DayTimeline.TaskItem,
+    canComplete: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.secondary
+    val task = item.task
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpen),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(TimeColumnWidth)
+                .padding(vertical = RowPadding + 2.dp)
+                .clearAndSetSemantics {},
+        ) {
+            Text(
+                text = minuteOfDayLabel(item.startMinute),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(TrackWidth)
+                .fillMaxHeight(),
+        ) {
+            Diamond(filled = item.done, color = accent)
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = RowPadding)
+                .dashedBorder(accent.copy(alpha = 0.7f))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (item.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                textDecoration = if (item.done) TextDecoration.LineThrough else null,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TaskCheck(done = item.done, title = task.title, accent = accent, canComplete = canComplete, onToggle = onToggle)
+    }
+}
+
+@Composable
+private fun DayTasksHeader(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onToggle)
+            .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+    ) {
+        Text(
+            text = "$title · $count",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+            contentDescription = stringResource(
+                if (expanded) R.string.routines_day_tasks_collapse else R.string.routines_day_tasks_expand,
+            ),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun DayTaskRow(
+    dayTask: DayTask,
+    canComplete: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.secondary
+    val task = dayTask.task
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onOpen)
+            .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+    ) {
+        Diamond(filled = dayTask.done, color = accent)
+        Text(
+            text = task.title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (dayTask.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            textDecoration = if (dayTask.done) TextDecoration.LineThrough else null,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        )
+        TaskCheck(done = dayTask.done, title = task.title, accent = accent, canComplete = canComplete, onToggle = onToggle)
+    }
+}
+
+@Composable
+private fun TaskCheck(
+    done: Boolean,
+    title: String,
+    accent: Color,
+    canComplete: Boolean,
+    onToggle: () -> Unit,
+) {
+    IconButton(
+        onClick = onToggle,
+        enabled = canComplete,
+    ) {
+        Icon(
+            imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+            contentDescription = stringResource(
+                if (done) R.string.task_uncomplete else R.string.task_complete,
+                title,
+            ),
+            tint = if (canComplete) accent else accent.copy(alpha = 0.38f),
+        )
+    }
+}
+
+/** Marcador em losango (quadrado girado 45°): cheio quando concluído, só contorno quando pendente. */
+@Composable
+private fun Diamond(filled: Boolean, color: Color) {
+    Box(
+        modifier = Modifier
+            .size(16.dp)
+            .rotate(45f)
+            .then(
+                if (filled) {
+                    Modifier.background(color, RoundedCornerShape(3.dp))
+                } else {
+                    Modifier.border(2.dp, color, RoundedCornerShape(3.dp))
+                },
+            ),
+    )
+}
+
+/** Borda tracejada arredondada, o oposto visual da pílula sólida da rotina. */
+private fun Modifier.dashedBorder(color: Color): Modifier = drawBehind {
+    val radius = 12.dp.toPx()
+    val dash = 4.dp.toPx()
+    drawRoundRect(
+        color = color,
+        cornerRadius = CornerRadius(radius, radius),
+        style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))),
+    )
 }
 
 /** Linhas acima e abaixo da pílula, que fica centralizada no trilho. */

@@ -17,8 +17,16 @@ interface RoutineDao {
     @Query("SELECT * FROM routines")
     suspend fun all(): List<Routine>
 
-    @Query("SELECT * FROM routines WHERE archivedAt IS NULL")
+    /** Para agendar/alarmar: exclui arquivadas e pausadas — uma rotina pausada não dispara avisos. */
+    @Query("SELECT * FROM routines WHERE archivedAt IS NULL AND pausedAt IS NULL")
     suspend fun active(): List<Routine>
+
+    /**
+     * Para o retrato do dia (resumo/widgets): exclui as pausadas. Mantém as arquivadas — o
+     * [com.kalendrys.app.domain.RoutineSchedule.occursOn] é quem corta cada uma no dia certo.
+     */
+    @Query("SELECT * FROM routines WHERE pausedAt IS NULL ORDER BY startMinute, id")
+    fun observeScheduled(): Flow<List<Routine>>
 
     @Query("SELECT * FROM routines WHERE id = :id")
     suspend fun byId(id: Long): Routine?
@@ -35,6 +43,10 @@ interface RoutineDao {
 
     @Update
     suspend fun update(routine: Routine)
+
+    /** Desvincula as rotinas de uma categoria (ao excluí-la); rode dentro de uma transação. */
+    @Query("UPDATE routines SET categoryId = NULL WHERE categoryId = :categoryId")
+    suspend fun clearCategory(categoryId: Long)
 
     /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM routines")

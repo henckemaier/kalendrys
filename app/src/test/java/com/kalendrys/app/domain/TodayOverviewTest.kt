@@ -3,6 +3,7 @@ package com.kalendrys.app.domain
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -143,6 +144,32 @@ class TodayOverviewTest {
         assertEquals(listOf(true, false), overview.routines.map { it.done })
         assertEquals(LocalTime.of(7, 30), overview.routines.first().end)
         assertEquals(1, overview.pendingCount)
+    }
+
+    @Test
+    fun `resumo honra excecoes de ocorrencia`() {
+        val today = now.toLocalDate()
+        val routines = listOf(
+            routine(1, "Treino", LocalTime.of(7, 0)),
+            routine(2, "Almoço", LocalTime.of(12, 0)),
+        )
+        val overrides = mapOf(
+            1L to listOf(RoutineOverride(routineId = 1, epochDay = today.toEpochDay(), type = RoutineOverrideType.SKIP)),
+            2L to listOf(
+                RoutineOverride(
+                    routineId = 2,
+                    epochDay = today.toEpochDay(),
+                    type = RoutineOverrideType.RESCHEDULE,
+                    newStartMinute = 15 * 60,
+                ),
+            ),
+        )
+
+        val overview = TodayOverview.build(emptyList(), emptyList(), now, zone, routines, overrides = overrides)
+
+        // O SKIP (Treino) some do retrato; a remarcada (Almoço) aparece no novo horário.
+        assertEquals(listOf(2L), overview.routines.map { it.routineId })
+        assertEquals(LocalTime.of(15, 0), overview.routines.single().start)
     }
 
     @Test

@@ -78,10 +78,42 @@
     <string name="routine_week_previous">Semana anterior</string>
     <string name="routine_week_next">Próxima semana</string>
     <string name="routine_day_a11y">%1$s, %2$d de %3$d rotinas feitas</string>
+    <string name="routines_day_tasks">Tarefas do dia</string>
+    <string name="routines_day_tasks_today">Tarefas de hoje</string>
+    <string name="routines_day_tasks_expand">Mostrar tarefas do dia</string>
+    <string name="routines_day_tasks_collapse">Ocultar tarefas do dia</string>
+    <string name="task_complete">Concluir %1$s</string>
+    <string name="task_uncomplete">Desmarcar %1$s</string>
+
+    <!-- Categorias de rotina -->
+    <string name="routine_category">Categoria</string>
+    <string name="routine_category_none">Sem categoria</string>
+    <string name="routine_category_filter_all">Todas</string>
+    <string name="routine_categories_title">Categorias</string>
+    <string name="routine_categories_empty_title">Nenhuma categoria</string>
+    <string name="routine_categories_empty_message">Crie categorias para agrupar e filtrar suas rotinas.</string>
+    <string name="routine_category_add">Nova categoria</string>
+    <string name="routine_category_edit_title">Editar categoria</string>
+    <string name="routine_category_name_label">Nome</string>
+    <string name="routine_category_edit">Editar %1$s</string>
+    <string name="routine_category_delete">Excluir %1$s</string>
+    <string name="routine_category_delete_title">Excluir categoria?</string>
+    <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
+
+    <!-- Configurações: rotinas -->
+    <string name="settings_section_routines">Rotinas</string>
+    <string name="settings_routine_categories">Categorias de rotina</string>
+    <string name="settings_routine_categories_description">Crie e organize categorias para agrupar suas rotinas.</string>
 
     <!-- Editor de rotina -->
     <string name="routine_new_title">Nova rotina</string>
     <string name="routine_edit_title">Editar rotina</string>
+    <string name="routine_duplicate">Duplicar rotina</string>
+    <string name="routine_copy_suffix">%1$s (cópia)</string>
+    <string name="routine_templates">Modelos</string>
+    <string name="routine_template_workout">Treino</string>
+    <string name="routine_template_lunch">Pausa almoço</string>
+    <string name="routine_template_reading">Leitura</string>
     <string name="routine_icon">Ícone</string>
     <string name="routine_color">Cor</string>
     <string name="routine_start">Início</string>
@@ -96,9 +128,35 @@
     <string name="routine_days_weekdays">Dias úteis</string>
     <string name="routine_days_weekend">Fim de semana</string>
     <string name="routine_days_none">Escolha ao menos um dia.</string>
+    <string name="routine_repeat">Repetição</string>
+    <string name="routine_week_interval_weekly">Toda semana</string>
+    <string name="routine_week_interval_every">A cada %1$d semanas</string>
+    <string name="routine_week_interval_label">Intervalo entre semanas</string>
+    <string name="routine_week_decrease">Menos uma semana de intervalo</string>
+    <string name="routine_week_increase">Mais uma semana de intervalo</string>
+    <string name="routine_validity">Vigência</string>
+    <string name="routine_start_date">A partir de</string>
+    <string name="routine_end_date">Até</string>
+    <string name="routine_date_any">Sempre</string>
+    <string name="routine_date_none">Sem fim</string>
+    <string name="routine_date_clear">Limpar data</string>
+    <string name="routine_pick_start_date">Primeiro dia</string>
+    <string name="routine_pick_end_date">Último dia</string>
+    <string name="routine_dates_invalid">A data final não pode vir antes da inicial.</string>
+    <string name="routine_exception_title">Exceção do dia</string>
+    <string name="routine_exception_skip">Pular este dia</string>
+    <string name="routine_exception_skip_desc">A rotina não acontece neste dia, mas continua ativa.</string>
+    <string name="routine_exception_reschedule_time">Mudar o horário</string>
+    <string name="routine_exception_move_day">Mover para outro dia</string>
+    <string name="routine_exception_clear">Remover exceção</string>
+    <string name="routine_exception_current_skip">Este dia está pulado.</string>
+    <string name="routine_exception_current_reschedule">Esta ocorrência está remarcada.</string>
+    <string name="routine_exception_pick_time">Novo horário</string>
     <string name="routine_remind">Avisar no início</string>
     <string name="routine_remind_description">Notificação na hora em que o bloco começa.</string>
     <string name="routine_delete">Excluir rotina</string>
+    <string name="routine_pause">Pausar rotina</string>
+    <string name="routine_resume">Retomar rotina</string>
     <string name="routine_delete_confirm_title">Excluir rotina?</string>
     <string name="routine_delete_confirm_message">Ela some de hoje em diante. Os dias passados continuam mostrando o bloco e as conclusões.</string>
     <string name="routine_discard_message">As alterações feitas nesta rotina serão perdidas.</string>
@@ -299,6 +357,8 @@
     <string name="routine_channel_name">Rotinas</string>
     <string name="routine_channel_description">Aviso no início de cada bloco de rotina.</string>
     <string name="routine_complete_action">Concluir</string>
+    <string name="routine_skip_action">Pular</string>
+    <string name="routine_snooze_action">Adiar %d min</string>
 
     <!-- Resumo diário -->
     <string name="summary_channel_name">Resumo diário</string>

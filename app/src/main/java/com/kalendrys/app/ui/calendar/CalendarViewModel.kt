@@ -10,6 +10,7 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -49,8 +50,8 @@ class CalendarViewModel(
         val done: Boolean = false,
     )
 
-    /** Um bloco de rotina no dia selecionado. */
-    data class RoutineEntry(val routine: Routine, val done: Boolean)
+    /** Um bloco de rotina no dia selecionado, com o início efetivo (honra uma remarcação). */
+    data class RoutineEntry(val routine: Routine, val startMinute: Int, val done: Boolean)
 
     data class UiState(
         val isLoaded: Boolean = false,
@@ -94,11 +95,12 @@ class CalendarViewModel(
     val uiState: StateFlow<UiState> =
         combine(
             repository.tasks,
-            routineRepository.routines,
+            combine(routineRepository.routines, routineRepository.overrides) { routines, overrides -> routines to overrides },
             monthLogs,
             selectedDate,
             repository.lastCompletions,
-        ) { tasks, routines, logs, selected, lastCompletions ->
+        ) { tasks, routinesAndOverrides, logs, selected, lastCompletions ->
+            val (routines, overrides) = routinesAndOverrides
             val zone = ZoneId.systemDefault()
             val titles = tasks.associate { it.id to it.title }
             // Tarefas excluídas continuam no histórico; ficam sem título (title = null).
@@ -118,9 +120,13 @@ class CalendarViewModel(
                 remindersByDay = tasksIn(logs.month, tasks, logs.tasks, lastCompletions, zone),
                 routineDoneDays = logs.routines.mapTo(HashSet()) { LocalDate.ofEpochDay(it.epochDay) },
                 routinesOnSelected = routines
-                    .filter { RoutineSchedule.occursOn(it, selected, zone) }
-                    .sortedWith(compareBy({ it.startMinute }, { it.id }))
-                    .map { RoutineEntry(it, done = it.id in doneOnSelected) },
+                    .mapNotNull { routine ->
+                        val ov = overrides[routine.id].orEmpty()
+                        if (!RoutineSchedule.occursOn(routine, selected, zone, ov)) return@mapNotNull null
+                        val start = RoutineSchedule.startOn(routine, selected, ov)
+                        RoutineEntry(routine, start.hour * 60 + start.minute, done = routine.id in doneOnSelected)
+                    }
+                    .sortedWith(compareBy({ it.startMinute }, { it.routine.id })),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 

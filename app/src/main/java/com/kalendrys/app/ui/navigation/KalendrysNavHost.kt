@@ -40,11 +40,17 @@ import androidx.navigation.navArgument
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
 import com.kalendrys.app.ui.calendar.CalendarScreen
+import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
 import com.kalendrys.app.ui.diagnostics.AlarmDiagnosticsScreen
 import com.kalendrys.app.ui.routineeditor.ROUTINE_EDITOR_ROUTE
 import com.kalendrys.app.ui.routineeditor.ROUTINE_ID_ARG
 import com.kalendrys.app.ui.routineeditor.RoutineEditorScreen
 import com.kalendrys.app.ui.routineeditor.routineEditorRoute
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_DAY_ARG
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTE
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTINE_ID_ARG
+import com.kalendrys.app.ui.routineexception.RoutineExceptionScreen
+import com.kalendrys.app.ui.routineexception.routineExceptionRoute
 import com.kalendrys.app.ui.routines.RoutinesScreen
 import com.kalendrys.app.ui.settings.SettingsScreen
 import com.kalendrys.app.ui.taskdetail.TASK_DETAIL_ROUTE
@@ -77,7 +83,11 @@ fun KalendrysNavHost(
     val openTask: (Long) -> Unit = { taskId -> navController.navigate(taskDetailRoute(taskId)) }
     val openSettings: () -> Unit = { navController.navigate(SETTINGS_ROUTE) { launchSingleTop = true } }
     val openDiagnostics: () -> Unit = { navController.navigate(ALARM_DIAGNOSTICS_ROUTE) { launchSingleTop = true } }
+    val openCategories: () -> Unit = { navController.navigate(ROUTINE_CATEGORIES_ROUTE) { launchSingleTop = true } }
     val openRoutine: (Long) -> Unit = { routineId -> navController.navigate(routineEditorRoute(routineId)) }
+    val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
+        navController.navigate(routineExceptionRoute(routineId, epochDay))
+    }
     // Pedido de "nova tarefa" vindo do widget, entregue à tela de tarefas uma única vez.
     var newTaskRequested by rememberSaveable { mutableStateOf(false) }
     // Dia pedido por uma notificação ou widget de rotina, entregue à aba de rotinas uma única vez.
@@ -130,6 +140,8 @@ fun KalendrysNavHost(
                     onOpenRoutine = openRoutine,
                     onNewRoutine = { navController.navigate(routineEditorRoute()) },
                     onOpenSettings = openSettings,
+                    onOpenTask = openTask,
+                    onOpenException = openRoutineException,
                     requestedDate = routinesDateRequested,
                     onRequestedDateHandled = { routinesDateRequested = null },
                 )
@@ -144,6 +156,19 @@ fun KalendrysNavHost(
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
                 RoutineEditorScreen(onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) })
+            }
+            // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
+            // pelo hub de rotinas; aqui fica só a rota + a tela (contrato de navegação).
+            composable(
+                route = ROUTINE_EXCEPTION_ROUTE,
+                arguments = listOf(
+                    navArgument(ROUTINE_EXCEPTION_ROUTINE_ID_ARG) { type = NavType.LongType },
+                    navArgument(ROUTINE_EXCEPTION_DAY_ARG) { type = NavType.LongType },
+                ),
+                enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+            ) {
+                RoutineExceptionScreen(onBack = { navController.popIfCurrent(ROUTINE_EXCEPTION_ROUTE) })
             }
             composable(
                 route = TASK_DETAIL_ROUTE,
@@ -161,6 +186,7 @@ fun KalendrysNavHost(
                 SettingsScreen(
                     onBack = { navController.popIfCurrent(SETTINGS_ROUTE) },
                     onOpenDiagnostics = openDiagnostics,
+                    onOpenCategories = openCategories,
                 )
             }
             composable(
@@ -169,6 +195,13 @@ fun KalendrysNavHost(
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
                 AlarmDiagnosticsScreen(onBack = { navController.popIfCurrent(ALARM_DIAGNOSTICS_ROUTE) })
+            }
+            composable(
+                route = ROUTINE_CATEGORIES_ROUTE,
+                enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+            ) {
+                RoutineCategoriesScreen(onBack = { navController.popIfCurrent(ROUTINE_CATEGORIES_ROUTE) })
             }
         }
     }
@@ -196,6 +229,7 @@ fun KalendrysNavHost(
 
 private const val SETTINGS_ROUTE = "settings"
 private const val ALARM_DIAGNOSTICS_ROUTE = "alarm-diagnostics"
+private const val ROUTINE_CATEGORIES_ROUTE = "routine-categories"
 
 /** Evita desempilhar duas vezes com toques repetidos em "voltar" durante a animação. */
 private fun NavHostController.popIfCurrent(route: String) {
