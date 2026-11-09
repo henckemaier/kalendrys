@@ -238,6 +238,13 @@
     <string name="diagnostics_status_ok">Tudo certo</string>
     <string name="diagnostics_status_warn">Requer atenção</string>
     <string name="diagnostics_footnote">Toque em “Corrigir” para abrir a tela do sistema. Nem todo aparelho mostra todas as opções.</string>
+    <string name="battery_flow_title">Desativar a otimização de bateria</string>
+    <string name="battery_flow_why">Com a otimização de bateria ativa, o sistema pode adiar os alarmes do app para poupar energia, e os lembretes chegam atrasados. Isentar o Kalendrys mantém os avisos no horário.</string>
+    <string name="battery_flow_step1">Toque em “Abrir configurações” abaixo.</string>
+    <string name="battery_flow_step2">Encontre o Kalendrys na lista (se preciso, troque o filtro para “Todos os apps”).</string>
+    <string name="battery_flow_step3">Marque como “Não otimizar”.</string>
+    <string name="battery_flow_open">Abrir configurações</string>
+    <string name="battery_flow_dismiss">Agora não</string>
     <string name="settings_section_data">Dados</string>
     <string name="settings_export">Exportar histórico</string>
     <string name="settings_export_description">Conclusões de tarefas e rotinas em CSV, para abrir no Excel ou no Google Planilhas.</string>
