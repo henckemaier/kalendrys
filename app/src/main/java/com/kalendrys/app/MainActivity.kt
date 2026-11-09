@@ -12,8 +12,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import com.kalendrys.app.reminder.MissedReminderRecovery
 import com.kalendrys.app.ui.navigation.KalendrysNavHost
 import com.kalendrys.app.ui.theme.KalendrysTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -42,6 +46,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         launchRequest = AppLinks.parse(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Voltou ao primeiro plano: recupera lembretes que o aparelho perdeu (desligado/Doze) numa
+        // única notificação agregada e avança o last-seen. Idempotente, então rodar a cada foreground
+        // não gera spam nem duplica o que já foi entregue.
+        lifecycleScope.launch(Dispatchers.IO) {
+            MissedReminderRecovery.run(this@MainActivity)
+        }
     }
 
     private fun askNotificationPermission() {

@@ -26,6 +26,9 @@ class ReminderReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Este alarme chegou na hora: marca "visto até agora" para a recuperação de perdidos
+                // não recontá-lo depois (ex.: num reboot mais tarde). Antes do early-return abaixo.
+                app.settingsRepository.setLastSeen(System.currentTimeMillis())
                 // Lê a versão atual da tarefa (título editado, recorrência) e agenda a próxima ocorrência.
                 val task = app.repository.onReminderFired(taskId) ?: return@launch
                 showNotification(context, task)
