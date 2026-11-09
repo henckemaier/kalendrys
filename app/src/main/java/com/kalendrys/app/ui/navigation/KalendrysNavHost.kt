@@ -45,6 +45,10 @@ import com.kalendrys.app.ui.routineeditor.ROUTINE_EDITOR_ROUTE
 import com.kalendrys.app.ui.routineeditor.ROUTINE_ID_ARG
 import com.kalendrys.app.ui.routineeditor.RoutineEditorScreen
 import com.kalendrys.app.ui.routineeditor.routineEditorRoute
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_DAY_ARG
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTE
+import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTINE_ID_ARG
+import com.kalendrys.app.ui.routineexception.RoutineExceptionScreen
 import com.kalendrys.app.ui.routines.RoutinesScreen
 import com.kalendrys.app.ui.settings.SettingsScreen
 import com.kalendrys.app.ui.taskdetail.TASK_DETAIL_ROUTE
@@ -144,6 +148,19 @@ fun KalendrysNavHost(
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
                 RoutineEditorScreen(onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) })
+            }
+            // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
+            // pelo hub de rotinas; aqui fica só a rota + a tela (contrato de navegação).
+            composable(
+                route = ROUTINE_EXCEPTION_ROUTE,
+                arguments = listOf(
+                    navArgument(ROUTINE_EXCEPTION_ROUTINE_ID_ARG) { type = NavType.LongType },
+                    navArgument(ROUTINE_EXCEPTION_DAY_ARG) { type = NavType.LongType },
+                ),
+                enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+            ) {
+                RoutineExceptionScreen(onBack = { navController.popIfCurrent(ROUTINE_EXCEPTION_ROUTE) })
             }
             composable(
                 route = TASK_DETAIL_ROUTE,

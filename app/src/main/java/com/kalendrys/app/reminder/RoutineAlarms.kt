@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.RoutineSchedule
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -20,9 +21,13 @@ open class RoutineAlarms(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    open fun scheduleNext(routines: List<Routine>, after: LocalDateTime) {
+    open fun scheduleNext(
+        routines: List<Routine>,
+        after: LocalDateTime,
+        overridesByRoutine: Map<Long, List<RoutineOverride>> = emptyMap(),
+    ) {
         val zone = ZoneId.systemDefault()
-        val next = RoutineSchedule.nextStart(routines, after, zone)
+        val next = RoutineSchedule.nextStart(routines, after, zone, overridesByRoutine)
         if (next == null) {
             alarmManager.cancel(pendingIntent(epochDay = 0, minute = 0))
             return
