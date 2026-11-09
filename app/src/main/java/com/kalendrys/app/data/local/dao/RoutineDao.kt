@@ -44,6 +44,10 @@ interface RoutineDao {
     @Update
     suspend fun update(routine: Routine)
 
+    /** Desvincula as rotinas de uma categoria (ao excluí-la); rode dentro de uma transação. */
+    @Query("UPDATE routines SET categoryId = NULL WHERE categoryId = :categoryId")
+    suspend fun clearCategory(categoryId: Long)
+
     /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM routines")
     suspend fun clear()

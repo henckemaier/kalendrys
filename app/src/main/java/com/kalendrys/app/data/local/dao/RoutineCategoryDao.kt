@@ -6,12 +6,17 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.kalendrys.app.data.local.entity.RoutineCategory
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RoutineCategoryDao {
 
     @Query("SELECT * FROM routine_category ORDER BY name, id")
     suspend fun all(): List<RoutineCategory>
+
+    /** As categorias em ordem, de forma reativa (para a UI e o filtro da timeline). */
+    @Query("SELECT * FROM routine_category ORDER BY name, id")
+    fun observeAll(): Flow<List<RoutineCategory>>
 
     @Insert
     suspend fun insert(category: RoutineCategory): Long

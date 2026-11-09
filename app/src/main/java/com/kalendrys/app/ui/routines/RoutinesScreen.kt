@@ -1,10 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.kalendrys.app.ui.routines
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -83,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DayTimeline.Link
@@ -116,6 +121,7 @@ fun RoutinesScreen(
     onNewRoutine: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     requestedDate: LocalDate? = null,
     onRequestedDateHandled: () -> Unit = {},
     viewModel: RoutinesViewModel = viewModel(factory = RoutinesViewModel.Factory),
@@ -184,6 +190,13 @@ fun RoutinesScreen(
                         onNextWeek = viewModel::nextWeek,
                     )
                 }
+                if (state.isLoaded && state.categories.isNotEmpty()) {
+                    CategoryFilterRow(
+                        categories = state.categories,
+                        selectedId = state.selectedCategoryId,
+                        onSelect = viewModel::selectCategory,
+                    )
+                }
             }
         },
         floatingActionButton = {
@@ -210,9 +223,43 @@ fun RoutinesScreen(
                 listState = listState,
                 onOpenRoutine = onOpenRoutine,
                 onOpenTask = onOpenTask,
+                onOpenException = onOpenException,
                 onToggle = viewModel::toggle,
                 onToggleTask = viewModel::toggleTask,
                 modifier = Modifier.padding(innerPadding),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryFilterRow(
+    categories: List<RoutineCategory>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+    ) {
+        item(key = "category_all") {
+            FilterChip(
+                selected = selectedId == null,
+                onClick = { onSelect(null) },
+                label = { Text(stringResource(R.string.routine_category_filter_all)) },
+            )
+        }
+        items(categories, key = { it.id }) { category ->
+            FilterChip(
+                selected = selectedId == category.id,
+                onClick = { onSelect(category.id) },
+                label = { Text(category.name) },
+                leadingIcon = {
+                    Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
+                },
             )
         }
     }
@@ -335,6 +382,7 @@ private fun Timeline(
     listState: LazyListState,
     onOpenRoutine: (Long) -> Unit,
     onOpenTask: (Long) -> Unit,
+    onOpenException: (Long, Long) -> Unit,
     onToggle: (DayTimeline.Block) -> Unit,
     onToggleTask: (Task, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -405,6 +453,12 @@ private fun Timeline(
                     canComplete = state.canComplete,
                     // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar.
                     onOpen = if (item.routine.archivedAt == null) ({ onOpenRoutine(item.routine.id) }) else null,
+                    // Pressionar e segurar numa ocorrência abre a exceção (pular/remarcar só aquele dia).
+                    onLongPress = if (item.routine.archivedAt == null) {
+                        ({ onOpenException(item.routine.id, state.selectedDate.toEpochDay()) })
+                    } else {
+                        null
+                    },
                     onToggle = { onToggle(item) },
                 )
                 is DayTimeline.Gap -> GapRow(item)
@@ -428,6 +482,7 @@ private fun BlockRow(
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
+    onLongPress: (() -> Unit)?,
     onToggle: () -> Unit,
 ) {
     val routine = block.routine
@@ -440,7 +495,13 @@ private fun BlockRow(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(16.dp))
-            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier),
+            .then(
+                if (onOpen != null) {
+                    Modifier.combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Column(
             verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,

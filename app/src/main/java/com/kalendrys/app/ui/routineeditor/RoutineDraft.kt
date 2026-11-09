@@ -15,6 +15,8 @@ data class RoutineDraft(
     val durationMinutes: Int = DEFAULT_DURATION_MINUTES,
     val daysOfWeek: Int = RoutineDays.ALL,
     val remind: Boolean = true,
+    /** Categoria à qual a rotina pertence ([RoutineCategory.id]), ou null se sem categoria. */
+    val categoryId: Long? = null,
     /** "A cada N semanas"; 1 = toda semana. */
     val weekInterval: Int = 1,
     /** Dia (epoch day) a partir do qual a rotina vale, ou null para sem início definido. */
@@ -53,6 +55,7 @@ data class RoutineDraft(
             durationMinutes = durationMinutes,
             daysOfWeek = daysOfWeek,
             remind = remind,
+            categoryId = categoryId,
             weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = startEpochDay,
             endEpochDay = endEpochDay,
@@ -78,6 +81,7 @@ data class RoutineDraft(
             durationMinutes = routine.durationMinutes,
             daysOfWeek = routine.daysOfWeek,
             remind = routine.remind,
+            categoryId = routine.categoryId,
             weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = routine.startEpochDay,
             endEpochDay = routine.endEpochDay,

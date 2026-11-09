@@ -79,10 +79,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.firstDayOfWeek
@@ -174,6 +176,7 @@ fun RoutineEditorScreen(
             draft == null -> Unit
             else -> EditorContent(
                 draft = draft,
+                categories = state.categories,
                 viewModel = viewModel,
                 modifier = Modifier
                     .padding(innerPadding)
@@ -229,6 +232,7 @@ fun RoutineEditorScreen(
 @Composable
 private fun EditorContent(
     draft: RoutineDraft,
+    categories: List<RoutineCategory>,
     viewModel: RoutineEditorViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -282,6 +286,32 @@ private fun EditorContent(
         item(key = "color") {
             SectionTitle(stringResource(R.string.routine_color))
             ColorPicker(selected = draft.color, onSelect = viewModel::updateColor)
+        }
+        if (categories.isNotEmpty()) {
+            item(key = "category") {
+                SectionTitle(stringResource(R.string.routine_category))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = draft.categoryId == null,
+                        onClick = { viewModel.updateCategory(null) },
+                        label = { Text(stringResource(R.string.routine_category_none)) },
+                    )
+                    categories.forEach { category ->
+                        FilterChip(
+                            selected = draft.categoryId == category.id,
+                            onClick = { viewModel.updateCategory(category.id) },
+                            label = { Text(category.name) },
+                            leadingIcon = {
+                                Dot(
+                                    color = routineTone(RoutineColor.fromKey(category.color)).accent,
+                                    size = 10.dp,
+                                    filled = true,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
         }
         item(key = "time") {
             SectionTitle(stringResource(R.string.routine_duration))
