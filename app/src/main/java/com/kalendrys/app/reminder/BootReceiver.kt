@@ -29,6 +29,9 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 app.repository.rescheduleReminders()
                 app.routineRepository.scheduleNextAlarm()
+                // Reagendar cuida das ocorrências futuras; recuperar avisa das que o aparelho
+                // perdeu enquanto esteve desligado. Uma não dispara a outra (janelas distintas).
+                MissedReminderRecovery.run(context)
                 KalendrysWidgets.updateAll(context)
             } finally {
                 pendingResult.finish()
