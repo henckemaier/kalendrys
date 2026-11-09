@@ -141,6 +141,32 @@ class RoutineEditorViewModel(
         }
     }
 
+    /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
+    fun applyDraft(newDraft: RoutineDraft) {
+        draft.value = newDraft
+    }
+
+    /**
+     * Duplica a rotina salva como uma nova ([copyTitle], novo id e data de criação), preservando os
+     * demais campos (inclusive os que o editor não mostra). Só vale para uma rotina existente.
+     */
+    fun duplicate(copyTitle: String) {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados.
+            repository.add(
+                existing.copy(
+                    id = NEW_ROUTINE_ID,
+                    title = copyTitle,
+                    createdAt = System.currentTimeMillis(),
+                    archivedAt = null,
+                    pausedAt = null,
+                ),
+            )
+            eventChannel.send(Event.Closed)
+        }
+    }
+
     /**
      * Pausa a rotina (para de agendar/avisar, mas mantém config + histórico) ou a retoma, conforme
      * o estado atual. Não fecha o editor: o botão reflete o novo estado quando a rotina reemite.
