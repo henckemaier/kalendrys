@@ -34,11 +34,16 @@ class ReminderActionReceiver : BroadcastReceiver() {
             try {
                 when (action) {
                     ACTION_COMPLETE -> {
-                        // Grava a conclusão da ocorrência (recorrente: a de hoje) e dispensa o aviso.
-                        app.repository.logCompletion(taskId)
+                        // Conclusão GUARDADA: taskForReminder devolve null se a ocorrência já está
+                        // concluída hoje (recorrente), a tarefa já se encerrou (one-time) ou foi
+                        // excluída. Aí só dispensa o aviso, sem gravar um segundo CompletionLog no
+                        // mesmo dia (que duplicaria o histórico/CSV e o "Desfazer" só tiraria um).
+                        if (app.repository.taskForReminder(taskId) != null) {
+                            app.repository.logCompletion(taskId)
+                            // O "próximo lembrete" e as pendências dos widgets mudaram.
+                            KalendrysWidgets.updateAll(context)
+                        }
                         NotificationManagerCompat.from(context).cancel(taskId.toInt())
-                        // O "próximo lembrete" e as pendências dos widgets mudaram.
-                        KalendrysWidgets.updateAll(context)
                     }
                     ACTION_SNOOZE -> {
                         NotificationManagerCompat.from(context).cancel(taskId.toInt())
