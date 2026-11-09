@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
 import java.time.LocalDate
@@ -63,10 +64,17 @@ internal fun NewTaskSheet(
     var epochDay by rememberSaveable { mutableStateOf(initialDate?.toEpochDay()) }
     var minuteOfDay by rememberSaveable { mutableStateOf<Int?>(null) }
     var repeat by rememberSaveable { mutableStateOf(ReminderRepeat.NONE) }
+    // Config da recorrência personalizada (ver TaskTiming/ReminderRecurrence).
+    var intervalEvery by rememberSaveable { mutableStateOf(1) }
+    var intervalUnit by rememberSaveable { mutableStateOf<RecurrenceUnit?>(null) }
+    var byWeekdays by rememberSaveable { mutableStateOf(0) }
     val timing = TaskTiming(
         date = epochDay?.let(LocalDate::ofEpochDay),
         time = minuteOfDay?.let { LocalTime.of(it / 60, it % 60) },
         repeat = repeat,
+        intervalEvery = intervalEvery,
+        intervalUnit = intervalUnit,
+        byWeekdays = byWeekdays,
     )
     val focusRequester = remember { FocusRequester() }
 
@@ -103,6 +111,9 @@ internal fun NewTaskSheet(
                     epochDay = changed.date?.toEpochDay()
                     minuteOfDay = changed.time?.let { it.hour * 60 + it.minute }
                     repeat = changed.repeat
+                    intervalEvery = changed.intervalEvery
+                    intervalUnit = changed.intervalUnit
+                    byWeekdays = changed.byWeekdays
                 },
             )
             OutlinedTextField(

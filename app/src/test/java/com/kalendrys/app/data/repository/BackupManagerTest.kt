@@ -11,13 +11,16 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +63,13 @@ class BackupManagerTest {
             Task(id = 1, title = "Comprar pão", notes = "integral", dueDate = 20_000, reminderAt = 123_456_789, repeat = ReminderRepeat.DAILY, location = "Padaria"),
         )
         sourceDb.taskDao().insert(Task(id = 2, title = "Sem data"))
+        // Recorrência custom: os campos novos (intervalEvery/intervalUnit/byWeekdays) têm que sobreviver ao round-trip.
+        sourceDb.taskDao().insert(
+            Task(id = 3, title = "A cada 3 dias", dueDate = 20_000, reminderAt = 555, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+        )
+        sourceDb.taskDao().insert(
+            Task(id = 4, title = "Seg/qua/sex", dueDate = 20_000, reminderAt = 666, repeat = ReminderRepeat.CUSTOM, byWeekdays = 0b0010101),
+        )
         sourceDb.completionLogDao().insert(CompletionLog(id = 1, taskId = 1, completedAt = 111))
         sourceDb.completionLogDao().insert(CompletionLog(id = 2, taskId = 1, completedAt = 222))
         sourceDb.routineDao().insert(
@@ -68,7 +78,7 @@ class BackupManagerTest {
         sourceDb.routineCompletionDao().insert(RoutineCompletion(id = 7, routineId = 5, epochDay = 20_000, completedAt = 333))
 
         val (json, stats) = BackupManager(sourceDb, context.contentResolver, source).serialize()
-        assertEquals(BackupManager.Stats(tasks = 2, completionLogs = 2, routines = 1, routineCompletions = 1), stats)
+        assertEquals(BackupManager.Stats(tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1), stats)
 
         // Destino com dado "sujo" que o restauro deve apagar antes de reinserir.
         val dest = settingsRepo("dest")
@@ -84,6 +94,59 @@ class BackupManagerTest {
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
         assertEquals(LocalTime.of(21, 15), restoredSettings.summaryTime)
+    }
+
+    @Test
+    fun `restaura backup v1 sem os campos custom caindo nos defaults`() = runTest {
+        val source = settingsRepo("source-v1")
+        // v1 só tinha repetições simples (sem CUSTOM); DAILY é o caso realista de um backup antigo.
+        sourceDb.taskDao().insert(
+            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Simula um backup do formato v1: marca schemaVersion=1 e remove os campos custom das tarefas.
+        val root = JSONObject(json).put("schemaVersion", 1)
+        val tasks = root.getJSONArray("tasks")
+        for (i in 0 until tasks.length()) {
+            tasks.getJSONObject(i).apply {
+                remove("intervalEvery"); remove("intervalUnit"); remove("byWeekdays")
+            }
+        }
+
+        val dest = settingsRepo("dest-v1")
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = destDb.taskDao().all().single()
+        // Campos ausentes caem nos defaults, sem quebrar o restauro (compat com o T5).
+        assertEquals(1, restored.intervalEvery)
+        assertNull(restored.intervalUnit)
+        assertEquals(0, restored.byWeekdays)
+        // O resto da tarefa é preservado (a repetição simples continua intacta).
+        assertEquals("Antiga", restored.title)
+        assertEquals(ReminderRepeat.DAILY, restored.repeat)
+    }
+
+    @Test
+    fun `restaura CUSTOM sem config utilizavel normalizando para NONE`() = runTest {
+        val source = settingsRepo("source-inert")
+        sourceDb.taskDao().insert(
+            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Corrompe o JSON: CUSTOM sem unidade e sem dias-da-semana (tarefa que nunca ocorreria).
+        val root = JSONObject(json)
+        val tasks = root.getJSONArray("tasks")
+        for (i in 0 until tasks.length()) {
+            tasks.getJSONObject(i).apply { remove("intervalUnit"); put("byWeekdays", 0) }
+        }
+
+        val dest = settingsRepo("dest-inert")
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        // Normalizado para NONE em vez de restaurar uma tarefa silenciosamente inerte.
+        assertEquals(ReminderRepeat.NONE, destDb.taskDao().all().single().repeat)
     }
 
     private fun inMemoryDb(): AppDatabase =

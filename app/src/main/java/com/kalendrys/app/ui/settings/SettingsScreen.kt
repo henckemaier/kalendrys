@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
@@ -79,6 +80,7 @@ private const val DISABLED_ALPHA = 0.38f
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -189,8 +191,9 @@ fun SettingsScreen(
             }
 
             item(key = "notifications_header") { SectionHeader(stringResource(R.string.settings_section_notifications)) }
-            // O aviso de alarme exato, quando aparece, fecha o grupo da seção.
-            val notificationsCount = if (exactAlarmsAllowed) 1 else 2
+            // Linhas da seção: notificações do sistema + diagnóstico (sempre) e, quando aparece, o
+            // aviso de alarme exato entre as duas.
+            val notificationsCount = if (exactAlarmsAllowed) 2 else 3
             item(key = "notifications_system") {
                 SettingsRow(
                     title = stringResource(R.string.settings_notifications_system),
@@ -225,6 +228,21 @@ fun SettingsScreen(
                         shape = groupedItemShape(1, notificationsCount),
                     )
                 }
+            }
+            item(key = "alarm_diagnostics") {
+                SettingsRow(
+                    title = stringResource(R.string.settings_diagnostics),
+                    supporting = stringResource(R.string.settings_diagnostics_description),
+                    onClick = onOpenDiagnostics,
+                    shape = groupedItemShape(notificationsCount - 1, notificationsCount),
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
             }
 
             item(key = "data_header") { SectionHeader(stringResource(R.string.settings_section_data)) }
