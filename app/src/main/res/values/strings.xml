@@ -78,6 +78,12 @@
     <string name="routine_week_previous">Semana anterior</string>
     <string name="routine_week_next">Próxima semana</string>
     <string name="routine_day_a11y">%1$s, %2$d de %3$d rotinas feitas</string>
+    <string name="routines_day_tasks">Tarefas do dia</string>
+    <string name="routines_day_tasks_today">Tarefas de hoje</string>
+    <string name="routines_day_tasks_expand">Mostrar tarefas do dia</string>
+    <string name="routines_day_tasks_collapse">Ocultar tarefas do dia</string>
+    <string name="task_complete">Concluir %1$s</string>
+    <string name="task_uncomplete">Desmarcar %1$s</string>
 
     <!-- Editor de rotina -->
     <string name="routine_new_title">Nova rotina</string>

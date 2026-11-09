@@ -1,12 +1,15 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline.Block
 import com.kalendrys.app.domain.DayTimeline.Gap
 import com.kalendrys.app.domain.DayTimeline.Link
+import com.kalendrys.app.domain.DayTimeline.TaskItem
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -30,6 +33,15 @@ class DayTimelineTest {
 
     private fun build(vararg routines: Routine, done: Set<Long> = emptySet()) =
         DayTimeline.build(routines.toList(), done, day, zone)
+
+    /** Tarefa pontual (sem repetição) no dia [date]; [time] "HH:mm" dá o lembrete, null = sem horário. */
+    private fun task(id: Long, time: String?, date: LocalDate = day): Task {
+        val reminderAt = time?.let {
+            val (h, m) = it.split(":").map(String::toInt)
+            date.atTime(h, m).atZone(zone).toInstant().toEpochMilli()
+        }
+        return Task(id = id, title = "T$id", dueDate = date.toEpochDay(), reminderAt = reminderAt)
+    }
 
     @Test
     fun `dia sem rotinas fica vazio`() {
@@ -81,5 +93,60 @@ class DayTimelineTest {
         val blocks = items.filterIsInstance<Block>()
         assertEquals(Gap(startMinute = 22 * 60, minutes = 90), items[1])
         assertEquals(24 * 60 + 30, blocks.last().endMinute)
+    }
+
+    @Test
+    fun `tarefa com horario entra na trilha ordenada pelo horario`() {
+        val items = DayTimeline.build(
+            listOf(routine(1, "07:00", 30), routine(2, "12:00", 30)),
+            emptySet(),
+            day,
+            zone,
+            tasks = listOf(task(10, "09:00")),
+        )
+        // A trilha sai sempre em ordem de horário (blocos, intervalos e tarefas misturados).
+        assertEquals(items.map { it.startMinute }.sorted(), items.map { it.startMinute })
+        val taskItem = items.filterIsInstance<TaskItem>().single()
+        assertEquals(10L, taskItem.task.id)
+        assertEquals(9 * 60, taskItem.startMinute)
+        assertFalse(taskItem.done)
+        // A tarefa das 09:00 fica depois do bloco das 07:00 e antes do das 12:00.
+        val blocks = items.filterIsInstance<Block>()
+        assertEquals(listOf(7 * 60, 12 * 60), blocks.map { it.startMinute })
+        assertTrue(items.indexOf(blocks.first()) < items.indexOf(taskItem))
+        assertTrue(items.indexOf(taskItem) < items.indexOf(blocks.last()))
+    }
+
+    @Test
+    fun `tarefa aparece mesmo sem nenhuma rotina e marca a concluida`() {
+        val items = DayTimeline.build(
+            emptyList(),
+            emptySet(),
+            day,
+            zone,
+            tasks = listOf(task(10, "09:00")),
+            doneTaskIds = setOf(10),
+        )
+        assertTrue(items.single() is TaskItem)
+        assertTrue((items.single() as TaskItem).done)
+    }
+
+    @Test
+    fun `tarefa sem horario nao entra na trilha`() {
+        val items = DayTimeline.build(emptyList(), emptySet(), day, zone, tasks = listOf(task(10, time = null)))
+        assertTrue(items.isEmpty())
+    }
+
+    @Test
+    fun `tarefa de outro dia nao entra na trilha`() {
+        val items = DayTimeline.build(
+            listOf(routine(1, "07:00", 30)),
+            emptySet(),
+            day,
+            zone,
+            tasks = listOf(task(10, "09:00", date = day.plusDays(1))),
+        )
+        assertEquals(1, items.size)
+        assertTrue(items.filterIsInstance<TaskItem>().isEmpty())
     }
 }

@@ -1,12 +1,14 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.Task
 import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * A linha do tempo de um dia: os blocos de rotina em ordem e os intervalos livres entre eles.
- * Lógica pura, para a tela de rotinas desenhar sem calcular nada.
+ * A linha do tempo de um dia: os blocos de rotina em ordem, os intervalos livres entre eles e as
+ * tarefas pontuais (com horário) daquele dia. Lógica pura, para a tela de rotinas desenhar sem
+ * calcular nada. As tarefas sem horário não entram aqui — a tela as mostra numa faixa à parte.
  */
 object DayTimeline {
 
@@ -24,6 +26,9 @@ object DayTimeline {
 
     sealed interface Item {
         val key: String
+
+        /** Minuto do dia em que o item começa; ordena a trilha. */
+        val startMinute: Int
     }
 
     data class Block(
@@ -32,21 +37,60 @@ object DayTimeline {
         val linkAbove: Link,
         val linkBelow: Link,
     ) : Item {
-        val startMinute: Int get() = routine.startMinute
+        override val startMinute: Int get() = routine.startMinute
 
         /** Pode passar de 1440 (bloco que termina depois da meia-noite). */
         val endMinute: Int get() = routine.endMinute
         override val key: String get() = "routine_${routine.id}"
     }
 
-    data class Gap(val startMinute: Int, val minutes: Int) : Item {
+    data class Gap(override val startMinute: Int, val minutes: Int) : Item {
         override val key: String get() = "gap_$startMinute"
+    }
+
+    /**
+     * Uma tarefa pontual no horário do seu lembrete. Ao contrário da rotina (que se repete e liga
+     * aos vizinhos), ela fica solta na trilha: a tela a desenha com destaque oposto ao do bloco.
+     */
+    data class TaskItem(
+        val task: Task,
+        override val startMinute: Int,
+        val done: Boolean,
+    ) : Item {
+        override val key: String get() = "task_${task.id}"
     }
 
     /** Intervalos menores que isso não ganham linha própria; a ligação só fica tracejada. */
     const val MIN_GAP_MINUTES = 30
 
-    fun build(routines: List<Routine>, doneIds: Set<Long>, date: LocalDate, zone: ZoneId): List<Item> {
+    fun build(
+        routines: List<Routine>,
+        doneIds: Set<Long>,
+        date: LocalDate,
+        zone: ZoneId,
+        tasks: List<Task> = emptyList(),
+        doneTaskIds: Set<Long> = emptySet(),
+    ): List<Item> {
+        val routineItems = buildRoutineItems(routines, doneIds, date, zone)
+        val taskItems = tasks
+            .mapNotNull { task ->
+                val time = TaskSchedule.reminderOn(task, date, zone) ?: return@mapNotNull null
+                TaskItem(task = task, startMinute = time.hour * 60 + time.minute, done = task.id in doneTaskIds)
+            }
+            .sortedWith(compareBy({ it.startMinute }, { it.task.id }))
+
+        if (taskItems.isEmpty()) return routineItems
+        if (routineItems.isEmpty()) return taskItems
+        // Mescla estável por horário: mantém a ordem (e os intervalos) das rotinas e intercala as tarefas.
+        return (routineItems + taskItems).sortedBy { it.startMinute }
+    }
+
+    private fun buildRoutineItems(
+        routines: List<Routine>,
+        doneIds: Set<Long>,
+        date: LocalDate,
+        zone: ZoneId,
+    ): List<Item> {
         val day = routines
             .filter { RoutineSchedule.occursOn(it, date, zone) }
             .sortedWith(compareBy({ it.startMinute }, { it.id }))

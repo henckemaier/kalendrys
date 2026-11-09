@@ -134,6 +134,7 @@ fun KalendrysNavHost(
                     onOpenRoutine = openRoutine,
                     onNewRoutine = { navController.navigate(routineEditorRoute()) },
                     onOpenSettings = openSettings,
+                    onOpenTask = openTask,
                     requestedDate = routinesDateRequested,
                     onRequestedDateHandled = { routinesDateRequested = null },
                 )
