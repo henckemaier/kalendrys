@@ -115,6 +115,13 @@ class RoutineEditorViewModel(
 
     fun updateRemind(remind: Boolean) = draft.update { it?.copy(remind = remind) }
 
+    fun updateWeekInterval(weeks: Int) =
+        draft.update { it?.copy(weekInterval = weeks.coerceIn(1, RoutineDraft.MAX_WEEK_INTERVAL)) }
+
+    fun updateStartDate(epochDay: Long?) = draft.update { it?.copy(startEpochDay = epochDay) }
+
+    fun updateEndDate(epochDay: Long?) = draft.update { it?.copy(endEpochDay = epochDay) }
+
     fun save() {
         val state = uiState.value
         val current = state.draft ?: return

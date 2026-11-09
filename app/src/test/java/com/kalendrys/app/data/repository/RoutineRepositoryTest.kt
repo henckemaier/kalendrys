@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import java.time.LocalDate
@@ -41,7 +42,13 @@ class RoutineRepositoryTest {
             .build()
         alarms = FakeRoutineAlarms(context)
         notifications = FakeRoutineNotifications(context)
-        repository = RoutineRepository(db.routineDao(), db.routineCompletionDao(), alarms, notifications)
+        repository = RoutineRepository(
+            db.routineDao(),
+            db.routineCompletionDao(),
+            db.routineOverrideDao(),
+            alarms,
+            notifications,
+        )
     }
 
     @After
@@ -131,5 +138,48 @@ class RoutineRepositoryTest {
 
         assertEquals(listOf(saved.id), due.map { it.id })
         assertEquals(1, alarms.calls.size)
+    }
+
+    @Test
+    fun `pular ocorrencia remove o bloco do onAlarm daquele dia`() = runTest {
+        val saved = repository.add(routine(startMinute = 600))
+        val today = LocalDate.now()
+        repository.skipOccurrence(saved.id, today.toEpochDay())
+        alarms.reset()
+
+        val due = repository.onAlarm(epochDay = today.toEpochDay(), scheduledMinute = 600, now = today.atTime(11, 0))
+
+        assertTrue("a ocorrência pulada não é devida", due.isEmpty())
+        // O alarme é reagendado já passando as exceções adiante.
+        assertEquals(1, alarms.calls.size)
+        assertEquals(RoutineOverrideType.SKIP, repository.occurrenceOverride(saved.id, today.toEpochDay())?.type)
+    }
+
+    @Test
+    fun `remarcar o minuto muda o horario devido no onAlarm`() = runTest {
+        val saved = repository.add(routine(startMinute = 600)) // 10:00
+        val today = LocalDate.now()
+        repository.rescheduleOccurrence(saved.id, today.toEpochDay(), newStartMinute = 660, newEpochDay = null) // 11:00
+
+        // Às 10:30 (horário antigo 10:00 já passou, mas o remarcado 11:00 ainda não) não é devida;
+        // às 11:30, no horário remarcado, sim. O horário efetivo é o remarcado, não o base.
+        val atOld = repository.onAlarm(epochDay = today.toEpochDay(), scheduledMinute = 600, now = today.atTime(10, 30))
+        val atNew = repository.onAlarm(epochDay = today.toEpochDay(), scheduledMinute = 660, now = today.atTime(11, 30))
+
+        assertTrue("antes do horário remarcado não há bloco devido", atOld.none { it.id == saved.id })
+        assertEquals(listOf(saved.id), atNew.map { it.id })
+    }
+
+    @Test
+    fun `limpar a excecao volta a ocorrencia ao normal`() = runTest {
+        val saved = repository.add(routine(startMinute = 600))
+        val today = LocalDate.now()
+        repository.skipOccurrence(saved.id, today.toEpochDay())
+        repository.clearOccurrenceException(saved.id, today.toEpochDay())
+
+        val due = repository.onAlarm(epochDay = today.toEpochDay(), scheduledMinute = 600, now = today.atTime(11, 0))
+
+        assertEquals(listOf(saved.id), due.map { it.id })
+        assertEquals(null, repository.occurrenceOverride(saved.id, today.toEpochDay()))
     }
 }
