@@ -16,8 +16,9 @@ import org.robolectric.annotation.Config
  * Migrações do Room validadas contra os schemas versionados em app/schemas/. Roda no Robolectric
  * como teste unitário (`:app:testDebugUnitTest`), sem precisar de aparelho/emulador.
  *
- * Observação: o histórico de schemas começa na v2 (2.json); não há 1.json exportado, então a
- * MIGRATION_1_2 não pode ser validada pelo helper. O caminho coberto é v2 → v5 (atual).
+ * Com o 1.json reconstruído (schema anterior à MIGRATION_1_2, sem a coluna reminderRepeat), a
+ * cadeia completa v1 → v5 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
+ * demais migrações seguem até o schema atual.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -29,6 +30,31 @@ class AppDatabaseMigrationTest {
         AppDatabase::class.java,
         listOf(AppDatabase.TaskDatesSpec()),
     )
+
+    @Test
+    fun `migra v1 para v2 adiciona reminderRepeat com default NONE e preserva os dados`() {
+        val name = "kalendrys-migration-v1-v2"
+        helper.createDatabase(name, 1).use { v1 ->
+            // Formato v1: a tabela tasks ainda NÃO tem a coluna reminderRepeat.
+            v1.execSQL(
+                "INSERT INTO tasks (title, notes, createdAt, reminderAt) " +
+                    "VALUES ('Tarefa v1', 'nota', 0, 1000)",
+            )
+        }
+
+        // MIGRATION_1_2: ALTER TABLE tasks ADD COLUMN reminderRepeat TEXT NOT NULL DEFAULT 'NONE'.
+        // runMigrationsAndValidate confere o schema resultante contra 2.json e lança se divergir.
+        helper.runMigrationsAndValidate(name, 2, true, AppDatabase.MIGRATION_1_2).use { v2 ->
+            v2.query("SELECT title, notes, reminderAt, reminderRepeat FROM tasks").use { cursor ->
+                assertTrue("a tarefa v1 deveria sobreviver à migração", cursor.moveToFirst())
+                assertEquals("Tarefa v1", cursor.getString(0))
+                assertEquals("nota", cursor.getString(1))
+                assertEquals(1000L, cursor.getLong(2))
+                // A coluna nova assume o default 'NONE' nas linhas que já existiam.
+                assertEquals("NONE", cursor.getString(3))
+            }
+        }
+    }
 
     @Test
     fun `migra v2 ate v5 preservando dados e conferindo o schema final`() {
