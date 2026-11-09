@@ -8,7 +8,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.RecurrenceUnit
@@ -21,6 +23,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,13 +75,40 @@ class BackupManagerTest {
         )
         sourceDb.completionLogDao().insert(CompletionLog(id = 1, taskId = 1, completedAt = 111))
         sourceDb.completionLogDao().insert(CompletionLog(id = 2, taskId = 1, completedAt = 222))
+        // Categorias de rotina (v7): precedem a rotina que as referencia por categoryId.
+        sourceDb.routineCategoryDao().insertAll(
+            listOf(
+                RoutineCategory(id = 10, name = "Academia", color = "RED", kind = "SIMPLE"),
+                RoutineCategory(id = 11, name = "Mercado", color = "GREEN", kind = "SIMPLE"),
+            ),
+        )
+        // Rotina com os campos novos da v7 preenchidos (têm que sobreviver ao round-trip).
         sourceDb.routineDao().insert(
-            Routine(id = 5, title = "Treino", startMinute = 1040, durationMinutes = 15, remind = true, archivedAt = 999),
+            Routine(
+                id = 5, title = "Treino", startMinute = 1040, durationMinutes = 15, remind = true, archivedAt = 999,
+                categoryId = 10, pausedAt = 4242, weekInterval = 2, startEpochDay = 19_000, endEpochDay = 21_000,
+            ),
         )
         sourceDb.routineCompletionDao().insert(RoutineCompletion(id = 7, routineId = 5, epochDay = 20_000, completedAt = 333))
+        // Exceções de rotina (v7): um SKIP e um RESCHEDULE com os campos opcionais.
+        sourceDb.routineOverrideDao().insertAll(
+            listOf(
+                RoutineOverride(id = 20, routineId = 5, epochDay = 20_010, type = "SKIP"),
+                RoutineOverride(
+                    id = 21, routineId = 5, epochDay = 20_011, type = "RESCHEDULE",
+                    newStartMinute = 600, newEpochDay = 20_012, createdAt = 444,
+                ),
+            ),
+        )
 
         val (json, stats) = BackupManager(sourceDb, context.contentResolver, source).serialize()
-        assertEquals(BackupManager.Stats(tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1), stats)
+        assertEquals(
+            BackupManager.Stats(
+                tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
+                routineCategories = 2, routineOverrides = 2,
+            ),
+            stats,
+        )
 
         // Destino com dado "sujo" que o restauro deve apagar antes de reinserir.
         val dest = settingsRepo("dest")
@@ -90,6 +120,8 @@ class BackupManagerTest {
         assertEquals(sourceDb.completionLogDao().all(), destDb.completionLogDao().all())
         assertEquals(sourceDb.routineDao().all(), destDb.routineDao().all())
         assertEquals(sourceDb.routineCompletionDao().all(), destDb.routineCompletionDao().all())
+        assertEquals(sourceDb.routineCategoryDao().all(), destDb.routineCategoryDao().all())
+        assertEquals(sourceDb.routineOverrideDao().all(), destDb.routineOverrideDao().all())
 
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
@@ -147,6 +179,43 @@ class BackupManagerTest {
 
         // Normalizado para NONE em vez de restaurar uma tarefa silenciosamente inerte.
         assertEquals(ReminderRepeat.NONE, destDb.taskDao().all().single().repeat)
+    }
+
+    @Test
+    fun `restaura backup v2 sem os campos e tabelas de rotina caindo nos defaults e vazio`() = runTest {
+        val source = settingsRepo("source-v2")
+        sourceDb.routineDao().insert(
+            Routine(id = 1, title = "Antiga", startMinute = 600, durationMinutes = 30, remind = true),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Simula um backup do formato v2: schemaVersion=2, sem as arrays novas e sem os campos novos
+        // de routines (categoryId/pausedAt/weekInterval/startEpochDay/endEpochDay).
+        val root = JSONObject(json).put("schemaVersion", 2)
+        root.remove("routineCategories")
+        root.remove("routineOverrides")
+        val routines = root.getJSONArray("routines")
+        for (i in 0 until routines.length()) {
+            routines.getJSONObject(i).apply {
+                remove("categoryId"); remove("pausedAt"); remove("weekInterval")
+                remove("startEpochDay"); remove("endEpochDay")
+            }
+        }
+
+        val dest = settingsRepo("dest-v2")
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = destDb.routineDao().all().single()
+        assertEquals("Antiga", restored.title)
+        // Campos novos ausentes caem nos defaults (sem categoria/pausa/vigência, intervalo semanal 1).
+        assertNull(restored.categoryId)
+        assertNull(restored.pausedAt)
+        assertEquals(1, restored.weekInterval)
+        assertNull(restored.startEpochDay)
+        assertNull(restored.endEpochDay)
+        // As tabelas novas ficam vazias, sem quebrar o restauro de um backup anterior à v3.
+        assertTrue(destDb.routineCategoryDao().all().isEmpty())
+        assertTrue(destDb.routineOverrideDao().all().isEmpty())
     }
 
     private fun inMemoryDb(): AppDatabase =

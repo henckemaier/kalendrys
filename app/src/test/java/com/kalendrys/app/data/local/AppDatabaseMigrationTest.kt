@@ -17,8 +17,9 @@ import org.robolectric.annotation.Config
  * como teste unitário (`:app:testDebugUnitTest`), sem precisar de aparelho/emulador.
  *
  * Com o 1.json reconstruído (schema anterior à MIGRATION_1_2, sem a coluna reminderRepeat), a
- * cadeia completa v1 → v6 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
- * demais migrações (inclusive a auto 5→6 da recorrência custom) seguem até o schema atual.
+ * cadeia completa v1 → v7 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
+ * demais migrações (inclusive a auto 5→6 da recorrência custom e a auto 6→7 da fundação de
+ * rotinas) seguem até o schema atual.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -105,6 +106,38 @@ class AppDatabaseMigrationTest {
                 assertTrue("intervalUnit deveria ser NULL por default", c.isNull(4))
                 assertEquals(0, c.getInt(5))
             }
+        }
+    }
+
+    @Test
+    fun `migra v6 para v7 adiciona colunas de rotina e as tabelas de categoria e excecao`() {
+        val name = "kalendrys-migration-v6-v7"
+        helper.createDatabase(name, 6).use { v6 ->
+            // Formato v6: routines ainda sem categoryId/pausedAt/weekInterval/startEpochDay/endEpochDay.
+            v6.execSQL(
+                "INSERT INTO routines " +
+                    "(title, notes, icon, color, startMinute, durationMinutes, daysOfWeek, remind, createdAt) " +
+                    "VALUES ('Treino', '', 'STAR', 'BLUE', 1040, 15, 127, 1, 0)",
+            )
+        }
+
+        // 6→7 é AutoMigration aditiva (colunas novas com default/nullable + duas tabelas novas);
+        // valida vs 7.json.
+        helper.runMigrationsAndValidate(name, 7, true).use { v7 ->
+            v7.query(
+                "SELECT title, weekInterval, categoryId, pausedAt, startEpochDay, endEpochDay FROM routines",
+            ).use { c ->
+                assertTrue("a rotina v6 deveria sobreviver à migração", c.moveToFirst())
+                assertEquals("Treino", c.getString(0))
+                // Defaults dos campos novos nas linhas que já existiam.
+                assertEquals(1, c.getInt(1))
+                assertTrue("categoryId deveria ser NULL por default", c.isNull(2))
+                assertTrue("pausedAt deveria ser NULL por default", c.isNull(3))
+                assertTrue("startEpochDay deveria ser NULL por default", c.isNull(4))
+                assertTrue("endEpochDay deveria ser NULL por default", c.isNull(5))
+            }
+            assertTrue("tabela routine_category ausente após 6→7", hasTable(v7, "routine_category"))
+            assertTrue("tabela routine_override ausente após 6→7", hasTable(v7, "routine_override"))
         }
     }
 
