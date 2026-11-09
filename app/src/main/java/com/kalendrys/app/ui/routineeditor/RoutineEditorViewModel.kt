@@ -146,7 +146,16 @@ class RoutineEditorViewModel(
     fun duplicate(copyTitle: String) {
         val existing = uiState.value.routine ?: return
         viewModelScope.launch {
-            repository.add(existing.copy(id = NEW_ROUTINE_ID, title = copyTitle, createdAt = System.currentTimeMillis()))
+            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados.
+            repository.add(
+                existing.copy(
+                    id = NEW_ROUTINE_ID,
+                    title = copyTitle,
+                    createdAt = System.currentTimeMillis(),
+                    archivedAt = null,
+                    pausedAt = null,
+                ),
+            )
             eventChannel.send(Event.Closed)
         }
     }
