@@ -7,14 +7,20 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineSchedule
+import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,6 +40,7 @@ import kotlinx.coroutines.launch
 
 class RoutinesViewModel(
     private val repository: RoutineRepository,
+    private val taskRepository: TaskRepository,
     private val firstDayOfWeek: DayOfWeek,
 ) : ViewModel() {
 
@@ -42,14 +49,19 @@ class RoutinesViewModel(
 
     data class WeekDay(val date: LocalDate, val dots: List<DayDot>, val total: Int, val done: Int)
 
+    /** Uma tarefa do dia sem horário, para a faixa colapsável no topo. */
+    data class DayTask(val task: Task, val done: Boolean)
+
     data class UiState(
         val isLoaded: Boolean = false,
         val today: LocalDate = LocalDate.now(),
         val selectedDate: LocalDate = LocalDate.now(),
         val week: List<WeekDay> = emptyList(),
         val timeline: List<DayTimeline.Item> = emptyList(),
-        /** Alguma rotina ativa (não excluída); sem nenhuma a tela mostra o estado vazio. */
-        val hasRoutines: Boolean = false,
+        /** Tarefas do dia sem horário; mostradas numa faixa, fora da trilha. */
+        val untimedTasks: List<DayTask> = emptyList(),
+        /** Alguma rotina ativa ou tarefa com data; sem nada a tela mostra o estado vazio. */
+        val hasContent: Boolean = false,
     ) {
         val isShowingToday: Boolean get() = selectedDate == today
 
@@ -57,43 +69,68 @@ class RoutinesViewModel(
         val canComplete: Boolean get() = !selectedDate.isAfter(today)
     }
 
-    /** Conclusão que o snackbar oferece desfazer. */
+    /** Conclusão de rotina que o snackbar oferece desfazer. */
     data class Completed(val routineId: Long, val date: LocalDate)
 
     private val selectedDate = MutableStateFlow(LocalDate.now())
 
-    /** As conclusões só da semana visível; a consulta muda quando a semana muda, não a cada dia tocado. */
+    /** Última leitura das conclusões de tarefa da semana visível, para desfazer pela trilha. */
+    @Volatile
+    private var taskLogs: List<CompletionLog> = emptyList()
+
+    /** As conclusões (rotina e tarefa) só da semana visível; a consulta muda quando a semana muda. */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val weekCompletions = selectedDate
         .map { CalendarCalculator.weekStart(it, firstDayOfWeek) }
         .distinctUntilChanged()
         .flatMapLatest { start ->
-            repository.observeCompletionsBetween(start, start.plusDays(DAYS_IN_WEEK)).map { start to it }
+            val end = start.plusDays(DAYS_IN_WEEK)
+            combine(
+                repository.observeCompletionsBetween(start, end),
+                taskRepository.observeCompletionsBetween(start, end),
+            ) { routineLogs, taskCompletions -> WeekLogs(start, routineLogs.groupLogs(), taskCompletions) }
         }
 
     val uiState: StateFlow<UiState> =
-        combine(repository.routines, weekCompletions, selectedDate) { routines, (weekStart, logs), selected ->
+        combine(repository.routines, taskRepository.tasks, weekCompletions, selectedDate) {
+                routines, tasks, (weekStart, routineDone, taskCompletions), selected ->
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
             if (selected.isBefore(weekStart) || !selected.isBefore(weekStart.plusDays(DAYS_IN_WEEK))) {
                 return@combine null
             }
+            taskLogs = taskCompletions
             val zone = ZoneId.systemDefault()
-            val doneByDay = logs.groupBy({ it.epochDay }, { it.routineId }).mapValues { (_, ids) -> ids.toSet() }
+            val taskDoneByDay = taskCompletions
+                .groupBy({ epochDayOf(it.completedAt, zone) }, { it.taskId })
+                .mapValues { (_, ids) -> ids.toSet() }
+            val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
+            val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
             UiState(
                 isLoaded = true,
                 today = LocalDate.now(),
                 selectedDate = selected,
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
-                    weekDay(date, routines, doneByDay[date.toEpochDay()].orEmpty(), zone)
+                    weekDay(date, routines, routineDone[date.toEpochDay()].orEmpty(), zone)
                 },
-                timeline = DayTimeline.build(routines, doneByDay[selected.toEpochDay()].orEmpty(), selected, zone),
-                hasRoutines = routines.any { it.archivedAt == null },
+                timeline = DayTimeline.build(routines, routineDoneToday, selected, zone, tasks, taskDoneToday),
+                untimedTasks = tasks
+                    .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
+                    .sortedBy { it.title.lowercase() }
+                    .map { DayTask(it, it.id in taskDoneToday) },
+                hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
             )
         }.filterNotNull().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     private val completedEvents = Channel<Completed>(Channel.BUFFERED)
     val completed: Flow<Completed> = completedEvents.receiveAsFlow()
+
+    /** Conclusão de tarefa (id do log) que o snackbar oferece desfazer. */
+    private val taskCompletedEvents = Channel<Long>(Channel.BUFFERED)
+    val taskCompleted: Flow<Long> = taskCompletedEvents.receiveAsFlow()
+
+    private fun List<RoutineCompletion>.groupLogs(): Map<Long, Set<Long>> =
+        groupBy({ it.epochDay }, { it.routineId }).mapValues { (_, ids) -> ids.toSet() }
 
     private fun weekDay(date: LocalDate, routines: List<Routine>, done: Set<Long>, zone: ZoneId): WeekDay {
         val blocks = routines
@@ -135,6 +172,44 @@ class RoutinesViewModel(
         viewModelScope.launch { repository.uncomplete(completed.routineId, completed.date) }
     }
 
+    /**
+     * Concluir/desmarcar uma tarefa pela trilha, reusando o repositório de tarefas. Concluir
+     * registra agora (com "Desfazer"); desmarcar desfaz a conclusão do dia selecionado.
+     */
+    fun toggleTask(task: Task, done: Boolean) {
+        val date = selectedDate.value
+        if (date.isAfter(LocalDate.now())) return
+        viewModelScope.launch {
+            if (done) {
+                taskLogFor(task.id, date)?.let { taskRepository.undoCompletion(it) }
+            } else {
+                taskCompletedEvents.send(taskRepository.logCompletion(task.id))
+            }
+        }
+    }
+
+    fun undoTaskCompletion(logId: Long) {
+        viewModelScope.launch { taskRepository.undoCompletion(logId) }
+    }
+
+    /** O id do log de conclusão da tarefa [taskId] no dia [date], se houver, para desfazer. */
+    private fun taskLogFor(taskId: Long, date: LocalDate): Long? {
+        val zone = ZoneId.systemDefault()
+        val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return taskLogs.firstOrNull { it.taskId == taskId && it.completedAt in start until end }?.id
+    }
+
+    private fun epochDayOf(epochMillis: Long, zone: ZoneId): Long =
+        Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate().toEpochDay()
+
+    /** Só para desestruturar o resultado da consulta da semana. */
+    private data class WeekLogs(
+        val weekStart: LocalDate,
+        val routineDone: Map<Long, Set<Long>>,
+        val taskCompletions: List<CompletionLog>,
+    )
+
     companion object {
         private const val DAYS_IN_WEEK = 7L
         private const val MAX_DOTS = 4
@@ -142,7 +217,7 @@ class RoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutinesViewModel(app.routineRepository, firstDayOfWeek())
+                RoutinesViewModel(app.routineRepository, app.repository, firstDayOfWeek())
             }
         }
     }
