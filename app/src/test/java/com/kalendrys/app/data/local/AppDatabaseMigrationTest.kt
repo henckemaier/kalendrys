@@ -16,8 +16,9 @@ import org.robolectric.annotation.Config
  * Migrações do Room validadas contra os schemas versionados em app/schemas/. Roda no Robolectric
  * como teste unitário (`:app:testDebugUnitTest`), sem precisar de aparelho/emulador.
  *
- * Observação: o histórico de schemas começa na v2 (2.json); não há 1.json exportado, então a
- * MIGRATION_1_2 não pode ser validada pelo helper. O caminho coberto é v2 → v5 (atual).
+ * Com o 1.json reconstruído (schema anterior à MIGRATION_1_2, sem a coluna reminderRepeat), a
+ * cadeia completa v1 → v6 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
+ * demais migrações (inclusive a auto 5→6 da recorrência custom) seguem até o schema atual.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -29,6 +30,31 @@ class AppDatabaseMigrationTest {
         AppDatabase::class.java,
         listOf(AppDatabase.TaskDatesSpec()),
     )
+
+    @Test
+    fun `migra v1 para v2 adiciona reminderRepeat com default NONE e preserva os dados`() {
+        val name = "kalendrys-migration-v1-v2"
+        helper.createDatabase(name, 1).use { v1 ->
+            // Formato v1: a tabela tasks ainda NÃO tem a coluna reminderRepeat.
+            v1.execSQL(
+                "INSERT INTO tasks (title, notes, createdAt, reminderAt) " +
+                    "VALUES ('Tarefa v1', 'nota', 0, 1000)",
+            )
+        }
+
+        // MIGRATION_1_2: ALTER TABLE tasks ADD COLUMN reminderRepeat TEXT NOT NULL DEFAULT 'NONE'.
+        // runMigrationsAndValidate confere o schema resultante contra 2.json e lança se divergir.
+        helper.runMigrationsAndValidate(name, 2, true, AppDatabase.MIGRATION_1_2).use { v2 ->
+            v2.query("SELECT title, notes, reminderAt, reminderRepeat FROM tasks").use { cursor ->
+                assertTrue("a tarefa v1 deveria sobreviver à migração", cursor.moveToFirst())
+                assertEquals("Tarefa v1", cursor.getString(0))
+                assertEquals("nota", cursor.getString(1))
+                assertEquals(1000L, cursor.getLong(2))
+                // A coluna nova assume o default 'NONE' nas linhas que já existiam.
+                assertEquals("NONE", cursor.getString(3))
+            }
+        }
+    }
 
     @Test
     fun `migra v2 ate v5 preservando dados e conferindo o schema final`() {
@@ -50,6 +76,34 @@ class AppDatabaseMigrationTest {
                 assertFalse("dueDate deveria ter sido preenchido pela TaskDatesSpec", cursor.isNull(0))
                 // location é a coluna nova da v5, com default "".
                 assertEquals("", cursor.getString(1))
+            }
+        }
+    }
+
+    @Test
+    fun `migra v5 para v6 adiciona os campos de recorrencia custom com defaults`() {
+        val name = "kalendrys-migration-v5-v6"
+        helper.createDatabase(name, 5).use { v5 ->
+            // Formato v5: tasks tem dueDate/reminderRepeat/location, mas ainda sem os campos custom.
+            v5.execSQL(
+                "INSERT INTO tasks (title, notes, createdAt, dueDate, reminderAt, reminderRepeat, location) " +
+                    "VALUES ('Tarefa v5', '', 0, 20000, 1000, 'DAILY', 'Casa')",
+            )
+        }
+
+        // 5→6 é AutoMigration aditiva (intervalEvery/intervalUnit/byWeekdays com default); valida vs 6.json.
+        helper.runMigrationsAndValidate(name, 6, true).use { v6 ->
+            v6.query(
+                "SELECT title, reminderRepeat, location, intervalEvery, intervalUnit, byWeekdays FROM tasks",
+            ).use { c ->
+                assertTrue("a tarefa v5 deveria sobreviver à migração", c.moveToFirst())
+                assertEquals("Tarefa v5", c.getString(0))
+                assertEquals("DAILY", c.getString(1))
+                assertEquals("Casa", c.getString(2))
+                // Defaults dos campos novos nas linhas que já existiam.
+                assertEquals(1, c.getInt(3))
+                assertTrue("intervalUnit deveria ser NULL por default", c.isNull(4))
+                assertEquals(0, c.getInt(5))
             }
         }
     }

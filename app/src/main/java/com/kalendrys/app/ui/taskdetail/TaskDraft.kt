@@ -16,9 +16,13 @@ data class TaskDraft(
 
     fun differsFrom(task: Task, zone: ZoneId): Boolean = applyTo(task, zone) != task
 
-    /** O lembrete ficou como estava salvo (mesmo horário e mesma repetição). */
+    /** O lembrete ficou como estava salvo (mesmo horário, mesma repetição e mesma config custom). */
     fun keepsReminderOf(task: Task, zone: ZoneId): Boolean =
-        timing.reminderAt(zone) == task.reminderAt && timing.effectiveRepeat == task.repeat
+        timing.reminderAt(zone) == task.reminderAt &&
+            timing.effectiveRepeat == task.repeat &&
+            timing.intervalEvery == task.intervalEvery &&
+            timing.intervalUnit == task.intervalUnit &&
+            timing.byWeekdays == task.byWeekdays
 
     /** Um lembrete que já passou não impede salvar: a tela só avisa que ele não vai tocar. */
     fun canSaveOver(task: Task, zone: ZoneId): Boolean = title.isNotBlank() && differsFrom(task, zone)

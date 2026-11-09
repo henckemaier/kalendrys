@@ -140,7 +140,15 @@ class CalendarViewModel(
         val byDay = mutableMapOf<LocalDate, MutableList<Entry>>()
         for (task in tasks) {
             val due = TaskSchedule.dueDate(task) ?: continue
-            val days = ReminderRecurrence.occurrencesBetween(due.atStartOfDay(), task.repeat, month.atDay(1), month.atEndOfMonth())
+            val days = ReminderRecurrence.occurrencesBetween(
+                due.atStartOfDay(),
+                task.repeat,
+                month.atDay(1),
+                month.atEndOfMonth(),
+                task.intervalEvery,
+                task.intervalUnit,
+                task.byWeekdays,
+            )
             val repeats = task.repeat != ReminderRepeat.NONE
             for (day in days) {
                 val time = TaskSchedule.reminderOn(task, day, zone)
