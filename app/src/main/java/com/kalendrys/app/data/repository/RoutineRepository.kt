@@ -27,6 +27,12 @@ class RoutineRepository(
     /** Todas as rotinas, inclusive as excluídas; quem decide o que aparece em cada dia é o [RoutineSchedule]. */
     val routines: Flow<List<Routine>> = routineDao.observeAll()
 
+    /**
+     * Rotinas que entram no retrato do dia (resumo/widgets): as pausadas ficam de fora. A lista de
+     * gestão ([routines]) continua mostrando as pausadas, para dar pra retomá-las.
+     */
+    val scheduledRoutines: Flow<List<Routine>> = routineDao.observeScheduled()
+
     fun observeRoutine(id: Long): Flow<Routine?> = routineDao.observeById(id)
 
     /** Conclusões das ocorrências entre [start] (inclusive) e [endExclusive]. */
@@ -48,6 +54,23 @@ class RoutineRepository(
     suspend fun archive(routine: Routine, now: Long = System.currentTimeMillis()) {
         routineDao.update(routine.copy(archivedAt = now))
         notifications.cancel(routine.id)
+        scheduleNextAlarm()
+    }
+
+    /**
+     * "Pausar": a rotina para de agendar e avisar, mas a configuração e o histórico ficam
+     * intactos. Distinta de arquivar (excluir): dá pra retomar depois. Reagenda sem ela e tira
+     * da tela qualquer aviso já mostrado.
+     */
+    suspend fun pause(routine: Routine, now: Long = System.currentTimeMillis()) {
+        routineDao.update(routine.copy(pausedAt = now))
+        notifications.cancel(routine.id)
+        scheduleNextAlarm()
+    }
+
+    /** "Retomar": a rotina volta a agendar/avisar com a configuração e o histórico preservados. */
+    suspend fun resume(routine: Routine) {
+        routineDao.update(routine.copy(pausedAt = null))
         scheduleNextAlarm()
     }
 

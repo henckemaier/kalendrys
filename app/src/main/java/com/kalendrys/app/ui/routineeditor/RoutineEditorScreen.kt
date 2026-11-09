@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
@@ -133,6 +135,15 @@ fun RoutineEditorScreen(
                 actions = {
                     if (state.draft != null) {
                         if (!state.isNew) {
+                            val paused = state.routine?.pausedAt != null
+                            IconButton(onClick = viewModel::togglePause) {
+                                Icon(
+                                    if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                                    contentDescription = stringResource(
+                                        if (paused) R.string.routine_resume else R.string.routine_pause,
+                                    ),
+                                )
+                            }
                             IconButton(onClick = { showDeleteDialog = true }) {
                                 Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.routine_delete))
                             }
