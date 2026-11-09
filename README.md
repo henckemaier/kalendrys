@@ -3,7 +3,8 @@
 App Android pessoal de tarefas, rotinas, lembretes e calendário de atividades.
 Kotlin + Jetpack Compose + Room + AlarmManager. Funciona offline — a única
 funcionalidade que usa rede é o botão manual e opcional "Buscar atualizações"
-(Config → Sobre), que consulta o GitHub; todo o resto roda sem internet.
+(Config → Sobre), que consulta o GitHub e baixa a atualização; todo o resto roda
+sem internet.
 
 ## Arquitetura
 
