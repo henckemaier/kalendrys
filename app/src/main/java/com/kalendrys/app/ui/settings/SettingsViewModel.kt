@@ -69,6 +69,10 @@ class SettingsViewModel(
         data object AwaitingInstall : UpdateUi
         /** Precisa do consentimento "instalar apps desconhecidos". */
         data object NeedsPermission : UpdateUi
+        /** Repositório ainda sem versão publicada (não é erro de rede). */
+        data object NoRelease : UpdateUi
+        /** A resposta do servidor veio em formato inesperado. */
+        data object MalformedResponse : UpdateUi
         data object Failed : UpdateUi
     }
 
@@ -84,6 +88,10 @@ class SettingsViewModel(
 
     private val _update = MutableStateFlow<UpdateUi>(UpdateUi.Idle)
     val update: StateFlow<UpdateUi> = _update.asStateFlow()
+
+    /** Guarda o APK que o usuário quis instalar, para re-disparar a instalação quando o
+     * consentimento de "fontes desconhecidas" chega (ver [onResumed]). */
+    private var pendingApkUrl: String? = null
 
     fun setSummaryEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setSummaryEnabled(enabled) }
@@ -157,11 +165,14 @@ class SettingsViewModel(
     /** Só no toque do botão (sem auto-check). Ignora toques enquanto já está checando/baixando. */
     fun checkForUpdates() {
         if (_update.value == UpdateUi.Checking || _update.value is UpdateUi.Downloading) return
+        pendingApkUrl = null // novo ciclo de checagem: esquece um install pendente antigo.
         _update.value = UpdateUi.Checking
         viewModelScope.launch {
             _update.value = when (val result = updateChecker.check()) {
                 UpdateCheck.UpToDate -> UpdateUi.UpToDate
                 is UpdateCheck.Available -> UpdateUi.Available(result.versionName, result.apkUrl)
+                UpdateCheck.NoRelease -> UpdateUi.NoRelease
+                UpdateCheck.MalformedResponse -> UpdateUi.MalformedResponse
                 UpdateCheck.Failed -> UpdateUi.Failed
             }
         }
@@ -169,6 +180,7 @@ class SettingsViewModel(
 
     fun downloadUpdate(apkUrl: String) {
         if (_update.value is UpdateUi.Downloading) return
+        pendingApkUrl = apkUrl // lembra o alvo caso precise do consentimento e volte depois.
         _update.value = UpdateUi.Downloading(0)
         viewModelScope.launch {
             val outcome = updateInstaller.downloadAndInstall(apkUrl) { percent ->
@@ -185,6 +197,19 @@ class SettingsViewModel(
     /** Leva o usuário à tela do sistema para autorizar instalar apps desconhecidos. */
     fun grantInstallPermission() {
         updateInstaller.requestInstallPermission()
+    }
+
+    /**
+     * Chamado na retomada da tela (onResume). O consentimento de "fontes desconhecidas" é concedido
+     * FORA do app, então o estado não se atualiza sozinho — reavaliamos [UpdateInstaller.canInstall]
+     * aqui (sem cachear o 1º valor). Se estávamos travados em [UpdateUi.NeedsPermission] e agora a
+     * permissão existe, re-disparamos a instalação do APK lembrado automaticamente — assim o fluxo
+     * vai direto ao PackageInstaller, sem o usuário precisar reiniciar o app nem tocar de novo.
+     */
+    fun onResumed() {
+        if (_update.value == UpdateUi.NeedsPermission && updateInstaller.canInstall()) {
+            pendingApkUrl?.let { downloadUpdate(it) }
+        }
     }
 
     companion object {

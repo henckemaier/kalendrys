@@ -93,6 +93,9 @@ fun SettingsScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
         exactAlarmsAllowed = canScheduleExactAlarms(context)
+        // Se o usuário acabou de conceder "fontes desconhecidas" na tela do sistema, retoma o
+        // install sozinho — sem reavaliar aqui, o botão ficaria preso pedindo a permissão.
+        viewModel.onResumed()
     }
 
     // Seletor de arquivo do sistema (Downloads, Drive...): dispensa permissão de armazenamento.
@@ -288,6 +291,16 @@ fun SettingsScreen(
                     shape = groupedItemShape(1, 2),
                 )
             }
+            // Fora da Play Store, o Play Protect pode exibir um aviso ao instalar — nota de rodapé
+            // sóbria logo abaixo do botão de atualizar, para o usuário não se assustar.
+            item(key = "update_play_protect_note") {
+                Text(
+                    text = stringResource(R.string.settings_update_play_protect),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 
@@ -358,6 +371,8 @@ private fun UpdateRow(
         is UpdateUi.Downloading -> stringResource(R.string.settings_update_downloading, state.percent)
         UpdateUi.AwaitingInstall -> stringResource(R.string.settings_update_installing)
         UpdateUi.NeedsPermission -> stringResource(R.string.settings_update_needs_permission)
+        UpdateUi.NoRelease -> stringResource(R.string.settings_update_no_release)
+        UpdateUi.MalformedResponse -> stringResource(R.string.settings_update_bad_response)
         UpdateUi.Failed -> stringResource(R.string.settings_update_failed)
     }
     val onClick: (() -> Unit)? = when (state) {
@@ -369,7 +384,9 @@ private fun UpdateRow(
     SettingsRow(
         title = stringResource(R.string.settings_update),
         supporting = supporting,
-        supportingIsError = state == UpdateUi.Failed,
+        // Só erros "duros" ficam em vermelho: falha de rede e resposta inválida. "Sem release" e
+        // "já atualizado" são informativos/positivos, em tom neutro.
+        supportingIsError = state == UpdateUi.Failed || state == UpdateUi.MalformedResponse,
         onClick = onClick,
         shape = shape,
         trailing = {

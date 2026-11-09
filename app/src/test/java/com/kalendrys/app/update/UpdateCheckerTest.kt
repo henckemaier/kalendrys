@@ -36,18 +36,23 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `sem asset apk vira Failed`() {
-        assertEquals(UpdateCheck.Failed, UpdateChecker.evaluate(release("v2.0.0", "https://x/app.txt"), "1.0"))
+    fun `sem asset apk vira MalformedResponse`() {
+        assertEquals(UpdateCheck.MalformedResponse, UpdateChecker.evaluate(release("v2.0.0", "https://x/app.txt"), "1.0"))
     }
 
     @Test
-    fun `json invalido vira Failed`() {
-        assertEquals(UpdateCheck.Failed, UpdateChecker.evaluate("isto não é json", "1.0"))
+    fun `json invalido vira MalformedResponse`() {
+        assertEquals(UpdateCheck.MalformedResponse, UpdateChecker.evaluate("isto não é json", "1.0"))
     }
 
     @Test
-    fun `tag sem numero vira Failed`() {
-        assertEquals(UpdateCheck.Failed, UpdateChecker.evaluate(release("latest", "https://x/a.apk"), "1.0"))
+    fun `tag sem numero vira MalformedResponse`() {
+        assertEquals(UpdateCheck.MalformedResponse, UpdateChecker.evaluate(release("latest", "https://x/a.apk"), "1.0"))
+    }
+
+    @Test
+    fun `sem tag_name vira MalformedResponse`() {
+        assertEquals(UpdateCheck.MalformedResponse, UpdateChecker.evaluate("""{"assets":[{"browser_download_url":"https://x/a.apk"}]}""", "1.0"))
     }
 
     @Test
