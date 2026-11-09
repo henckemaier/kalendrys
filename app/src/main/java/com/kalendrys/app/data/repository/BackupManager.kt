@@ -7,12 +7,15 @@ import com.kalendrys.app.BuildConfig
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.RoutineCategoryKind
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -48,8 +51,12 @@ class BackupManager(
         val completionLogs: Int,
         val routines: Int,
         val routineCompletions: Int,
+        val routineCategories: Int = 0,
+        val routineOverrides: Int = 0,
     ) {
-        val total: Int get() = tasks + completionLogs + routines + routineCompletions
+        val total: Int
+            get() = tasks + completionLogs + routines + routineCompletions +
+                routineCategories + routineOverrides
     }
 
     /** Grava o backup no arquivo escolhido; devolve o que foi exportado. Lança [IOException] se não abrir. */
@@ -83,12 +90,16 @@ class BackupManager(
         lateinit var logs: List<CompletionLog>
         lateinit var routines: List<Routine>
         lateinit var routineLogs: List<RoutineCompletion>
+        lateinit var categories: List<RoutineCategory>
+        lateinit var overrides: List<RoutineOverride>
         // Snapshot consistente mesmo com o app gravando no meio da exportação.
         database.withTransaction {
             tasks = database.taskDao().all()
             logs = database.completionLogDao().all()
             routines = database.routineDao().all()
             routineLogs = database.routineCompletionDao().all()
+            categories = database.routineCategoryDao().all()
+            overrides = database.routineOverrideDao().all()
         }
 
         val root = JSONObject().apply {
@@ -100,9 +111,18 @@ class BackupManager(
             put("completionLogs", logs.toJsonArray(CompletionLog::toJson))
             put("routines", routines.toJsonArray(Routine::toJson))
             put("routineCompletions", routineLogs.toJsonArray(RoutineCompletion::toJson))
+            put("routineCategories", categories.toJsonArray(RoutineCategory::toJson))
+            put("routineOverrides", overrides.toJsonArray(RoutineOverride::toJson))
             put("settings", current.toJson())
         }
-        val stats = Stats(tasks.size, logs.size, routines.size, routineLogs.size)
+        val stats = Stats(
+            tasks = tasks.size,
+            completionLogs = logs.size,
+            routines = routines.size,
+            routineCompletions = routineLogs.size,
+            routineCategories = categories.size,
+            routineOverrides = overrides.size,
+        )
         return root.toString(2) to stats
     }
 
@@ -122,6 +142,9 @@ class BackupManager(
         val logs = root.getJSONArray("completionLogs").map(JSONObject::toCompletionLog)
         val routines = root.getJSONArray("routines").map(JSONObject::toRoutine)
         val routineLogs = root.getJSONArray("routineCompletions").map(JSONObject::toRoutineCompletion)
+        // Retrocompatível: um backup v2 (schemaVersion < 3) não tem estas arrays -> vazias.
+        val categories = root.optJSONArray("routineCategories").orEmpty().map(JSONObject::toRoutineCategory)
+        val overrides = root.optJSONArray("routineOverrides").orEmpty().map(JSONObject::toRoutineOverride)
 
         // Limpa e reinsere numa transação só: ou o restauro vale inteiro, ou não vale nada.
         database.withTransaction {
@@ -129,10 +152,14 @@ class BackupManager(
             database.completionLogDao().clear()
             database.routineDao().clear()
             database.routineCompletionDao().clear()
+            database.routineCategoryDao().clear()
+            database.routineOverrideDao().clear()
             database.taskDao().insertAll(tasks)
             database.completionLogDao().insertAll(logs)
             database.routineDao().insertAll(routines)
             database.routineCompletionDao().insertAll(routineLogs)
+            database.routineCategoryDao().insertAll(categories)
+            database.routineOverrideDao().insertAll(overrides)
         }
 
         // Configurações ficam no DataStore (fora da transação do Room).
@@ -142,19 +169,28 @@ class BackupManager(
         }
 
         afterRestore()
-        return Stats(tasks.size, logs.size, routines.size, routineLogs.size)
+        return Stats(
+            tasks = tasks.size,
+            completionLogs = logs.size,
+            routines = routines.size,
+            routineCompletions = routineLogs.size,
+            routineCategories = categories.size,
+            routineOverrides = overrides.size,
+        )
     }
 
     companion object {
         /**
          * Versão do formato do backup (não do schema do Room). Subir ao mudar a estrutura do JSON.
-         * v2: campos da recorrência custom na tarefa (intervalEvery/intervalUnit/byWeekdays). A
-         * leitura é retrocompatível — um backup v1 (sem esses campos) restaura com os defaults.
+         * v2: campos da recorrência custom na tarefa (intervalEvery/intervalUnit/byWeekdays).
+         * v3: colunas novas de rotina (categoryId/pausedAt/weekInterval/startEpochDay/endEpochDay) e
+         * as arrays routineCategories/routineOverrides. A leitura é retrocompatível — um backup v1/v2
+         * (sem esses campos/arrays) restaura com os defaults e as novas tabelas vazias.
          */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -230,6 +266,11 @@ private fun Routine.toJson() = JSONObject().apply {
     put("remind", remind)
     put("createdAt", createdAt)
     putNullableLong("archivedAt", archivedAt)
+    putNullableLong("categoryId", categoryId)
+    putNullableLong("pausedAt", pausedAt)
+    put("weekInterval", weekInterval)
+    putNullableLong("startEpochDay", startEpochDay)
+    putNullableLong("endEpochDay", endEpochDay)
 }
 
 private fun JSONObject.toRoutine() = Routine(
@@ -244,6 +285,48 @@ private fun JSONObject.toRoutine() = Routine(
     remind = getBoolean("remind"),
     createdAt = getLong("createdAt"),
     archivedAt = nullableLong("archivedAt"),
+    // Retrocompatível: backup v2 não tem estes campos -> defaults (sem categoria/pausa/vigência,
+    // intervalo semanal 1).
+    categoryId = nullableLong("categoryId"),
+    pausedAt = nullableLong("pausedAt"),
+    weekInterval = optInt("weekInterval", 1),
+    startEpochDay = nullableLong("startEpochDay"),
+    endEpochDay = nullableLong("endEpochDay"),
+)
+
+private fun RoutineCategory.toJson() = JSONObject().apply {
+    put("id", id)
+    put("name", name)
+    put("color", color)
+    put("kind", kind)
+}
+
+private fun JSONObject.toRoutineCategory() = RoutineCategory(
+    id = getLong("id"),
+    name = getString("name"),
+    color = optString("color"),
+    // Valor desconhecido (enum mudou entre versões) é normalizado para o padrão SIMPLE na leitura.
+    kind = RoutineCategoryKind.fromKey(optString("kind")).name,
+)
+
+private fun RoutineOverride.toJson() = JSONObject().apply {
+    put("id", id)
+    put("routineId", routineId)
+    put("epochDay", epochDay)
+    put("type", type)
+    putNullableInt("newStartMinute", newStartMinute)
+    putNullableLong("newEpochDay", newEpochDay)
+    put("createdAt", createdAt)
+}
+
+private fun JSONObject.toRoutineOverride() = RoutineOverride(
+    id = getLong("id"),
+    routineId = getLong("routineId"),
+    epochDay = getLong("epochDay"),
+    type = getString("type"),
+    newStartMinute = nullableInt("newStartMinute"),
+    newEpochDay = nullableLong("newEpochDay"),
+    createdAt = getLong("createdAt"),
 )
 
 private fun RoutineCompletion.toJson() = JSONObject().apply {
@@ -273,8 +356,17 @@ private fun <T> List<T>.toJsonArray(toJson: (T) -> JSONObject): JSONArray =
 private fun <T> JSONArray.map(fromJson: JSONObject.() -> T): List<T> =
     (0 until length()).map { getJSONObject(it).fromJson() }
 
+/** Array ausente (backup de versão anterior) é tratada como vazia. */
+private fun JSONArray?.orEmpty(): JSONArray = this ?: JSONArray()
+
 private fun JSONObject.putNullableLong(key: String, value: Long?) {
     if (value == null) put(key, JSONObject.NULL) else put(key, value)
 }
 
 private fun JSONObject.nullableLong(key: String): Long? = if (isNull(key)) null else getLong(key)
+
+private fun JSONObject.putNullableInt(key: String, value: Int?) {
+    if (value == null) put(key, JSONObject.NULL) else put(key, value)
+}
+
+private fun JSONObject.nullableInt(key: String): Int? = if (isNull(key)) null else getInt(key)

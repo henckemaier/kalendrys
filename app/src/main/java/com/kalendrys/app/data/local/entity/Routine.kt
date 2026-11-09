@@ -1,5 +1,6 @@
 package com.kalendrys.app.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.kalendrys.app.domain.RoutineColor
@@ -32,6 +33,19 @@ data class Routine(
     val remind: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val archivedAt: Long? = null,
+    /**
+     * Categoria à qual a rotina pertence ([RoutineCategory.id]), ou `null` se sem categoria. Só a
+     * coluna existe nesta versão; a lógica de categorias é da task seguinte. Sem foreign key.
+     */
+    val categoryId: Long? = null,
+    /** Momento em que a rotina foi pausada (epoch millis), ou `null` se ativa. Lógica virá depois. */
+    val pausedAt: Long? = null,
+    /** Intervalo em semanas para a recorrência ("a cada N semanas"); 1 = toda semana. Lógica virá depois. */
+    @ColumnInfo(defaultValue = "1") val weekInterval: Int = 1,
+    /** Primeiro dia de vigência da rotina (epoch day), ou `null` para sem início definido. */
+    val startEpochDay: Long? = null,
+    /** Último dia de vigência da rotina (epoch day), ou `null` para sem fim definido. */
+    val endEpochDay: Long? = null,
 ) {
     val endMinute: Int get() = startMinute + durationMinutes
 }
