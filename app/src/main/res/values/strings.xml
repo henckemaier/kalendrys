@@ -218,7 +218,7 @@
     <string name="settings_diagnostics_description">Veja se os lembretes vão disparar no horário.</string>
     <string name="diagnostics_title">Diagnóstico de alarmes</string>
     <string name="diagnostics_section">Estado dos alarmes</string>
-    <string name="diagnostics_next_alarm_title">Próximo alarme</string>
+    <string name="diagnostics_next_alarm_title">Próximo alarme do sistema</string>
     <string name="diagnostics_next_alarm_none">Nenhum alarme agendado.</string>
     <string name="diagnostics_exact_title">Alarme no horário exato</string>
     <string name="diagnostics_exact_ok">Permitido.</string>
