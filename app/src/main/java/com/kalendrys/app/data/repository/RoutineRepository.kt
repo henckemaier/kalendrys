@@ -106,6 +106,10 @@ class RoutineRepository(
         if (routine.archivedAt != null) return null
         if (!RoutineSchedule.occursOn(routine, date, zone)) return null
         if (routine.id in completionDao.doneOn(date.toEpochDay())) return null
+        // Exceção pontual (T20) aplicada enquanto o aviso estava adiado: um SKIP cancela a ocorrência
+        // e um RESCHEDULE a moveu (o alarme estrutural cuida do novo horário) — nos dois casos o aviso
+        // adiado virou obsoleto, então não reexibe. Reusa o override do Forja, só leitura.
+        if (occurrenceOverride(routineId, date.toEpochDay()) != null) return null
         return routine
     }
 
