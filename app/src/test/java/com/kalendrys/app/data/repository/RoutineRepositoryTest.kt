@@ -14,6 +14,7 @@ import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,6 +60,35 @@ class RoutineRepositoryTest {
 
     private fun routine(title: String = "Treino", startMinute: Int = 600) =
         Routine(title = title, startMinute = startMinute)
+
+    @Test
+    fun `routineForNotification devolve o bloco ativo que ocorre hoje e nao foi concluido`() = runTest {
+        val saved = repository.add(routine())
+
+        assertNotNull(repository.routineForNotification(saved.id, LocalDate.now()))
+    }
+
+    @Test
+    fun `routineForNotification e null para bloco ja concluido (idempotencia do Adiar)`() = runTest {
+        val saved = repository.add(routine())
+        val today = LocalDate.now()
+        repository.complete(saved.id, today)
+
+        assertNull(repository.routineForNotification(saved.id, today))
+    }
+
+    @Test
+    fun `routineForNotification e null para rotina arquivada`() = runTest {
+        val saved = repository.add(routine())
+        repository.archive(saved)
+
+        assertNull(repository.routineForNotification(saved.id, LocalDate.now()))
+    }
+
+    @Test
+    fun `routineForNotification e null para rotina inexistente`() = runTest {
+        assertNull(repository.routineForNotification(routineId = 999, date = LocalDate.now()))
+    }
 
     @Test
     fun `pausar cancela a notificacao, grava pausedAt e reagenda sem a rotina`() = runTest {
