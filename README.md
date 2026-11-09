@@ -1,7 +1,9 @@
 # Kalendrys
 
 App Android pessoal de tarefas, rotinas, lembretes e calendário de atividades.
-Kotlin + Jetpack Compose + Room + AlarmManager. 100% offline.
+Kotlin + Jetpack Compose + Room + AlarmManager. Funciona offline — a única
+funcionalidade que usa rede é o botão manual e opcional "Buscar atualizações"
+(Config → Sobre), que consulta o GitHub; todo o resto roda sem internet.
 
 ## Arquitetura
 
@@ -150,6 +152,15 @@ porque não há lista para onde voltar com o "Desfazer". Suporta tema claro e es
 2. Aguarde o Gradle sync e rode no emulador ou aparelho (min SDK 26 / Android 8).
 3. Para uso no dia a dia, prefira o build **release** (Build → Select Build Variant → `release`,
    ou `./gradlew :app:installRelease`): o debug é várias vezes mais lento.
+
+## Atualização pelo app
+
+As atualizações chegam por sideload via GitHub Releases: o botão "Buscar
+atualizações" (Config → Sobre) consulta a release mais recente e baixa o APK, que
+é instalado por cima da versão atual sem perder dados. Por ser um app fora da Play
+Store, ao instalar o Android (Play Protect) pode exibir um aviso do tipo "este app
+pode ser prejudicial" — é esperado: toque em "Mais detalhes" → "Instalar mesmo
+assim".
 
 ## Performance
 
