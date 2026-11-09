@@ -16,6 +16,7 @@ import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineCategoryKind
+import com.kalendrys.app.domain.RoutineColor
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -304,7 +305,8 @@ private fun RoutineCategory.toJson() = JSONObject().apply {
 private fun JSONObject.toRoutineCategory() = RoutineCategory(
     id = getLong("id"),
     name = getString("name"),
-    color = optString("color"),
+    // Ausente/vazio cai no padrão, alinhado com o fallback do kind (defensivo; backup v3 real sempre traz).
+    color = optString("color").ifEmpty { RoutineColor.DEFAULT.name },
     // Valor desconhecido (enum mudou entre versões) é normalizado para o padrão SIMPLE na leitura.
     kind = RoutineCategoryKind.fromKey(optString("kind")).name,
 )
