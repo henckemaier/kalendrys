@@ -2,6 +2,7 @@ package com.kalendrys.app.testutil
 
 import android.content.Context
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
@@ -41,12 +42,20 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
 }
 
 class FakeRoutineAlarms(context: Context) : RoutineAlarms(context) {
-    data class Call(val routines: List<Routine>, val after: LocalDateTime)
+    data class Call(
+        val routines: List<Routine>,
+        val after: LocalDateTime,
+        val overridesByRoutine: Map<Long, List<RoutineOverride>>,
+    )
 
     val calls = mutableListOf<Call>()
 
-    override fun scheduleNext(routines: List<Routine>, after: LocalDateTime) {
-        calls += Call(routines, after)
+    override fun scheduleNext(
+        routines: List<Routine>,
+        after: LocalDateTime,
+        overridesByRoutine: Map<Long, List<RoutineOverride>>,
+    ) {
+        calls += Call(routines, after, overridesByRoutine)
     }
 
     fun reset() {

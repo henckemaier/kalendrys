@@ -15,10 +15,19 @@ data class RoutineDraft(
     val durationMinutes: Int = DEFAULT_DURATION_MINUTES,
     val daysOfWeek: Int = RoutineDays.ALL,
     val remind: Boolean = true,
+    /** "A cada N semanas"; 1 = toda semana. */
+    val weekInterval: Int = 1,
+    /** Dia (epoch day) a partir do qual a rotina vale, ou null para sem início definido. */
+    val startEpochDay: Long? = null,
+    /** Último dia (epoch day) em que a rotina vale (rotina temporária), ou null para sem fim. */
+    val endEpochDay: Long? = null,
 ) {
     val hasDays: Boolean get() = daysOfWeek and RoutineDays.ALL != 0
 
-    val isValid: Boolean get() = title.isNotBlank() && hasDays
+    /** Fim não pode vir antes do início quando ambos estão definidos. */
+    val datesValid: Boolean get() = startEpochDay == null || endEpochDay == null || startEpochDay <= endEpochDay
+
+    val isValid: Boolean get() = title.isNotBlank() && hasDays && datesValid
 
     /** Minuto do dia em que termina (0..1439). */
     val endMinuteOfDay: Int get() = (startMinute + durationMinutes) % MINUTES_PER_DAY
@@ -44,6 +53,9 @@ data class RoutineDraft(
             durationMinutes = durationMinutes,
             daysOfWeek = daysOfWeek,
             remind = remind,
+            weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
+            startEpochDay = startEpochDay,
+            endEpochDay = endEpochDay,
         )
 
     fun toNewRoutine(now: Long = System.currentTimeMillis()): Routine =
@@ -51,6 +63,7 @@ data class RoutineDraft(
 
     companion object {
         const val DEFAULT_DURATION_MINUTES = 30
+        const val MAX_WEEK_INTERVAL = 12
         private const val MINUTES_PER_DAY = 24 * 60
 
         /** Atalhos de duração no editor (0 = sem duração). */
@@ -65,6 +78,9 @@ data class RoutineDraft(
             durationMinutes = routine.durationMinutes,
             daysOfWeek = routine.daysOfWeek,
             remind = routine.remind,
+            weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
+            startEpochDay = routine.startEpochDay,
+            endEpochDay = routine.endEpochDay,
         )
     }
 }
