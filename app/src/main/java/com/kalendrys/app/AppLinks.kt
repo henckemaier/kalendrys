@@ -29,6 +29,9 @@ object AppLinks {
     private const val HOST_REMINDER_COMPLETE = "reminder-complete"
     private const val HOST_REMINDER_SNOOZE = "reminder-snooze"
     private const val HOST_REMINDER_SNOOZE_FIRE = "reminder-snooze-fire"
+    private const val HOST_ROUTINE_SKIP = "routine-skip"
+    private const val HOST_ROUTINE_SNOOZE = "routine-snooze"
+    private const val HOST_ROUTINE_SNOOZE_FIRE = "routine-snooze-fire"
 
     fun openApp(context: Context): Intent = baseIntent(context)
 
@@ -49,6 +52,16 @@ object AppLinks {
     /** Identifica a ação "Concluir" de um bloco num dia (não abre o app). */
     fun routineOccurrence(routineId: Long, epochDay: Long): Uri =
         Uri.parse("$SCHEME://$HOST_ROUTINE/$routineId/$epochDay")
+
+    /** Uris próprios das ações "Pular"/"Adiar" do aviso de bloco (não abrem o app; dão unicidade ao PendingIntent). */
+    fun routineSkip(routineId: Long, epochDay: Long): Uri =
+        Uri.parse("$SCHEME://$HOST_ROUTINE_SKIP/$routineId/$epochDay")
+
+    fun routineSnooze(routineId: Long, epochDay: Long): Uri =
+        Uri.parse("$SCHEME://$HOST_ROUTINE_SNOOZE/$routineId/$epochDay")
+
+    fun routineSnoozeFire(routineId: Long, epochDay: Long): Uri =
+        Uri.parse("$SCHEME://$HOST_ROUTINE_SNOOZE_FIRE/$routineId/$epochDay")
 
     /** Uris próprios das ações da notificação de lembrete (não abrem o app; dão unicidade ao PendingIntent). */
     fun reminderComplete(taskId: Long): Uri = Uri.parse("$SCHEME://$HOST_REMINDER_COMPLETE/$taskId")

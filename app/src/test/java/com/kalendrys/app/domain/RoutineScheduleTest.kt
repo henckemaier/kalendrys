@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -25,6 +26,9 @@ class RoutineScheduleTest {
         days: Int = RoutineDays.ALL,
         createdOn: LocalDate = saturday.minusDays(30),
         archivedOn: LocalDate? = null,
+        weekInterval: Int = 1,
+        startEpochDay: Long? = null,
+        endEpochDay: Long? = null,
     ) = Routine(
         id = id,
         title = "Rotina $id",
@@ -33,6 +37,24 @@ class RoutineScheduleTest {
         daysOfWeek = days,
         createdAt = millis(createdOn.atTime(18, 0)),
         archivedAt = archivedOn?.let { millis(it.atTime(10, 0)) },
+        weekInterval = weekInterval,
+        startEpochDay = startEpochDay,
+        endEpochDay = endEpochDay,
+    )
+
+    private fun override(
+        routineId: Long = 1,
+        on: LocalDate,
+        type: String,
+        newStartMinute: Int? = null,
+        newEpochDay: Long? = null,
+    ) = RoutineOverride(
+        id = 0,
+        routineId = routineId,
+        epochDay = on.toEpochDay(),
+        type = type,
+        newStartMinute = newStartMinute,
+        newEpochDay = newEpochDay,
     )
 
     @Test
@@ -90,5 +112,87 @@ class RoutineScheduleTest {
         val routine = routine(startMinute = 7 * 60, createdOn = day.minusDays(1))
         val next = RoutineSchedule.nextStart(routine, day.atTime(0, 30), zone)
         assertEquals(day.atTime(7, 0), next)
+    }
+
+    // --- T19: recorrência rica (a cada N semanas + janela) ---
+
+    @Test
+    fun `a cada 2 semanas ocorre so nas semanas de paridade par a partir da ancora`() {
+        // Âncora na segunda 19/10/2026; semana 0 ocorre, semana 1 pula, semana 2 ocorre.
+        val monday = LocalDate.of(2026, 10, 19)
+        val r = routine(weekInterval = 2, startEpochDay = monday.toEpochDay(), createdOn = monday.minusDays(10))
+        assertTrue(RoutineSchedule.occursOn(r, LocalDate.of(2026, 10, 21), zone)) // quarta, semana 0
+        assertFalse(RoutineSchedule.occursOn(r, LocalDate.of(2026, 10, 28), zone)) // quarta, semana 1
+        assertTrue(RoutineSchedule.occursOn(r, LocalDate.of(2026, 11, 4), zone)) // quarta, semana 2
+    }
+
+    @Test
+    fun `a cada 2 semanas - proximo inicio pula a semana impar`() {
+        val monday = LocalDate.of(2026, 10, 19)
+        val r = routine(weekInterval = 2, startEpochDay = monday.toEpochDay(), createdOn = monday.minusDays(10))
+        // Depois do fim da semana 0 (domingo 25/10), o próximo é a segunda da semana 2 (02/11), não a da semana 1.
+        val next = RoutineSchedule.nextStart(r, LocalDate.of(2026, 10, 25).atTime(23, 0), zone)
+        assertEquals(LocalDate.of(2026, 11, 2).atTime(7, 0), next)
+    }
+
+    @Test
+    fun `data de inicio futura adia a primeira ocorrencia`() {
+        val start = saturday.plusDays(7)
+        val r = routine(startEpochDay = start.toEpochDay())
+        assertFalse(RoutineSchedule.occursOn(r, saturday, zone))
+        assertTrue(RoutineSchedule.occursOn(r, start, zone))
+        assertEquals(start.atTime(7, 0), RoutineSchedule.nextStart(r, saturday.atTime(6, 0), zone))
+    }
+
+    @Test
+    fun `data de termino encerra a rotina`() {
+        val r = routine(endEpochDay = saturday.toEpochDay())
+        assertTrue(RoutineSchedule.occursOn(r, saturday, zone))
+        assertFalse(RoutineSchedule.occursOn(r, saturday.plusDays(1), zone))
+        // Depois do fim não há mais próximo início.
+        assertNull(RoutineSchedule.nextStart(r, saturday.atTime(23, 0), zone))
+    }
+
+    // --- T20: exceções pontuais (SKIP / RESCHEDULE) ---
+
+    @Test
+    fun `excecao SKIP remove a ocorrencia do dia`() {
+        val r = routine()
+        val skip = listOf(override(on = saturday, type = RoutineOverrideType.SKIP))
+        assertFalse(RoutineSchedule.occursOn(r, saturday, zone, skip))
+        assertTrue(RoutineSchedule.occursOn(r, saturday.plusDays(1), zone, skip)) // outros dias intactos
+    }
+
+    @Test
+    fun `excecao RESCHEDULE muda o minuto no mesmo dia`() {
+        val r = routine(startMinute = 7 * 60)
+        val resched = listOf(override(on = saturday, type = RoutineOverrideType.RESCHEDULE, newStartMinute = 9 * 60))
+        assertTrue(RoutineSchedule.occursOn(r, saturday, zone, resched))
+        assertEquals(saturday.atTime(9, 0), RoutineSchedule.startOn(r, saturday, resched))
+    }
+
+    @Test
+    fun `excecao RESCHEDULE move a ocorrencia para outro dia`() {
+        val r = routine(days = RoutineDays.WEEKDAYS, startMinute = 7 * 60)
+        val friday = saturday.minusDays(1)
+        val target = saturday // sábado normalmente não ocorre (só dias úteis)
+        val resched = listOf(
+            override(on = friday, type = RoutineOverrideType.RESCHEDULE, newStartMinute = 10 * 60, newEpochDay = target.toEpochDay()),
+        )
+        assertFalse(RoutineSchedule.occursOn(r, friday, zone, resched)) // saiu do dia de origem
+        assertTrue(RoutineSchedule.occursOn(r, target, zone, resched)) // entrou no dia de destino
+        assertEquals(target.atTime(10, 0), RoutineSchedule.startOn(r, target, resched))
+    }
+
+    @Test
+    fun `proximo inicio honra o SKIP pulando para o proximo dia marcado`() {
+        val r = routine(days = RoutineDays.WEEKDAYS)
+        val friday = saturday.minusDays(1)
+        val skip = listOf(override(on = friday, type = RoutineOverrideType.SKIP))
+        // Sexta pulada: o próximo é segunda (sáb/dom não são dias úteis).
+        assertEquals(
+            saturday.plusDays(2).atTime(7, 0),
+            RoutineSchedule.nextStart(r, friday.atTime(6, 0), zone, skip),
+        )
     }
 }

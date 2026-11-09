@@ -47,6 +47,7 @@ class KalendrysApp : Application() {
         RoutineRepository(
             database.routineDao(),
             database.routineCompletionDao(),
+            database.routineOverrideDao(),
             RoutineAlarms(this),
             routineNotifications,
         )

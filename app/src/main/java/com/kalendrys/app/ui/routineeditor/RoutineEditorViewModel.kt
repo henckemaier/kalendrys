@@ -115,6 +115,13 @@ class RoutineEditorViewModel(
 
     fun updateRemind(remind: Boolean) = draft.update { it?.copy(remind = remind) }
 
+    fun updateWeekInterval(weeks: Int) =
+        draft.update { it?.copy(weekInterval = weeks.coerceIn(1, RoutineDraft.MAX_WEEK_INTERVAL)) }
+
+    fun updateStartDate(epochDay: Long?) = draft.update { it?.copy(startEpochDay = epochDay) }
+
+    fun updateEndDate(epochDay: Long?) = draft.update { it?.copy(endEpochDay = epochDay) }
+
     fun save() {
         val state = uiState.value
         val current = state.draft ?: return
@@ -131,6 +138,43 @@ class RoutineEditorViewModel(
         viewModelScope.launch {
             repository.archive(existing)
             eventChannel.send(Event.Closed)
+        }
+    }
+
+    /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
+    fun applyDraft(newDraft: RoutineDraft) {
+        draft.value = newDraft
+    }
+
+    /**
+     * Duplica a rotina salva como uma nova ([copyTitle], novo id e data de criação), preservando os
+     * demais campos (inclusive os que o editor não mostra). Só vale para uma rotina existente.
+     */
+    fun duplicate(copyTitle: String) {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados.
+            repository.add(
+                existing.copy(
+                    id = NEW_ROUTINE_ID,
+                    title = copyTitle,
+                    createdAt = System.currentTimeMillis(),
+                    archivedAt = null,
+                    pausedAt = null,
+                ),
+            )
+            eventChannel.send(Event.Closed)
+        }
+    }
+
+    /**
+     * Pausa a rotina (para de agendar/avisar, mas mantém config + histórico) ou a retoma, conforme
+     * o estado atual. Não fecha o editor: o botão reflete o novo estado quando a rotina reemite.
+     */
+    fun togglePause() {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            if (existing.pausedAt == null) repository.pause(existing) else repository.resume(existing)
         }
     }
 
