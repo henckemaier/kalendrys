@@ -10,10 +10,20 @@ import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
 
-/** Resultado de uma checagem manual de atualização. */
+/**
+ * Resultado de uma checagem manual de atualização. Os desfechos de falha são distintos de
+ * propósito: cada um merece uma mensagem própria (um erro de rede não é a mesma coisa que "ainda
+ * não há release", que por sua vez não é "você já está atualizado" — este último é positivo).
+ */
 sealed interface UpdateCheck {
+    /** Já está na versão mais recente (desfecho positivo, não é erro). */
     data object UpToDate : UpdateCheck
     data class Available(val versionName: String, val apkUrl: String) : UpdateCheck
+    /** O repositório ainda não tem nenhuma versão publicada (HTTP 404 em /releases/latest). */
+    data object NoRelease : UpdateCheck
+    /** A resposta chegou, mas em formato inesperado (JSON inválido ou sem os campos esperados). */
+    data object MalformedResponse : UpdateCheck
+    /** Falha de rede real: sem conexão, timeout, TLS ou erro de servidor. */
     data object Failed : UpdateCheck
 }
 
@@ -31,15 +41,30 @@ class UpdateChecker(
 ) {
 
     suspend fun check(): UpdateCheck = withContext(Dispatchers.IO) {
-        val json = try {
+        val outcome = try {
             fetch(releasesUrl)
         } catch (e: IOException) {
+            // Erro de transporte (sem rede, timeout, TLS): falha de rede real, mensagem neutra.
             return@withContext UpdateCheck.Failed
         }
-        evaluate(json, currentVersionName)
+        when (outcome) {
+            is Fetch.Body -> evaluate(outcome.text, currentVersionName)
+            // 404 em /releases/latest = repositório ainda sem release publicado (≠ erro de rede).
+            Fetch.NoRelease -> UpdateCheck.NoRelease
+            Fetch.NetworkError -> UpdateCheck.Failed
+        }
     }
 
-    private fun fetch(url: String): String {
+    /** Resposta bruta da consulta HTTP, antes de interpretar o corpo. */
+    private sealed interface Fetch {
+        data class Body(val text: String) : Fetch
+        /** HTTP 404: o GitHub responde 404 em /releases/latest quando não há release publicado. */
+        data object NoRelease : Fetch
+        /** Qualquer outra resposta de transporte/servidor que não 200 nem 404. */
+        data object NetworkError : Fetch
+    }
+
+    private fun fetch(url: String): Fetch {
         val connection = (URL(url).openConnection() as HttpsURLConnection).apply {
             requestMethod = "GET"
             instanceFollowRedirects = true
@@ -48,11 +73,13 @@ class UpdateChecker(
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", USER_AGENT)
         }
-        try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("HTTP ${connection.responseCode}")
+        return try {
+            when (connection.responseCode) {
+                HttpURLConnection.HTTP_OK ->
+                    Fetch.Body(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+                HttpURLConnection.HTTP_NOT_FOUND -> Fetch.NoRelease
+                else -> Fetch.NetworkError
             }
-            return connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             connection.disconnect()
         }
@@ -65,19 +92,20 @@ class UpdateChecker(
 
         /**
          * Lógica pura (testável): a partir do JSON do release, decide se é mais novo que a versão
-         * local e extrai a URL do asset .apk. [UpdateCheck.Failed] se faltar tag SemVer válida ou
-         * um asset .apk.
+         * local e extrai a URL do asset .apk. Retorna [UpdateCheck.MalformedResponse] quando o
+         * corpo veio num formato que não dá para interpretar — JSON inválido, sem `tag_name` SemVer
+         * ou sem um asset .apk —, distinto de um erro de rede ([UpdateCheck.Failed]).
          */
         internal fun evaluate(json: String, currentVersionName: String): UpdateCheck {
             val release = try {
                 JSONObject(json)
             } catch (e: JSONException) {
-                return UpdateCheck.Failed
+                return UpdateCheck.MalformedResponse
             }
-            val tag = release.optString("tag_name").ifBlank { return UpdateCheck.Failed }
-            val apkUrl = apkAssetUrl(release) ?: return UpdateCheck.Failed
-            val remote = Semver.parse(tag) ?: return UpdateCheck.Failed
-            val local = Semver.parse(currentVersionName) ?: return UpdateCheck.Failed
+            val tag = release.optString("tag_name").ifBlank { return UpdateCheck.MalformedResponse }
+            val apkUrl = apkAssetUrl(release) ?: return UpdateCheck.MalformedResponse
+            val remote = Semver.parse(tag) ?: return UpdateCheck.MalformedResponse
+            val local = Semver.parse(currentVersionName) ?: return UpdateCheck.MalformedResponse
             return if (remote > local) {
                 UpdateCheck.Available(versionName = tag.trim().removePrefix("v").removePrefix("V"), apkUrl = apkUrl)
             } else {

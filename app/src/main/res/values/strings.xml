@@ -249,8 +249,11 @@
     <string name="settings_update_available">Nova versão %1$s disponível. Toque para baixar.</string>
     <string name="settings_update_downloading">Baixando… %1$d%%</string>
     <string name="settings_update_installing">Abra a instalação para concluir a atualização.</string>
-    <string name="settings_update_needs_permission">Permita instalar apps desconhecidos e toque de novo.</string>
+    <string name="settings_update_needs_permission">Permita instalar apps desconhecidos para concluir a atualização.</string>
+    <string name="settings_update_no_release">Ainda não há uma versão publicada para baixar.</string>
+    <string name="settings_update_bad_response">A resposta do servidor de atualizações veio em um formato inesperado.</string>
     <string name="settings_update_failed">Não foi possível verificar atualizações agora. Tente novamente mais tarde.</string>
+    <string name="settings_update_play_protect">Fora da Play Store, o Android pode exibir um aviso do Play Protect ao instalar. É esperado.</string>
 
     <!-- Lembretes -->
     <string name="reminder_channel_name">Lembretes</string>
