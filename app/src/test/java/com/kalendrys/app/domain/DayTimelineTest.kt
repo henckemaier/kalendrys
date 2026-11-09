@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline.Block
 import com.kalendrys.app.domain.DayTimeline.Gap
@@ -41,6 +42,23 @@ class DayTimelineTest {
             date.atTime(h, m).atZone(zone).toInstant().toEpochMilli()
         }
         return Task(id = id, title = "T$id", dueDate = date.toEpochDay(), reminderAt = reminderAt)
+    }
+
+    private fun overrides(vararg ov: RoutineOverride): Map<Long, List<RoutineOverride>> =
+        ov.toList().groupBy { it.routineId }
+
+    private fun skip(routineId: Long, date: LocalDate = day) =
+        RoutineOverride(routineId = routineId, epochDay = date.toEpochDay(), type = RoutineOverrideType.SKIP)
+
+    private fun reschedule(routineId: Long, date: LocalDate = day, newStart: String? = null, newDate: LocalDate? = null): RoutineOverride {
+        val minute = newStart?.let { val (h, m) = it.split(":").map(String::toInt); h * 60 + m }
+        return RoutineOverride(
+            routineId = routineId,
+            epochDay = date.toEpochDay(),
+            type = RoutineOverrideType.RESCHEDULE,
+            newStartMinute = minute,
+            newEpochDay = newDate?.toEpochDay(),
+        )
     }
 
     @Test
@@ -148,5 +166,45 @@ class DayTimelineTest {
         )
         assertEquals(1, items.size)
         assertTrue(items.filterIsInstance<TaskItem>().isEmpty())
+    }
+
+    @Test
+    fun `ocorrencia com SKIP some da trilha`() {
+        val items = DayTimeline.build(
+            listOf(routine(1, "07:00", 30), routine(2, "12:00", 30)),
+            emptySet(),
+            day,
+            zone,
+            overrides = overrides(skip(1)),
+        )
+        assertEquals(listOf(2L), items.filterIsInstance<Block>().map { it.routine.id })
+    }
+
+    @Test
+    fun `RESCHEDULE move a ocorrencia para o novo horario`() {
+        val items = DayTimeline.build(
+            listOf(routine(1, "07:00", 30)),
+            emptySet(),
+            day,
+            zone,
+            overrides = overrides(reschedule(1, newStart = "15:30")),
+        )
+        val block = items.filterIsInstance<Block>().single()
+        assertEquals(1L, block.routine.id)
+        assertEquals(15 * 60 + 30, block.startMinute)
+        assertEquals(15 * 60 + 30 + 30, block.endMinute)
+    }
+
+    @Test
+    fun `RESCHEDULE para outro dia sai do original e entra no novo horario`() {
+        val routines = listOf(routine(1, "07:00", 30))
+        val ov = overrides(reschedule(1, date = day, newStart = "09:00", newDate = day.plusDays(1)))
+        // Sai do dia original.
+        assertTrue(DayTimeline.build(routines, emptySet(), day, zone, overrides = ov).filterIsInstance<Block>().isEmpty())
+        // Entra no dia alvo, no novo horário (a remarcação ganha do horário natural).
+        val block = DayTimeline.build(routines, emptySet(), day.plusDays(1), zone, overrides = ov)
+            .filterIsInstance<Block>()
+            .single()
+        assertEquals(9 * 60, block.startMinute)
     }
 }

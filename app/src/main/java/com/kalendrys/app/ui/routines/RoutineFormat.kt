@@ -15,14 +15,18 @@ fun minuteOfDayLabel(minute: Int): String = LocalTime.of(minute % 1440 / 60, min
 
 /** "17:20–17:35 (15 min)", ou só "17:20" para um bloco sem duração. */
 @Composable
-fun routineTimeRange(routine: Routine): String =
-    if (routine.durationMinutes == 0) {
-        minuteOfDayLabel(routine.startMinute)
+fun routineTimeRange(routine: Routine): String = routineTimeRange(routine.startMinute, routine.durationMinutes)
+
+/** Faixa de horário a partir de um início efetivo (honra uma remarcação) e a duração. */
+@Composable
+fun routineTimeRange(startMinute: Int, durationMinutes: Int): String =
+    if (durationMinutes == 0) {
+        minuteOfDayLabel(startMinute)
     } else {
         stringResource(
             R.string.routine_time_range,
-            minuteOfDayLabel(routine.startMinute),
-            minuteOfDayLabel(routine.endMinute),
-            DurationFormat.format(routine.durationMinutes),
+            minuteOfDayLabel(startMinute),
+            minuteOfDayLabel(startMinute + durationMinutes),
+            DurationFormat.format(durationMinutes),
         )
     }

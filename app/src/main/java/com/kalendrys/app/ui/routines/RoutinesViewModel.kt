@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
@@ -101,13 +102,17 @@ class RoutinesViewModel(
 
     val uiState: StateFlow<UiState> =
         combine(
-            combine(repository.routines, repository.scheduledRoutines) { all, scheduled -> all to scheduled },
+            combine(
+                repository.routines,
+                repository.scheduledRoutines,
+                repository.overrides,
+            ) { all, scheduled, overrides -> Triple(all, scheduled, overrides) },
             taskRepository.tasks,
             weekCompletions,
             categoryRepository.categories,
             combine(selectedDate, selectedCategoryId) { date, category -> date to category },
         ) { sources, tasks, weekLogs, categories, selection ->
-            val (routines, scheduled) = sources
+            val (routines, scheduled, overrides) = sources
             val (weekStart, routineDone, taskCompletions) = weekLogs
             val (selected, rawCategory) = selection
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
@@ -135,9 +140,9 @@ class RoutinesViewModel(
                 // Pausada não entra na trilha nem nos dots; continua no calendário (gestão) para retomar.
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
-                    weekDay(date, visibleRoutines, routineDone[date.toEpochDay()].orEmpty(), zone)
+                    weekDay(date, visibleRoutines, routineDone[date.toEpochDay()].orEmpty(), zone, overrides)
                 },
-                timeline = DayTimeline.build(visibleRoutines, routineDoneToday, selected, zone, visibleTasks, taskDoneToday),
+                timeline = DayTimeline.build(visibleRoutines, routineDoneToday, selected, zone, visibleTasks, taskDoneToday, overrides),
                 untimedTasks = visibleTasks
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
                     .sortedBy { it.title.lowercase() }
@@ -159,9 +164,15 @@ class RoutinesViewModel(
     private fun List<RoutineCompletion>.groupLogs(): Map<Long, Set<Long>> =
         groupBy({ it.epochDay }, { it.routineId }).mapValues { (_, ids) -> ids.toSet() }
 
-    private fun weekDay(date: LocalDate, routines: List<Routine>, done: Set<Long>, zone: ZoneId): WeekDay {
+    private fun weekDay(
+        date: LocalDate,
+        routines: List<Routine>,
+        done: Set<Long>,
+        zone: ZoneId,
+        overrides: Map<Long, List<RoutineOverride>>,
+    ): WeekDay {
         val blocks = routines
-            .filter { RoutineSchedule.occursOn(it, date, zone) }
+            .filter { RoutineSchedule.occursOn(it, date, zone, overrides[it.id].orEmpty()) }
             .sortedWith(compareBy({ it.startMinute }, { it.id }))
         return WeekDay(
             date = date,

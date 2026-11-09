@@ -14,6 +14,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /** Fonte única das rotinas: banco, alarme do próximo início e notificações sempre em sincronia. */
 class RoutineRepository(
@@ -32,6 +33,13 @@ class RoutineRepository(
      * gestão ([routines]) continua mostrando as pausadas, para dar pra retomá-las.
      */
     val scheduledRoutines: Flow<List<Routine>> = routineDao.observeScheduled()
+
+    /**
+     * Exceções pontuais agrupadas por rotina, de forma reativa: o display (trilha, dots, calendário)
+     * honra SKIP/RESCHEDULE assim que o usuário cria ou remove uma exceção.
+     */
+    val overrides: Flow<Map<Long, List<RoutineOverride>>> =
+        overrideDao.observeAll().map { all -> all.groupBy { it.routineId } }
 
     fun observeRoutine(id: Long): Flow<Routine?> = routineDao.observeById(id)
 

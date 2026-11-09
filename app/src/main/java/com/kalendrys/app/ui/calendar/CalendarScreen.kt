@@ -514,7 +514,7 @@ private fun RoutineEntryContent(entry: RoutineEntry) {
         }
         Spacer(Modifier.width(12.dp))
         Text(
-            text = minuteOfDayLabel(routine.startMinute),
+            text = minuteOfDayLabel(entry.startMinute),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(52.dp),

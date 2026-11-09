@@ -3,6 +3,7 @@ package com.kalendrys.app.data.repository
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.TodayOverview
 import java.time.Duration
@@ -29,6 +30,7 @@ class TodayRepository(
         val routines: List<Routine>,
         val routineLogs: List<RoutineCompletion>,
         val lastCompletions: Map<Long, Long>,
+        val overrides: Map<Long, List<RoutineOverride>>,
     )
 
     /**
@@ -45,9 +47,11 @@ class TodayRepository(
                 taskRepository.observeCompletionsBetween(today, tomorrow),
                 routineRepository.scheduledRoutines,
                 routineRepository.observeCompletionsBetween(today, tomorrow),
-                taskRepository.lastCompletions,
-                ::Snapshot,
-            ).transformLatest { snapshot ->
+                // lastCompletions e overrides juntos: o combine tipado vai só até 5 fontes.
+                combine(taskRepository.lastCompletions, routineRepository.overrides) { last, overrides -> last to overrides },
+            ) { tasks, taskLogs, routines, routineLogs, lastAndOverrides ->
+                Snapshot(tasks, taskLogs, routines, routineLogs, lastAndOverrides.first, lastAndOverrides.second)
+            }.transformLatest { snapshot ->
                 while (true) {
                     val zone = ZoneId.systemDefault()
                     val now = LocalDateTime.now(zone)
@@ -59,6 +63,7 @@ class TodayRepository(
                         routines = snapshot.routines,
                         routineCompletions = snapshot.routineLogs,
                         lastCompletions = snapshot.lastCompletions,
+                        overrides = snapshot.overrides,
                     )
                     emit(overview)
                     // Depois da meia-noite quem recomeça tudo é o currentDate().
