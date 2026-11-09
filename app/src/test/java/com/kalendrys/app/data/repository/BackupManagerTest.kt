@@ -99,8 +99,9 @@ class BackupManagerTest {
     @Test
     fun `restaura backup v1 sem os campos custom caindo nos defaults`() = runTest {
         val source = settingsRepo("source-v1")
+        // v1 só tinha repetições simples (sem CUSTOM); DAILY é o caso realista de um backup antigo.
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.CUSTOM, intervalEvery = 5, intervalUnit = RecurrenceUnit.WEEKS, byWeekdays = 0b1),
+            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY),
         )
         val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
 
@@ -121,9 +122,31 @@ class BackupManagerTest {
         assertEquals(1, restored.intervalEvery)
         assertNull(restored.intervalUnit)
         assertEquals(0, restored.byWeekdays)
-        // O resto da tarefa é preservado.
+        // O resto da tarefa é preservado (a repetição simples continua intacta).
         assertEquals("Antiga", restored.title)
-        assertEquals(ReminderRepeat.CUSTOM, restored.repeat)
+        assertEquals(ReminderRepeat.DAILY, restored.repeat)
+    }
+
+    @Test
+    fun `restaura CUSTOM sem config utilizavel normalizando para NONE`() = runTest {
+        val source = settingsRepo("source-inert")
+        sourceDb.taskDao().insert(
+            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Corrompe o JSON: CUSTOM sem unidade e sem dias-da-semana (tarefa que nunca ocorreria).
+        val root = JSONObject(json)
+        val tasks = root.getJSONArray("tasks")
+        for (i in 0 until tasks.length()) {
+            tasks.getJSONObject(i).apply { remove("intervalUnit"); put("byWeekdays", 0) }
+        }
+
+        val dest = settingsRepo("dest-inert")
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        // Normalizado para NONE em vez de restaurar uma tarefa silenciosamente inerte.
+        assertEquals(ReminderRepeat.NONE, destDb.taskDao().all().single().repeat)
     }
 
     private fun inMemoryDb(): AppDatabase =

@@ -176,22 +176,35 @@ private fun Task.toJson() = JSONObject().apply {
     put("location", location)
 }
 
-private fun JSONObject.toTask() = Task(
-    id = getLong("id"),
-    title = getString("title"),
-    notes = optString("notes"),
-    createdAt = getLong("createdAt"),
-    dueDate = nullableLong("dueDate"),
-    reminderAt = nullableLong("reminderAt"),
+private fun JSONObject.toTask(): Task {
     // Valor desconhecido (enum mudou entre versões) cai no padrão em vez de derrubar o restauro.
-    repeat = runCatching { ReminderRepeat.valueOf(getString("repeat")) }.getOrDefault(ReminderRepeat.NONE),
+    val rawRepeat = runCatching { ReminderRepeat.valueOf(getString("repeat")) }.getOrDefault(ReminderRepeat.NONE)
     // Retrocompatível: backup v1 não tem estes campos -> defaults (intervalo 1, sem unidade, sem dias).
-    intervalEvery = optInt("intervalEvery", 1),
-    intervalUnit = optString("intervalUnit").takeIf { it.isNotEmpty() }
-        ?.let { runCatching { RecurrenceUnit.valueOf(it) }.getOrNull() },
-    byWeekdays = optInt("byWeekdays", 0),
-    location = optString("location"),
-)
+    val unit = optString("intervalUnit").takeIf { it.isNotEmpty() }
+        ?.let { runCatching { RecurrenceUnit.valueOf(it) }.getOrNull() }
+    val byWeekdays = optInt("byWeekdays", 0)
+    // CUSTOM sem configuração utilizável (backup adulterado/corrompido, ou unidade desconhecida
+    // que virou null) é normalizado para NONE: não restaura uma tarefa silenciosamente inerte, que
+    // nunca ocorre nem lembra. Mesmo espírito dos outros fallbacks.
+    val repeat = if (rawRepeat == ReminderRepeat.CUSTOM && byWeekdays == 0 && unit == null) {
+        ReminderRepeat.NONE
+    } else {
+        rawRepeat
+    }
+    return Task(
+        id = getLong("id"),
+        title = getString("title"),
+        notes = optString("notes"),
+        createdAt = getLong("createdAt"),
+        dueDate = nullableLong("dueDate"),
+        reminderAt = nullableLong("reminderAt"),
+        repeat = repeat,
+        intervalEvery = optInt("intervalEvery", 1),
+        intervalUnit = unit,
+        byWeekdays = byWeekdays,
+        location = optString("location"),
+    )
+}
 
 private fun CompletionLog.toJson() = JSONObject().apply {
     put("id", id)
