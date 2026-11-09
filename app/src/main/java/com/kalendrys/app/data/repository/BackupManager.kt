@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -145,11 +146,15 @@ class BackupManager(
     }
 
     companion object {
-        /** Versão do formato do backup (não do schema do Room). Subir ao mudar a estrutura do JSON. */
-        const val SCHEMA_VERSION = 1
+        /**
+         * Versão do formato do backup (não do schema do Room). Subir ao mudar a estrutura do JSON.
+         * v2: campos da recorrência custom na tarefa (intervalEvery/intervalUnit/byWeekdays). A
+         * leitura é retrocompatível — um backup v1 (sem esses campos) restaura com os defaults.
+         */
+        const val SCHEMA_VERSION = 2
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -165,6 +170,9 @@ private fun Task.toJson() = JSONObject().apply {
     putNullableLong("dueDate", dueDate)
     putNullableLong("reminderAt", reminderAt)
     put("repeat", repeat.name)
+    put("intervalEvery", intervalEvery)
+    intervalUnit?.let { put("intervalUnit", it.name) }
+    put("byWeekdays", byWeekdays)
     put("location", location)
 }
 
@@ -177,6 +185,11 @@ private fun JSONObject.toTask() = Task(
     reminderAt = nullableLong("reminderAt"),
     // Valor desconhecido (enum mudou entre versões) cai no padrão em vez de derrubar o restauro.
     repeat = runCatching { ReminderRepeat.valueOf(getString("repeat")) }.getOrDefault(ReminderRepeat.NONE),
+    // Retrocompatível: backup v1 não tem estes campos -> defaults (intervalo 1, sem unidade, sem dias).
+    intervalEvery = optInt("intervalEvery", 1),
+    intervalUnit = optString("intervalUnit").takeIf { it.isNotEmpty() }
+        ?.let { runCatching { RecurrenceUnit.valueOf(it) }.getOrNull() },
+    byWeekdays = optInt("byWeekdays", 0),
     location = optString("location"),
 )
 

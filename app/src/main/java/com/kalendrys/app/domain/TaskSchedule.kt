@@ -15,6 +15,10 @@ data class TaskTiming(
     val date: LocalDate?,
     val time: LocalTime? = null,
     val repeat: ReminderRepeat = ReminderRepeat.NONE,
+    /** Configuração da recorrência [ReminderRepeat.CUSTOM]; ver [com.kalendrys.app.data.local.entity.Task]. */
+    val intervalEvery: Int = 1,
+    val intervalUnit: RecurrenceUnit? = null,
+    val byWeekdays: Int = 0,
 ) {
     val effectiveRepeat: ReminderRepeat get() = if (date == null) ReminderRepeat.NONE else repeat
 
@@ -22,13 +26,23 @@ data class TaskTiming(
         if (date != null && time != null) date.atTime(time).atZone(zone).toInstant().toEpochMilli() else null
 
     fun applyTo(task: Task, zone: ZoneId): Task =
-        task.copy(dueDate = date?.toEpochDay(), reminderAt = reminderAt(zone), repeat = effectiveRepeat)
+        task.copy(
+            dueDate = date?.toEpochDay(),
+            reminderAt = reminderAt(zone),
+            repeat = effectiveRepeat,
+            intervalEvery = intervalEvery.coerceAtLeast(1),
+            intervalUnit = intervalUnit,
+            byWeekdays = byWeekdays,
+        )
 
     companion object {
         fun of(task: Task, zone: ZoneId) = TaskTiming(
             date = task.dueDate?.let(LocalDate::ofEpochDay),
             time = task.reminderAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalTime() },
             repeat = task.repeat,
+            intervalEvery = task.intervalEvery,
+            intervalUnit = task.intervalUnit,
+            byWeekdays = task.byWeekdays,
         )
     }
 }
@@ -60,15 +74,28 @@ object TaskSchedule {
 
     fun occursOn(task: Task, date: LocalDate): Boolean {
         val start = dueDate(task) ?: return false
-        return ReminderRecurrence.occursOn(date, start.atStartOfDay(), task.repeat)
+        return ReminderRecurrence.occursOn(
+            date,
+            start.atStartOfDay(),
+            task.repeat,
+            task.intervalEvery,
+            task.intervalUnit,
+            task.byWeekdays,
+        )
     }
 
     /** Primeiro dia com a tarefa a partir de [from] (inclusive); `null` se não há mais nenhum. */
     fun nextOccurrence(task: Task, from: LocalDate): LocalDate? {
         val start = dueDate(task) ?: return null
         // Estritamente depois do último instante do dia anterior = a partir de [from].
-        return ReminderRecurrence.nextOccurrence(start.atStartOfDay(), task.repeat, from.atStartOfDay().minusNanos(1))
-            ?.toLocalDate()
+        return ReminderRecurrence.nextOccurrence(
+            start.atStartOfDay(),
+            task.repeat,
+            from.atStartOfDay().minusNanos(1),
+            task.intervalEvery,
+            task.intervalUnit,
+            task.byWeekdays,
+        )?.toLocalDate()
     }
 
     /**

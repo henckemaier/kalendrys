@@ -25,6 +25,9 @@ open class ReminderScheduler(private val context: Context) {
             repeat = task.repeat,
             now = after,
             zone = ZoneId.systemDefault(),
+            every = task.intervalEvery,
+            unit = task.intervalUnit,
+            byWeekdays = task.byWeekdays,
         ) ?: return
         alarmManager.setAlarmClockOrInexact(context, triggerAt, pendingIntent(task.id))
     }

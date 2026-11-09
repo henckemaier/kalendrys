@@ -2,17 +2,25 @@
 
 package com.kalendrys.app.ui.tasks
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
@@ -22,7 +30,9 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -35,20 +45,32 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.TimePickerDialog
+import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * Data, repetição e lembrete da tarefa, em chips: a data abre o calendário, o lembrete abre o
@@ -92,7 +114,21 @@ fun TaskTimingField(
                 RepeatChip(
                     date = date,
                     repeat = timing.repeat,
-                    onRepeatChange = { onTimingChange(timing.copy(repeat = it)) },
+                    onRepeatChange = { newRepeat ->
+                        // Ao escolher Personalizado pela 1ª vez, começa no modo intervalo "a cada 1 dia".
+                        val next = if (newRepeat == ReminderRepeat.CUSTOM &&
+                            timing.intervalUnit == null && timing.byWeekdays == 0
+                        ) {
+                            timing.copy(
+                                repeat = newRepeat,
+                                intervalUnit = RecurrenceUnit.DAYS,
+                                intervalEvery = timing.intervalEvery.coerceAtLeast(1),
+                            )
+                        } else {
+                            timing.copy(repeat = newRepeat)
+                        }
+                        onTimingChange(next)
+                    },
                 )
                 TimingChip(
                     label = timing.time?.format(TIME) ?: stringResource(R.string.reminder_set),
@@ -102,6 +138,13 @@ fun TaskTimingField(
                     clearLabel = stringResource(R.string.reminder_clear),
                 )
             }
+        }
+        if (date != null && timing.effectiveRepeat == ReminderRepeat.CUSTOM) {
+            CustomRecurrenceConfig(
+                timing = timing,
+                onChange = onTimingChange,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
         if (warning != null) {
             Text(
@@ -210,6 +253,100 @@ private fun RepeatChip(
     }
 }
 
+/**
+ * Config da recorrência [ReminderRepeat.CUSTOM]: "a cada N [dias/semanas/meses]" OU dias-da-semana
+ * escolhidos. Marcar dias-da-semana tem prioridade (o intervalo fica esmaecido); limpar todos
+ * volta ao modo intervalo. Casa com a semântica de [com.kalendrys.app.domain.ReminderRecurrence].
+ */
+@Composable
+private fun CustomRecurrenceConfig(
+    timing: TaskTiming,
+    onChange: (TaskTiming) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val locale = Locale.getDefault()
+    val firstDay = firstDayOfWeek(locale)
+    val byWeekdayMode = timing.byWeekdays != 0
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.alpha(if (byWeekdayMode) DISABLED_ALPHA else 1f),
+        ) {
+            Text(stringResource(R.string.repeat_custom_interval_label))
+            IconButton(
+                onClick = { onChange(timing.copy(intervalEvery = (timing.intervalEvery - 1).coerceAtLeast(1))) },
+                enabled = !byWeekdayMode && timing.intervalEvery > 1,
+            ) { Icon(Icons.Filled.Remove, stringResource(R.string.repeat_custom_decrease)) }
+            Text(timing.intervalEvery.toString(), style = MaterialTheme.typography.titleMedium)
+            IconButton(
+                onClick = { onChange(timing.copy(intervalEvery = (timing.intervalEvery + 1).coerceAtMost(MAX_INTERVAL))) },
+                enabled = !byWeekdayMode,
+            ) { Icon(Icons.Filled.Add, stringResource(R.string.repeat_custom_increase)) }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RecurrenceUnit.entries.forEach { unit ->
+                FilterChip(
+                    // Escolher uma unidade sempre leva ao modo intervalo (limpa os dias-da-semana).
+                    selected = !byWeekdayMode && timing.intervalUnit == unit,
+                    onClick = { onChange(timing.copy(intervalUnit = unit, byWeekdays = 0)) },
+                    label = { Text(stringResource(unitLabel(unit))) },
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.repeat_custom_days_label),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            for (offset in 0L until 7L) {
+                val day = firstDay.plus(offset)
+                val selected = RoutineDays.contains(timing.byWeekdays, day)
+                val colors = MaterialTheme.colorScheme
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) colors.primary else colors.surfaceContainerHigh)
+                        .toggleable(
+                            value = selected,
+                            role = Role.Checkbox,
+                            onValueChange = {
+                                val mask = RoutineDays.toggle(timing.byWeekdays, day)
+                                // Sem nenhum dia marcado, garante uma unidade para o modo intervalo.
+                                onChange(
+                                    timing.copy(
+                                        byWeekdays = mask,
+                                        intervalUnit = if (mask == 0) timing.intervalUnit ?: RecurrenceUnit.DAYS else timing.intervalUnit,
+                                    ),
+                                )
+                            },
+                        )
+                        .semantics { contentDescription = day.getDisplayName(TextStyle.FULL, locale) },
+                ) {
+                    Text(
+                        text = day.getDisplayName(TextStyle.NARROW, locale),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) colors.onPrimary else colors.onSurface,
+                        modifier = Modifier.clearAndSetSemantics {},
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun unitLabel(unit: RecurrenceUnit): Int = when (unit) {
+    RecurrenceUnit.DAYS -> R.string.repeat_custom_unit_days
+    RecurrenceUnit.WEEKS -> R.string.repeat_custom_unit_weeks
+    RecurrenceUnit.MONTHS -> R.string.repeat_custom_unit_months
+}
+
+private const val DISABLED_ALPHA = 0.38f
+private const val MAX_INTERVAL = 99
+
 @Composable
 private fun TaskDatePickerDialog(
     initialDate: LocalDate,
@@ -262,4 +399,5 @@ fun repeatLabel(repeat: ReminderRepeat, date: LocalDate): String = when (repeat)
     // Por dia da semana: o gênero muda em português ("toda segunda", "todo sábado").
     ReminderRepeat.WEEKLY -> stringArrayResource(R.array.repeat_weekly)[date.dayOfWeek.value - 1]
     ReminderRepeat.MONTHLY -> stringResource(R.string.repeat_monthly, date.dayOfMonth)
+    ReminderRepeat.CUSTOM -> stringResource(R.string.repeat_custom)
 }
