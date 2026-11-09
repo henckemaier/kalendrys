@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -83,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DayTimeline.Link
@@ -184,6 +187,13 @@ fun RoutinesScreen(
                         onNextWeek = viewModel::nextWeek,
                     )
                 }
+                if (state.isLoaded && state.categories.isNotEmpty()) {
+                    CategoryFilterRow(
+                        categories = state.categories,
+                        selectedId = state.selectedCategoryId,
+                        onSelect = viewModel::selectCategory,
+                    )
+                }
             }
         },
         floatingActionButton = {
@@ -213,6 +223,39 @@ fun RoutinesScreen(
                 onToggle = viewModel::toggle,
                 onToggleTask = viewModel::toggleTask,
                 modifier = Modifier.padding(innerPadding),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryFilterRow(
+    categories: List<RoutineCategory>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+    ) {
+        item(key = "category_all") {
+            FilterChip(
+                selected = selectedId == null,
+                onClick = { onSelect(null) },
+                label = { Text(stringResource(R.string.routine_category_filter_all)) },
+            )
+        }
+        items(categories, key = { it.id }) { category ->
+            FilterChip(
+                selected = selectedId == category.id,
+                onClick = { onSelect(category.id) },
+                label = { Text(category.name) },
+                leadingIcon = {
+                    Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
+                },
             )
         }
     }

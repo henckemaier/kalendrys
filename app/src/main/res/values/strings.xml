@@ -85,6 +85,26 @@
     <string name="task_complete">Concluir %1$s</string>
     <string name="task_uncomplete">Desmarcar %1$s</string>
 
+    <!-- Categorias de rotina -->
+    <string name="routine_category">Categoria</string>
+    <string name="routine_category_none">Sem categoria</string>
+    <string name="routine_category_filter_all">Todas</string>
+    <string name="routine_categories_title">Categorias</string>
+    <string name="routine_categories_empty_title">Nenhuma categoria</string>
+    <string name="routine_categories_empty_message">Crie categorias para agrupar e filtrar suas rotinas.</string>
+    <string name="routine_category_add">Nova categoria</string>
+    <string name="routine_category_edit_title">Editar categoria</string>
+    <string name="routine_category_name_label">Nome</string>
+    <string name="routine_category_edit">Editar %1$s</string>
+    <string name="routine_category_delete">Excluir %1$s</string>
+    <string name="routine_category_delete_title">Excluir categoria?</string>
+    <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
+
+    <!-- Configurações: rotinas -->
+    <string name="settings_section_routines">Rotinas</string>
+    <string name="settings_routine_categories">Categorias de rotina</string>
+    <string name="settings_routine_categories_description">Crie e organize categorias para agrupar suas rotinas.</string>
+
     <!-- Editor de rotina -->
     <string name="routine_new_title">Nova rotina</string>
     <string name="routine_edit_title">Editar rotina</string>

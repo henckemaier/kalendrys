@@ -15,6 +15,8 @@ data class RoutineDraft(
     val durationMinutes: Int = DEFAULT_DURATION_MINUTES,
     val daysOfWeek: Int = RoutineDays.ALL,
     val remind: Boolean = true,
+    /** Categoria à qual a rotina pertence ([RoutineCategory.id]), ou null se sem categoria. */
+    val categoryId: Long? = null,
 ) {
     val hasDays: Boolean get() = daysOfWeek and RoutineDays.ALL != 0
 
@@ -44,6 +46,7 @@ data class RoutineDraft(
             durationMinutes = durationMinutes,
             daysOfWeek = daysOfWeek,
             remind = remind,
+            categoryId = categoryId,
         )
 
     fun toNewRoutine(now: Long = System.currentTimeMillis()): Routine =
@@ -65,6 +68,7 @@ data class RoutineDraft(
             durationMinutes = routine.durationMinutes,
             daysOfWeek = routine.daysOfWeek,
             remind = routine.remind,
+            categoryId = routine.categoryId,
         )
     }
 }

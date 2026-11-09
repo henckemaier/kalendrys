@@ -9,8 +9,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.CalendarCalculator
@@ -41,6 +43,7 @@ import kotlinx.coroutines.launch
 class RoutinesViewModel(
     private val repository: RoutineRepository,
     private val taskRepository: TaskRepository,
+    private val categoryRepository: RoutineCategoryRepository,
     private val firstDayOfWeek: DayOfWeek,
 ) : ViewModel() {
 
@@ -62,6 +65,10 @@ class RoutinesViewModel(
         val untimedTasks: List<DayTask> = emptyList(),
         /** Alguma rotina ativa ou tarefa com data; sem nada a tela mostra o estado vazio. */
         val hasContent: Boolean = false,
+        /** Categorias existentes, para os chips de filtro (vazio = tela não mostra o filtro). */
+        val categories: List<RoutineCategory> = emptyList(),
+        /** Categoria do filtro ativo, ou null para "todas". */
+        val selectedCategoryId: Long? = null,
     ) {
         val isShowingToday: Boolean get() = selectedDate == today
 
@@ -73,6 +80,7 @@ class RoutinesViewModel(
     data class Completed(val routineId: Long, val date: LocalDate)
 
     private val selectedDate = MutableStateFlow(LocalDate.now())
+    private val selectedCategoryId = MutableStateFlow<Long?>(null)
 
     /** Última leitura das conclusões de tarefa da semana visível, para desfazer pela trilha. */
     @Volatile
@@ -92,12 +100,21 @@ class RoutinesViewModel(
         }
 
     val uiState: StateFlow<UiState> =
-        combine(repository.routines, taskRepository.tasks, weekCompletions, selectedDate) {
-                routines, tasks, (weekStart, routineDone, taskCompletions), selected ->
+        combine(
+            repository.routines,
+            taskRepository.tasks,
+            weekCompletions,
+            categoryRepository.categories,
+            combine(selectedDate, selectedCategoryId) { date, category -> date to category },
+        ) { routines, tasks, weekLogs, categories, selection ->
+            val (weekStart, routineDone, taskCompletions) = weekLogs
+            val (selected, rawCategory) = selection
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
             if (selected.isBefore(weekStart) || !selected.isBefore(weekStart.plusDays(DAYS_IN_WEEK))) {
                 return@combine null
             }
+            // Se a categoria do filtro foi excluída, volta sozinho para "todas".
+            val category = rawCategory?.takeIf { id -> categories.any { it.id == id } }
             taskLogs = taskCompletions
             val zone = ZoneId.systemDefault()
             val taskDoneByDay = taskCompletions
@@ -105,20 +122,26 @@ class RoutinesViewModel(
                 .mapValues { (_, ids) -> ids.toSet() }
             val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
             val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
+            // Com um filtro por categoria, só as rotinas daquela categoria aparecem; as tarefas (que
+            // não têm categoria) ficam de fora até o filtro voltar para "todas".
+            val visibleRoutines = if (category == null) routines else routines.filter { it.categoryId == category }
+            val visibleTasks = if (category == null) tasks else emptyList()
             UiState(
                 isLoaded = true,
                 today = LocalDate.now(),
                 selectedDate = selected,
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
-                    weekDay(date, routines, routineDone[date.toEpochDay()].orEmpty(), zone)
+                    weekDay(date, visibleRoutines, routineDone[date.toEpochDay()].orEmpty(), zone)
                 },
-                timeline = DayTimeline.build(routines, routineDoneToday, selected, zone, tasks, taskDoneToday),
-                untimedTasks = tasks
+                timeline = DayTimeline.build(visibleRoutines, routineDoneToday, selected, zone, visibleTasks, taskDoneToday),
+                untimedTasks = visibleTasks
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
                     .sortedBy { it.title.lowercase() }
                     .map { DayTask(it, it.id in taskDoneToday) },
                 hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
+                categories = categories,
+                selectedCategoryId = category,
             )
         }.filterNotNull().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
@@ -153,6 +176,11 @@ class RoutinesViewModel(
     fun previousWeek() = select(selectedDate.value.minusWeeks(1))
 
     fun nextWeek() = select(selectedDate.value.plusWeeks(1))
+
+    /** Filtra a trilha por categoria; null mostra todas (rotinas + tarefas). */
+    fun selectCategory(categoryId: Long?) {
+        selectedCategoryId.value = categoryId
+    }
 
     /** Marca como feito (com "Desfazer" no snackbar) ou, se já estava feito, desmarca. */
     fun toggle(block: DayTimeline.Block) {
@@ -217,7 +245,7 @@ class RoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutinesViewModel(app.routineRepository, app.repository, firstDayOfWeek())
+                RoutinesViewModel(app.routineRepository, app.repository, app.routineCategoryRepository, firstDayOfWeek())
             }
         }
     }

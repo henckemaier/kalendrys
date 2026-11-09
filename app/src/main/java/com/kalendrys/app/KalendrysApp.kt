@@ -7,6 +7,7 @@ import android.os.StrictMode
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.HistoryExporter
+import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
@@ -50,6 +51,10 @@ class KalendrysApp : Application() {
             RoutineAlarms(this),
             routineNotifications,
         )
+    }
+
+    val routineCategoryRepository: RoutineCategoryRepository by lazy {
+        RoutineCategoryRepository(database.routineCategoryDao(), database.routineDao())
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */
