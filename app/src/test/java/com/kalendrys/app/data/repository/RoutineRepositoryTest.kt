@@ -91,6 +91,27 @@ class RoutineRepositoryTest {
     }
 
     @Test
+    fun `routineForNotification e null quando a ocorrencia foi pulada enquanto adiada`() = runTest {
+        val saved = repository.add(routine())
+        val today = LocalDate.now()
+        // Adiar (snooze) e, enquanto o aviso dormia, pular a MESMA ocorrência pela tela de exceção.
+        repository.skipOccurrence(saved.id, today.toEpochDay())
+
+        assertNull(repository.routineForNotification(saved.id, today))
+    }
+
+    @Test
+    fun `routineForNotification e null quando a ocorrencia foi remarcada enquanto adiada`() = runTest {
+        val saved = repository.add(routine())
+        val today = LocalDate.now()
+        // Remarcada no mesmo dia: ainda "ocorre" hoje, mas o aviso adiado é do horário ANTIGO (stale),
+        // então não reexibe — o agendamento normal cuida do novo horário.
+        repository.rescheduleOccurrence(saved.id, today.toEpochDay(), newStartMinute = 660, newEpochDay = null)
+
+        assertNull(repository.routineForNotification(saved.id, today))
+    }
+
+    @Test
     fun `pausar cancela a notificacao, grava pausedAt e reagenda sem a rotina`() = runTest {
         val saved = repository.add(routine())
         alarms.reset()
