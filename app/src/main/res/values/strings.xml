@@ -175,6 +175,14 @@
     <string name="repeat_daily">Todo dia</string>
     <string name="repeat_weekdays">Dias úteis</string>
     <string name="repeat_monthly">Todo dia %1$d</string>
+    <string name="repeat_custom">Personalizado</string>
+    <string name="repeat_custom_interval_label">A cada</string>
+    <string name="repeat_custom_unit_days">Dias</string>
+    <string name="repeat_custom_unit_weeks">Semanas</string>
+    <string name="repeat_custom_unit_months">Meses</string>
+    <string name="repeat_custom_days_label">Ou em dias da semana</string>
+    <string name="repeat_custom_decrease">Diminuir o intervalo</string>
+    <string name="repeat_custom_increase">Aumentar o intervalo</string>
     <!-- Segunda a domingo, na ordem de java.time.DayOfWeek. -->
     <string-array name="repeat_weekly">
         <item>Toda segunda</item>
@@ -281,6 +289,8 @@
     <!-- Lembretes -->
     <string name="reminder_channel_name">Lembretes</string>
     <string name="reminder_text">Está na hora desta tarefa.</string>
+    <string name="reminder_complete_action">Concluir</string>
+    <string name="reminder_snooze_action">Adiar %d min</string>
     <string name="missed_reminders_title">Lembretes perdidos</string>
     <plurals name="missed_reminders_text">
         <item quantity="one">%d lembrete não chegou enquanto o aparelho esteve indisponível.</item>

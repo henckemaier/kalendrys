@@ -21,13 +21,15 @@ import java.time.ZoneId
 
 @Database(
     entities = [Task::class, CompletionLog::class, Routine::class, RoutineCompletion::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
-    // v4: rotinas (só tabelas novas). v5: data e local das tarefas. O Room confere o SQL
-    // gerado contra os arquivos de schemas/.
+    // v4: rotinas (só tabelas novas). v5: data e local das tarefas. v6: recorrência custom
+    // (intervalEvery/intervalUnit/byWeekdays em tasks — aditivo com default). O Room confere o
+    // SQL gerado contra os arquivos de schemas/.
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = AppDatabase.TaskDatesSpec::class),
+        AutoMigration(from = 5, to = 6),
     ],
 )
 abstract class AppDatabase : RoomDatabase() {

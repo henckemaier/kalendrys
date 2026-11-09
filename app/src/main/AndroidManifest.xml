@@ -42,6 +42,12 @@
             android:name=".reminder.ReminderReceiver"
             android:exported="false" />
 
+        <!-- Ações "Concluir"/"Adiar" da notificação de lembrete + o toque do alarme de adiamento.
+             exported=false: só recebe os PendingIntents que o próprio app cria. -->
+        <receiver
+            android:name=".reminder.ReminderActionReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".reminder.RoutineAlarmReceiver"
             android:exported="false" />

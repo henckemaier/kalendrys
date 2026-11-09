@@ -3,6 +3,7 @@ package com.kalendrys.app.data.local.entity
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 
 /**
@@ -27,6 +28,21 @@ data class Task(
     /** Como a tarefa se repete a partir de [dueDate] (o nome da coluna é de quando só o lembrete repetia). */
     @ColumnInfo(name = "reminderRepeat")
     val repeat: ReminderRepeat = ReminderRepeat.NONE,
+    /**
+     * Recorrência [ReminderRepeat.CUSTOM] "a cada N": N (intervalo). Ignorado nos outros tipos e
+     * quando [byWeekdays] != 0 (modo multi-dia tem prioridade). Default 1.
+     */
+    @ColumnInfo(defaultValue = "1")
+    val intervalEvery: Int = 1,
+    /** Unidade do intervalo CUSTOM "a cada N"; null fora do modo intervalo. */
+    @ColumnInfo(defaultValue = "NULL")
+    val intervalUnit: RecurrenceUnit? = null,
+    /**
+     * Recorrência [ReminderRepeat.CUSTOM] por dias-da-semana: bitmask (SEG=bit0 … DOM=bit6);
+     * 0 = modo intervalo. Default 0.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val byWeekdays: Int = 0,
     /** Local livre (endereço ou nome do lugar); vazio = sem local. */
     @ColumnInfo(defaultValue = "")
     val location: String = "",

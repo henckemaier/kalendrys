@@ -122,11 +122,15 @@ data class TodayOverview(
                 .filterNot { TaskSchedule.isFinished(it, lastCompletions[it.id], zone) }
                 .mapNotNull { task ->
                     val anchor = task.anchor(zone) ?: return@mapNotNull null
-                    val next = ReminderRecurrence.nextOccurrence(anchor, task.repeat, now) ?: return@mapNotNull null
+                    val next = ReminderRecurrence.nextOccurrence(
+                        anchor, task.repeat, now, task.intervalEvery, task.intervalUnit, task.byWeekdays,
+                    ) ?: return@mapNotNull null
                     val at = when {
                         next.toLocalDate() != today || task.id !in doneToday -> next
                         task.repeat == ReminderRepeat.NONE -> return@mapNotNull null
-                        else -> ReminderRecurrence.nextOccurrence(anchor, task.repeat, endOfToday) ?: return@mapNotNull null
+                        else -> ReminderRecurrence.nextOccurrence(
+                            anchor, task.repeat, endOfToday, task.intervalEvery, task.intervalUnit, task.byWeekdays,
+                        ) ?: return@mapNotNull null
                     }
                     Upcoming(task.title, at, isRoutine = false)
                 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -112,6 +113,37 @@ class TaskRepositoryTest {
 
         assertNotNull("a notificação de hoje ainda deve aparecer", fired)
         assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+    }
+
+    @Test
+    fun `taskForReminder devolve a tarefa recorrente ainda nao concluida hoje`() = runTest {
+        val task = repository.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+
+        assertNotNull(repository.taskForReminder(task.id))
+    }
+
+    @Test
+    fun `taskForReminder e null para recorrente ja concluida hoje (idempotencia do Concluir)`() = runTest {
+        val task = repository.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+        repository.logCompletion(task.id)
+
+        assertNull(
+            "não pode gravar uma segunda conclusão no mesmo dia pela notificação",
+            repository.taskForReminder(task.id),
+        )
+    }
+
+    @Test
+    fun `taskForReminder e null para one-time ja concluida`() = runTest {
+        val task = repository.addTask("Pagar conta", timing = todayTiming())
+        repository.logCompletion(task.id)
+
+        assertNull(repository.taskForReminder(task.id))
+    }
+
+    @Test
+    fun `taskForReminder e null para tarefa inexistente`() = runTest {
+        assertNull(repository.taskForReminder(taskId = 404L))
     }
 
     @Test
