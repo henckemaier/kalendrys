@@ -141,6 +141,17 @@ class RoutineEditorViewModel(
         }
     }
 
+    /**
+     * Pausa a rotina (para de agendar/avisar, mas mantém config + histórico) ou a retoma, conforme
+     * o estado atual. Não fecha o editor: o botão reflete o novo estado quando a rotina reemite.
+     */
+    fun togglePause() {
+        val existing = uiState.value.routine ?: return
+        viewModelScope.launch {
+            if (existing.pausedAt == null) repository.pause(existing) else repository.resume(existing)
+        }
+    }
+
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {

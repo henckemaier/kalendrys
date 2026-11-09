@@ -43,7 +43,7 @@ class TodayRepository(
             combine(
                 taskRepository.tasks,
                 taskRepository.observeCompletionsBetween(today, tomorrow),
-                routineRepository.routines,
+                routineRepository.scheduledRoutines,
                 routineRepository.observeCompletionsBetween(today, tomorrow),
                 taskRepository.lastCompletions,
                 ::Snapshot,

@@ -91,6 +91,58 @@ class RoutineRepositoryTest {
     }
 
     @Test
+    fun `pausar cancela a notificacao, grava pausedAt e reagenda sem a rotina`() = runTest {
+        val saved = repository.add(routine())
+        alarms.reset()
+
+        repository.pause(saved, now = 123L)
+
+        assertEquals(listOf(saved.id), notifications.cancelled)
+        assertEquals(123L, db.routineDao().byId(saved.id)?.pausedAt)
+        assertEquals(1, alarms.calls.size)
+        assertTrue(
+            "a rotina pausada sai das ativas e não entra no próximo alarme",
+            alarms.calls.last().routines.none { it.id == saved.id },
+        )
+    }
+
+    @Test
+    fun `retomar limpa pausedAt e reagenda com a rotina de volta`() = runTest {
+        val saved = repository.add(routine())
+        repository.pause(saved)
+        alarms.reset()
+
+        repository.resume(db.routineDao().byId(saved.id)!!)
+
+        assertNull(db.routineDao().byId(saved.id)?.pausedAt)
+        assertEquals(1, alarms.calls.size)
+        assertTrue(alarms.calls.last().routines.any { it.id == saved.id })
+    }
+
+    @Test
+    fun `scheduledRoutines exclui as pausadas e mantem as ativas`() = runTest {
+        val ativa = repository.add(routine("Ativa"))
+        val pausada = repository.add(routine("Pausada"))
+        repository.pause(pausada)
+
+        repository.scheduledRoutines.test {
+            val list = awaitItem()
+            assertTrue(list.any { it.id == ativa.id })
+            assertTrue(list.none { it.id == pausada.id })
+        }
+    }
+
+    @Test
+    fun `pausar preserva o historico de conclusoes`() = runTest {
+        val saved = repository.add(routine())
+        repository.complete(saved.id, LocalDate.now())
+
+        repository.pause(saved)
+
+        assertEquals(1, db.routineCompletionDao().count())
+    }
+
+    @Test
     fun `adicionar rotina agenda o proximo alarme`() = runTest {
         val saved = repository.add(routine())
 
