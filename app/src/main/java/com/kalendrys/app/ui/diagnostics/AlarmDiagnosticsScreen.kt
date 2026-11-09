@@ -128,7 +128,9 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
                     onFix = if (exactAllowed) {
                         null
                     } else {
-                        { context.startActivity(requestExactAlarmPermissionIntent(context)) }
+                        // runCatching: aparelho raro sem a tela de Settings lança ActivityNotFoundException
+                        // no startActivity; o rodapé já avisa que nem todo aparelho mostra tudo.
+                        { runCatching { context.startActivity(requestExactAlarmPermissionIntent(context)) } }
                     },
                 )
             }
@@ -162,7 +164,8 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
     if (showBatterySheet) {
         BatteryExemptionSheet(
             onOpenSettings = {
-                context.startActivity(ignoreBatteryOptimizationsSettingsIntent())
+                // runCatching: evita crash se o aparelho não tiver a tela de Settings do deep-link.
+                runCatching { context.startActivity(ignoreBatteryOptimizationsSettingsIntent()) }
                 showBatterySheet = false
             },
             onDismiss = { showBatterySheet = false },
