@@ -199,7 +199,7 @@ private fun CategoryEditDialog(
 ) {
     var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
     var color by remember { mutableStateOf(RoutineColor.fromKey(existing?.color ?: RoutineColor.DEFAULT.name)) }
-    // Só SIMPLE e COMPRAS são oferecidos; um kind fora dessa lista (ex. backup) cai no padrão SIMPLE.
+    // SIMPLE, COMPRAS e EXERCICIO são oferecidos; um kind fora dessa lista (ex. backup) cai no padrão SIMPLE.
     var kind by remember {
         val current = RoutineCategoryKind.fromKey(existing?.kind ?: RoutineCategoryKind.DEFAULT.name)
         mutableStateOf(if (current in CATEGORY_KIND_OPTIONS) current else RoutineCategoryKind.SIMPLE)
@@ -257,11 +257,13 @@ private fun CategoryEditDialog(
     )
 }
 
-/** Tipos oferecidos na UI (EXERCICIO fica de fora deste round). */
-private val CATEGORY_KIND_OPTIONS = listOf(RoutineCategoryKind.SIMPLE, RoutineCategoryKind.COMPRAS)
+/** Tipos oferecidos na UI: SIMPLE, COMPRAS e EXERCICIO (cada um destrava sua seção no editor). */
+private val CATEGORY_KIND_OPTIONS =
+    listOf(RoutineCategoryKind.SIMPLE, RoutineCategoryKind.COMPRAS, RoutineCategoryKind.EXERCICIO)
 
 private fun categoryKindLabel(kind: RoutineCategoryKind): Int = when (kind) {
     RoutineCategoryKind.COMPRAS -> R.string.routine_category_kind_shopping
+    RoutineCategoryKind.EXERCICIO -> R.string.routine_category_kind_exercise
     else -> R.string.routine_category_kind_simple
 }
 

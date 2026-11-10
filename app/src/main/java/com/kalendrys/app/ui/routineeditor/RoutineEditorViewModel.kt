@@ -9,9 +9,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -46,6 +48,7 @@ class RoutineEditorViewModel(
     private val repository: RoutineRepository,
     private val categoryRepository: RoutineCategoryRepository,
     private val shoppingRepository: ShoppingRepository,
+    private val exerciseRepository: ExerciseRepository,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -67,6 +70,8 @@ class RoutineEditorViewModel(
         val selectedKind: RoutineCategoryKind = RoutineCategoryKind.SIMPLE,
         /** Itens da lista de compras (só populado quando a rotina já existe e é do tipo COMPRAS). */
         val shoppingItems: List<ShoppingItem> = emptyList(),
+        /** Exercícios (só populado quando a rotina já existe e é do tipo EXERCICIO). */
+        val exerciseItems: List<ExerciseItem> = emptyList(),
     ) {
         val hasChanges: Boolean
             get() = when {
@@ -79,9 +84,18 @@ class RoutineEditorViewModel(
         /** Mostra a seção de compras quando a categoria selecionada é COMPRAS. */
         val isShoppingCategory: Boolean get() = selectedKind == RoutineCategoryKind.COMPRAS
 
+        /** Mostra a seção de exercícios quando a categoria selecionada é EXERCICIO. */
+        val isExerciseCategory: Boolean get() = selectedKind == RoutineCategoryKind.EXERCICIO
+
         /** Total da lista, calculado na leitura (soma quantity*priceCents). */
         val shoppingTotalCents: Long get() = ShoppingTotals.totalCents(shoppingItems)
     }
+
+    /** Itens dos módulos de item (compras/exercícios), combinados num ponto só para o combine do estado. */
+    private data class ModuleItems(
+        val shopping: List<ShoppingItem> = emptyList(),
+        val exercise: List<ExerciseItem> = emptyList(),
+    )
 
     sealed interface Event {
         data object Closed : Event
@@ -115,14 +129,35 @@ class RoutineEditorViewModel(
             }
         }
 
+    // Mesmo gate do shopping: só assina exercise_item quando a categoria é EXERCICIO; os demais kinds
+    // não consultam. flatMapLatest troca a assinatura ao mudar o kind. Rotina nova (sem id) fica vazia.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val exerciseItems: Flow<List<ExerciseItem>> =
+        if (isNew) {
+            flowOf(emptyList())
+        } else {
+            selectedKind.flatMapLatest { kind ->
+                if (kind == RoutineCategoryKind.EXERCICIO) {
+                    exerciseRepository.observeItems(routineId)
+                } else {
+                    flowOf(emptyList())
+                }
+            }
+        }
+
+    // Combina os dois módulos num ponto só para caber no combine de 5 do estado (só um é não-vazio
+    // por vez: o gate por kind garante que compras e exercícios nunca populam ao mesmo tempo).
+    private val moduleItems: Flow<ModuleItems> =
+        combine(shoppingItems, exerciseItems) { shopping, exercise -> ModuleItems(shopping, exercise) }
+
     val uiState: StateFlow<UiState> =
         combine(
             routine,
             draft,
             initialDraft,
             categoryRepository.categories,
-            shoppingItems,
-        ) { routine, draft, initial, categories, items ->
+            moduleItems,
+        ) { routine, draft, initial, categories, module ->
             UiState(
                 isNew = isNew,
                 // Depois de excluir, a rotina continua no banco (arquivada) mas o editor já fechou.
@@ -132,7 +167,8 @@ class RoutineEditorViewModel(
                 initialDraft = initial,
                 categories = categories,
                 selectedKind = kindOf(draft, categories),
-                shoppingItems = items,
+                shoppingItems = module.shopping,
+                exerciseItems = module.exercise,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -229,6 +265,27 @@ class RoutineEditorViewModel(
         viewModelScope.launch { shoppingRepository.remove(item) }
     }
 
+    // --- Lista de exercícios (T34): só vale para uma rotina já salva (routineId real). ---
+
+    fun addExerciseItem(name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
+        if (isNew || name.isBlank()) return
+        viewModelScope.launch { exerciseRepository.add(routineId, name, sets, reps, load, restSeconds) }
+    }
+
+    fun updateExerciseItem(item: ExerciseItem, name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
+        if (name.isBlank()) return
+        viewModelScope.launch { exerciseRepository.update(item, name, sets, reps, load, restSeconds) }
+    }
+
+    fun removeExerciseItem(item: ExerciseItem) {
+        viewModelScope.launch { exerciseRepository.remove(item) }
+    }
+
+    /** Reordena o exercício para cima ([up] = true) ou para baixo, trocando a posição com o vizinho. */
+    fun moveExerciseItem(item: ExerciseItem, up: Boolean) {
+        viewModelScope.launch { exerciseRepository.move(item, up) }
+    }
+
     /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
     fun applyDraft(newDraft: RoutineDraft) {
         draft.value = newDraft
@@ -275,6 +332,7 @@ class RoutineEditorViewModel(
                     app.routineRepository,
                     app.routineCategoryRepository,
                     app.shoppingRepository,
+                    app.exerciseRepository,
                 )
             }
         }

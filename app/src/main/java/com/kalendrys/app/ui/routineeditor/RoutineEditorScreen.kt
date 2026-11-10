@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
@@ -84,9 +86,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.ExerciseFormat
 import com.kalendrys.app.domain.MoneyFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
@@ -187,6 +191,8 @@ fun RoutineEditorScreen(
                 isShoppingCategory = state.isShoppingCategory,
                 shoppingItems = state.shoppingItems,
                 shoppingTotalCents = state.shoppingTotalCents,
+                isExerciseCategory = state.isExerciseCategory,
+                exerciseItems = state.exerciseItems,
                 viewModel = viewModel,
                 modifier = Modifier
                     .padding(innerPadding)
@@ -246,6 +252,8 @@ private fun EditorContent(
     isShoppingCategory: Boolean,
     shoppingItems: List<ShoppingItem>,
     shoppingTotalCents: Long,
+    isExerciseCategory: Boolean,
+    exerciseItems: List<ExerciseItem>,
     viewModel: RoutineEditorViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -253,9 +261,12 @@ private fun EditorContent(
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
     var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
     var showEndDatePicker by rememberSaveable { mutableStateOf(false) }
-    // Diálogo de add/editar item. editingItemId null + diálogo aberto = novo item; senão, edição.
+    // Diálogo de add/editar item de compras. editingItemId null + diálogo aberto = novo item; senão, edição.
     var showItemDialog by rememberSaveable { mutableStateOf(false) }
     var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // Diálogo de add/editar exercício (análogo ao de compras, mas com os campos do exercício).
+    var showExerciseDialog by rememberSaveable { mutableStateOf(false) }
+    var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -381,6 +392,60 @@ private fun EditorContent(
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.shopping_add_item))
+                    }
+                }
+            }
+        }
+        if (isExerciseCategory) {
+            item(key = "exercise-title") {
+                SectionTitle(stringResource(R.string.exercise_section_title))
+            }
+            if (viewModel.isNew) {
+                item(key = "exercise-hint") {
+                    Text(
+                        text = stringResource(R.string.exercise_new_routine_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
+            } else {
+                if (exerciseItems.isEmpty()) {
+                    item(key = "exercise-empty") {
+                        Text(
+                            text = stringResource(R.string.exercise_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                } else {
+                    itemsIndexed(exerciseItems, key = { _, it -> "exercise-item-${it.id}" }) { index, item ->
+                        ExerciseItemRow(
+                            item = item,
+                            index = index,
+                            count = exerciseItems.size,
+                            onMoveUp = { viewModel.moveExerciseItem(item, up = true) },
+                            onMoveDown = { viewModel.moveExerciseItem(item, up = false) },
+                            onEdit = {
+                                editingExerciseId = item.id
+                                showExerciseDialog = true
+                            },
+                            onDelete = { viewModel.removeExerciseItem(item) },
+                        )
+                    }
+                }
+                item(key = "exercise-add") {
+                    TextButton(
+                        onClick = {
+                            editingExerciseId = null
+                            showExerciseDialog = true
+                        },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.exercise_add_item))
                     }
                 }
             }
@@ -560,6 +625,25 @@ private fun EditorContent(
             },
         )
     }
+    if (showExerciseDialog) {
+        val editing = editingExerciseId?.let { id -> exerciseItems.firstOrNull { it.id == id } }
+        ExerciseItemDialog(
+            existing = editing,
+            onConfirm = { name, sets, reps, load, restSeconds ->
+                if (editing == null) {
+                    viewModel.addExerciseItem(name, sets, reps, load, restSeconds)
+                } else {
+                    viewModel.updateExerciseItem(editing, name, sets, reps, load, restSeconds)
+                }
+                showExerciseDialog = false
+                editingExerciseId = null
+            },
+            onDismiss = {
+                showExerciseDialog = false
+                editingExerciseId = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -719,6 +803,148 @@ private fun ShoppingItemDialog(
                     onConfirm(name.trim(), quantity, priceCents)
                 },
                 enabled = name.isNotBlank() && !priceInvalid,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ExerciseItemRow(
+    item: ExerciseItem,
+    index: Int,
+    count: Int,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    // Legenda: séries×reps · carga (se houver) · descanso (se houver).
+    val subtitle = buildList {
+        add(ExerciseFormat.setsReps(item.sets, item.reps))
+        item.load?.let { add(it) }
+        item.restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
+    }.joinToString(" · ")
+    Surface(
+        shape = groupedItemShape(index, count),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .padding(start = 16.dp, end = 4.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onMoveUp, enabled = index > 0) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.exercise_item_move_up))
+            }
+            IconButton(onClick = onMoveDown, enabled = index < count - 1) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.exercise_item_move_down))
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.exercise_item_edit))
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.exercise_item_delete))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseItemDialog(
+    existing: ExerciseItem?,
+    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
+    var setsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.sets?.toString() ?: "3") }
+    var repsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.reps?.toString() ?: "10") }
+    var loadText by rememberSaveable(existing?.id) { mutableStateOf(existing?.load ?: "") }
+    var restText by rememberSaveable(existing?.id) { mutableStateOf(existing?.restSeconds?.toString() ?: "") }
+    // Séries/reps caem no mínimo 1 quando em branco; carga e descanso em branco = sem valor (null).
+    val sets = setsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val reps = repsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(if (existing == null) R.string.exercise_add_title else R.string.exercise_edit_title))
+        },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.exercise_item_name_label)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.size(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = setsText,
+                        onValueChange = { new -> setsText = new.filter { it.isDigit() }.take(3) },
+                        label = { Text(stringResource(R.string.exercise_item_sets_label)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = repsText,
+                        onValueChange = { new -> repsText = new.filter { it.isDigit() }.take(3) },
+                        label = { Text(stringResource(R.string.exercise_item_reps_label)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(Modifier.size(8.dp))
+                OutlinedTextField(
+                    value = loadText,
+                    onValueChange = { loadText = it },
+                    label = { Text(stringResource(R.string.exercise_item_load_label)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.size(8.dp))
+                OutlinedTextField(
+                    value = restText,
+                    onValueChange = { new -> restText = new.filter { it.isDigit() }.take(5) },
+                    label = { Text(stringResource(R.string.exercise_item_rest_label)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val load = loadText.trim().takeIf { it.isNotEmpty() }
+                    val rest = restText.toIntOrNull()
+                    onConfirm(name.trim(), sets, reps, load, rest)
+                },
+                enabled = name.isNotBlank(),
             ) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {

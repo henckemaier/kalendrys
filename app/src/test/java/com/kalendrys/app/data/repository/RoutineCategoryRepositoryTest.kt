@@ -60,6 +60,16 @@ class RoutineCategoryRepositoryTest {
     }
 
     @Test
+    fun `create grava uma categoria EXERCICIO`() = runTest {
+        val id = repository.create("Academia", RoutineColor.BLUE.name, RoutineCategoryKind.EXERCICIO)
+        val saved = repository.categories.first().first { it.id == id }
+        assertEquals("Academia", saved.name)
+        // O seletor da T34 oferece EXERCICIO: a categoria grava o kind, destravando a seção de exercícios.
+        assertEquals(RoutineCategoryKind.EXERCICIO.name, saved.kind)
+        assertEquals(RoutineCategoryKind.EXERCICIO, RoutineCategoryKind.fromKey(saved.kind))
+    }
+
+    @Test
     fun `update troca o kind preservando id e nome`() = runTest {
         val id = repository.create("Lista", RoutineColor.BLUE.name, RoutineCategoryKind.SIMPLE)
         val before = repository.categories.first().first { it.id == id }

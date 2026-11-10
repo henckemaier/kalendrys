@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
@@ -108,12 +109,20 @@ class BackupManagerTest {
                 ShoppingItem(id = 31, routineId = 5, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
             ),
         )
+        // Exercícios (v9/schema v5): carga em texto livre (nullable) e descanso em segundos (nullable)
+        // têm que sobreviver — inclusive quando ausentes (um exercício sem carga/descanso).
+        sourceDb.exerciseItemDao().insertAll(
+            listOf(
+                ExerciseItem(id = 40, routineId = 5, name = "Agachamento", sets = 3, reps = 12, load = "20kg", restSeconds = 90, position = 0),
+                ExerciseItem(id = 41, routineId = 5, name = "Flexão", sets = 4, reps = 15, load = null, restSeconds = null, position = 1, createdAt = 888),
+            ),
+        )
 
         val (json, stats) = BackupManager(sourceDb, context.contentResolver, source).serialize()
         assertEquals(
             BackupManager.Stats(
                 tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
-                routineCategories = 2, routineOverrides = 2, shoppingItems = 2,
+                routineCategories = 2, routineOverrides = 2, shoppingItems = 2, exerciseItems = 2,
             ),
             stats,
         )
@@ -131,6 +140,7 @@ class BackupManagerTest {
         assertEquals(sourceDb.routineCategoryDao().all(), destDb.routineCategoryDao().all())
         assertEquals(sourceDb.routineOverrideDao().all(), destDb.routineOverrideDao().all())
         assertEquals(sourceDb.shoppingItemDao().all(), destDb.shoppingItemDao().all())
+        assertEquals(sourceDb.exerciseItemDao().all(), destDb.exerciseItemDao().all())
 
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
@@ -246,6 +256,27 @@ class BackupManagerTest {
         assertEquals("Mercado", destDb.routineDao().all().single().title)
         assertEquals(0, stats.shoppingItems)
         assertTrue(destDb.shoppingItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `restaura backup v4 sem a array de exercicios caindo na lista vazia`() = runTest {
+        val source = settingsRepo("source-v4")
+        sourceDb.routineDao().insert(
+            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Simula um backup do formato v4: schemaVersion=4, sem a array exerciseItems.
+        val root = JSONObject(json).put("schemaVersion", 4)
+        root.remove("exerciseItems")
+
+        val dest = settingsRepo("dest-v4")
+        val stats = BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        // A rotina é preservada e a lista de exercícios fica vazia, sem quebrar o restauro de um v4.
+        assertEquals("Treino", destDb.routineDao().all().single().title)
+        assertEquals(0, stats.exerciseItems)
+        assertTrue(destDb.exerciseItemDao().all().isEmpty())
     }
 
     private fun inMemoryDb(): AppDatabase =

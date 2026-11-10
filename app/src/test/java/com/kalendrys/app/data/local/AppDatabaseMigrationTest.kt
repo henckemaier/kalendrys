@@ -17,9 +17,9 @@ import org.robolectric.annotation.Config
  * como teste unitário (`:app:testDebugUnitTest`), sem precisar de aparelho/emulador.
  *
  * Com o 1.json reconstruído (schema anterior à MIGRATION_1_2, sem a coluna reminderRepeat), a
- * cadeia completa v1 → v8 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
- * demais migrações (inclusive a auto 5→6 da recorrência custom, a auto 6→7 da fundação de rotinas
- * e a auto 7→8 da fundação de compras) seguem até o schema atual.
+ * cadeia completa v1 → v9 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
+ * demais migrações (inclusive a auto 5→6 da recorrência custom, a auto 6→7 da fundação de rotinas,
+ * a auto 7→8 da fundação de compras e a auto 8→9 da fundação de exercícios) seguem até o schema atual.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -160,6 +160,28 @@ class AppDatabaseMigrationTest {
                 assertEquals("Mercado", c.getString(0))
             }
             assertTrue("tabela shopping_item ausente após 7→8", hasTable(v8, "shopping_item"))
+        }
+    }
+
+    @Test
+    fun `migra v8 para v9 cria a tabela exercise_item preservando os dados`() {
+        val name = "kalendrys-migration-v8-v9"
+        helper.createDatabase(name, 8).use { v8 ->
+            // Formato v8: ainda sem a tabela exercise_item. Uma rotina já existente deve sobreviver.
+            v8.execSQL(
+                "INSERT INTO routines " +
+                    "(title, notes, icon, color, startMinute, durationMinutes, daysOfWeek, remind, createdAt) " +
+                    "VALUES ('Treino', '', 'STAR', 'BLUE', 1040, 45, 127, 1, 0)",
+            )
+        }
+
+        // 8→9 é AutoMigration aditiva (só a tabela nova exercise_item); valida vs 9.json.
+        helper.runMigrationsAndValidate(name, 9, true).use { v9 ->
+            v9.query("SELECT title FROM routines").use { c ->
+                assertTrue("a rotina v8 deveria sobreviver à migração", c.moveToFirst())
+                assertEquals("Treino", c.getString(0))
+            }
+            assertTrue("tabela exercise_item ausente após 8→9", hasTable(v9, "exercise_item"))
         }
     }
 

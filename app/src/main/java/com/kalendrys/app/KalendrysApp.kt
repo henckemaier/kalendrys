@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.StrictMode
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.BackupManager
+import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
@@ -62,6 +63,11 @@ class KalendrysApp : Application() {
     /** Lista de compras das rotinas do tipo COMPRAS (módulo T28/T30). */
     val shoppingRepository: ShoppingRepository by lazy {
         ShoppingRepository(database.shoppingItemDao())
+    }
+
+    /** Lista de exercícios das rotinas do tipo EXERCICIO (módulo T33/T34). */
+    val exerciseRepository: ExerciseRepository by lazy {
+        ExerciseRepository(database.exerciseItemDao())
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */
