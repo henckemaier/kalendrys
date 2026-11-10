@@ -665,6 +665,9 @@ private fun ShoppingItemDialog(
         mutableStateOf(existing?.priceCents?.let { MoneyFormat.centsToInput(it) } ?: "")
     }
     val quantity = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    // Preço só é inválido quando tem texto sem nenhum dígito (ex.: só um separador). Vazio é válido
+    // (= sem preço, remoção explícita). Bloquear o inválido impede zerar o preço por engano na edição.
+    val priceInvalid = priceText.isNotBlank() && priceText.none { it.isDigit() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -691,10 +694,17 @@ private fun ShoppingItemDialog(
                 )
                 Spacer(Modifier.size(8.dp))
                 OutlinedTextField(
+                    // Filtra: dígitos + no máximo um separador decimal. Entrada inválida não chega ao parse.
                     value = priceText,
-                    onValueChange = { priceText = it },
+                    onValueChange = { priceText = MoneyFormat.filterPriceInput(it) },
                     label = { Text(stringResource(R.string.shopping_item_price_label)) },
                     singleLine = true,
+                    isError = priceInvalid,
+                    supportingText = if (priceInvalid) {
+                        { Text(stringResource(R.string.shopping_price_invalid)) }
+                    } else {
+                        null
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -702,8 +712,13 @@ private fun ShoppingItemDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), quantity, MoneyFormat.parseReaisToCents(priceText)) },
-                enabled = name.isNotBlank(),
+                onClick = {
+                    // Vazio → sem preço (null, explícito). Com dígitos → parse garantido não-nulo. O
+                    // caso inválido nunca chega aqui (Save desabilitado), então nunca zera à toa.
+                    val priceCents = if (priceText.isBlank()) null else MoneyFormat.parseReaisToCents(priceText)
+                    onConfirm(name.trim(), quantity, priceCents)
+                },
+                enabled = name.isNotBlank() && !priceInvalid,
             ) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {

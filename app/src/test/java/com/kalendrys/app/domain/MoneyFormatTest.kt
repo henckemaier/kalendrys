@@ -58,4 +58,30 @@ class MoneyFormatTest {
         assertEquals(730L, cents)
         assertEquals("7,30", MoneyFormat.centsToInput(cents!!))
     }
+
+    @Test
+    fun `filtro mantem digitos e um separador`() {
+        assertEquals("4,99", MoneyFormat.filterPriceInput("4,99"))
+        assertEquals("1234", MoneyFormat.filterPriceInput("1234"))
+    }
+
+    @Test
+    fun `filtro descarta letras e simbolos`() {
+        assertEquals("12", MoneyFormat.filterPriceInput("R$ 12 reais"))
+        assertEquals("4,99", MoneyFormat.filterPriceInput("abc4,99x"))
+    }
+
+    @Test
+    fun `filtro mantem so o primeiro separador`() {
+        // Segundo separador é descartado (impede entrada ambígua de milhar/decimal).
+        assertEquals("1.00050", MoneyFormat.filterPriceInput("1.000,50"))
+        assertEquals("4,99", MoneyFormat.filterPriceInput("4,9,9"))
+    }
+
+    @Test
+    fun `texto filtrado com digito sempre parseia`() {
+        // Pós-filtro, qualquer texto com dígito tem preço (nunca vira null por engano).
+        assertEquals(500L, MoneyFormat.parseReaisToCents(MoneyFormat.filterPriceInput("5,")))
+        assertEquals(50L, MoneyFormat.parseReaisToCents(MoneyFormat.filterPriceInput(",5")))
+    }
 }

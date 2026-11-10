@@ -24,14 +24,17 @@ import com.kalendrys.app.ui.tasks.ReminderTime
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -91,9 +94,26 @@ class RoutineEditorViewModel(
 
     private val routine: Flow<Routine?> = if (isNew) flowOf(null) else repository.observeRoutine(routineId)
 
-    // A lista de compras vive na rotina salva (tem id real); numa rotina nova fica vazia até salvar.
+    /** Tipo da categoria selecionada no rascunho (reativo), para gatear a lista de compras. */
+    private val selectedKind: Flow<RoutineCategoryKind> =
+        combine(draft, categoryRepository.categories) { draft, categories -> kindOf(draft, categories) }
+            .distinctUntilChanged()
+
+    // Nit de eficiência: só assina shopping_item quando a categoria é COMPRAS; SIMPLE/EXERCICIO não
+    // consultam. flatMapLatest troca a assinatura ao mudar o kind. Rotina nova (sem id real) fica vazia.
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val shoppingItems: Flow<List<ShoppingItem>> =
-        if (isNew) flowOf(emptyList()) else shoppingRepository.observeItems(routineId)
+        if (isNew) {
+            flowOf(emptyList())
+        } else {
+            selectedKind.flatMapLatest { kind ->
+                if (kind == RoutineCategoryKind.COMPRAS) {
+                    shoppingRepository.observeItems(routineId)
+                } else {
+                    flowOf(emptyList())
+                }
+            }
+        }
 
     val uiState: StateFlow<UiState> =
         combine(
@@ -103,11 +123,6 @@ class RoutineEditorViewModel(
             categoryRepository.categories,
             shoppingItems,
         ) { routine, draft, initial, categories, items ->
-            // ÚNICO ponto de fallback do kind: sem categoria ou kind desconhecido → SIMPLE.
-            val kind = draft?.categoryId
-                ?.let { id -> categories.firstOrNull { it.id == id } }
-                ?.let { RoutineCategoryKind.fromKey(it.kind) }
-                ?: RoutineCategoryKind.SIMPLE
             UiState(
                 isNew = isNew,
                 // Depois de excluir, a rotina continua no banco (arquivada) mas o editor já fechou.
@@ -116,10 +131,20 @@ class RoutineEditorViewModel(
                 draft = draft,
                 initialDraft = initial,
                 categories = categories,
-                selectedKind = kind,
+                selectedKind = kindOf(draft, categories),
                 shoppingItems = items,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
+
+    /**
+     * Resolve o tipo da categoria selecionada no rascunho. ÚNICO ponto de fallback do kind: sem
+     * categoria ou kind desconhecido → [RoutineCategoryKind.SIMPLE] (via [RoutineCategoryKind.fromKey]).
+     */
+    private fun kindOf(draft: RoutineDraft?, categories: List<RoutineCategory>): RoutineCategoryKind =
+        draft?.categoryId
+            ?.let { id -> categories.firstOrNull { it.id == id } }
+            ?.let { RoutineCategoryKind.fromKey(it.kind) }
+            ?: RoutineCategoryKind.SIMPLE
 
     init {
         viewModelScope.launch {

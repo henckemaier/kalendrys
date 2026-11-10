@@ -99,6 +99,9 @@
     <string name="routine_category_delete">Excluir %1$s</string>
     <string name="routine_category_delete_title">Excluir categoria?</string>
     <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
+    <string name="routine_category_kind_label">Tipo</string>
+    <string name="routine_category_kind_simple">Simples</string>
+    <string name="routine_category_kind_shopping">Compras</string>
 
     <!-- Configurações: rotinas -->
     <string name="settings_section_routines">Rotinas</string>
@@ -176,6 +179,7 @@
     <string name="shopping_item_delete">Remover item</string>
     <string name="shopping_item_picked">Marcar como pego</string>
     <string name="shopping_item_quantity_badge">×%1$d</string>
+    <string name="shopping_price_invalid">Informe um preço válido ou deixe em branco.</string>
     <string name="shopping_total">Total</string>
     <string name="routine_icon_option">Ícone %1$s</string>
     <string name="routine_color_option">Cor %1$s</string>

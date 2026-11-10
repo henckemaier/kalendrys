@@ -38,6 +38,26 @@ object MoneyFormat {
         return Math.round(reais * 100)
     }
 
+    /**
+     * Filtra a digitação de um preço: mantém dígitos e NO MÁXIMO um separador decimal (o primeiro;
+     * vírgula ou ponto). Descarta separadores extras e qualquer outro caractere — assim o campo nunca
+     * chega a um estado que o parse não entenda (reduz também a ambiguidade de milhar BR 1.000).
+     */
+    fun filterPriceInput(text: String): String {
+        val out = StringBuilder()
+        var hasSeparator = false
+        for (c in text) {
+            when {
+                c.isDigit() -> out.append(c)
+                (c == ',' || c == '.') && !hasSeparator -> {
+                    out.append(c)
+                    hasSeparator = true
+                }
+            }
+        }
+        return out.toString()
+    }
+
     /** Centavos → texto editável em reais com vírgula decimal ("4,99"), para preencher o campo ao editar. */
     fun centsToInput(cents: Long): String {
         val safe = cents.coerceAtLeast(0)
