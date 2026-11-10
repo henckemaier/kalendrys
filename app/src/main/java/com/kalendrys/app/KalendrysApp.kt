@@ -9,6 +9,7 @@ import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.data.settings.SettingsRepository
@@ -56,6 +57,11 @@ class KalendrysApp : Application() {
 
     val routineCategoryRepository: RoutineCategoryRepository by lazy {
         RoutineCategoryRepository(database)
+    }
+
+    /** Lista de compras das rotinas do tipo COMPRAS (módulo T28/T30). */
+    val shoppingRepository: ShoppingRepository by lazy {
+        ShoppingRepository(database.shoppingItemDao())
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */

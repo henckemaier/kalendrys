@@ -50,6 +50,31 @@ class RoutineCategoryRepositoryTest {
     }
 
     @Test
+    fun `create grava uma categoria COMPRAS`() = runTest {
+        val id = repository.create("Mercado", RoutineColor.GREEN.name, RoutineCategoryKind.COMPRAS)
+        val saved = repository.categories.first().first { it.id == id }
+        assertEquals("Mercado", saved.name)
+        // Gravado como a chave do enum, lida de volta por fromKey (mesmo contrato de cor/ícone).
+        assertEquals(RoutineCategoryKind.COMPRAS.name, saved.kind)
+        assertEquals(RoutineCategoryKind.COMPRAS, RoutineCategoryKind.fromKey(saved.kind))
+    }
+
+    @Test
+    fun `update troca o kind preservando id e nome`() = runTest {
+        val id = repository.create("Lista", RoutineColor.BLUE.name, RoutineCategoryKind.SIMPLE)
+        val before = repository.categories.first().first { it.id == id }
+        assertEquals(RoutineCategoryKind.SIMPLE.name, before.kind)
+
+        repository.update(before, "Compras da semana", RoutineColor.ORANGE.name, RoutineCategoryKind.COMPRAS)
+
+        val after = repository.categories.first().first { it.id == id }
+        assertEquals(id, after.id)
+        assertEquals("Compras da semana", after.name)
+        assertEquals(RoutineColor.ORANGE.name, after.color)
+        assertEquals(RoutineCategoryKind.COMPRAS.name, after.kind)
+    }
+
+    @Test
     fun `excluir desvincula as rotinas da categoria e remove a categoria`() = runTest {
         val categoryId = repository.create("Academia", RoutineColor.GREEN.name)
         val otherId = repository.create("Estudo", RoutineColor.BLUE.name)

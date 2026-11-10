@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.RoutineCategory
+import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
@@ -118,8 +120,12 @@ fun RoutineCategoriesScreen(
         val existing = (dialog as? CategoryDialog.Edit)?.category
         CategoryEditDialog(
             existing = existing,
-            onConfirm = { name, color ->
-                if (existing == null) viewModel.create(name, color) else viewModel.update(existing, name, color)
+            onConfirm = { name, color, kind ->
+                if (existing == null) {
+                    viewModel.create(name, color, kind)
+                } else {
+                    viewModel.update(existing, name, color, kind)
+                }
                 editing = null
             },
             onDismiss = { editing = null },
@@ -188,11 +194,16 @@ private fun CategoryRow(
 @Composable
 private fun CategoryEditDialog(
     existing: RoutineCategory?,
-    onConfirm: (name: String, color: RoutineColor) -> Unit,
+    onConfirm: (name: String, color: RoutineColor, kind: RoutineCategoryKind) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
     var color by remember { mutableStateOf(RoutineColor.fromKey(existing?.color ?: RoutineColor.DEFAULT.name)) }
+    // Só SIMPLE e COMPRAS são oferecidos; um kind fora dessa lista (ex. backup) cai no padrão SIMPLE.
+    var kind by remember {
+        val current = RoutineCategoryKind.fromKey(existing?.kind ?: RoutineCategoryKind.DEFAULT.name)
+        mutableStateOf(if (current in CATEGORY_KIND_OPTIONS) current else RoutineCategoryKind.SIMPLE)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -216,11 +227,27 @@ private fun CategoryEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.size(16.dp))
+                Text(
+                    text = stringResource(R.string.routine_category_kind_label),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.size(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CATEGORY_KIND_OPTIONS.forEach { option ->
+                        FilterChip(
+                            selected = kind == option,
+                            onClick = { kind = option },
+                            label = { Text(stringResource(categoryKindLabel(option))) },
+                        )
+                    }
+                }
+                Spacer(Modifier.size(16.dp))
                 ColorRow(selected = color, onSelect = { color = it })
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name.trim(), color) }, enabled = name.isNotBlank()) {
+            TextButton(onClick = { onConfirm(name.trim(), color, kind) }, enabled = name.isNotBlank()) {
                 Text(stringResource(R.string.save))
             }
         },
@@ -228,6 +255,14 @@ private fun CategoryEditDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+/** Tipos oferecidos na UI (EXERCICIO fica de fora deste round). */
+private val CATEGORY_KIND_OPTIONS = listOf(RoutineCategoryKind.SIMPLE, RoutineCategoryKind.COMPRAS)
+
+private fun categoryKindLabel(kind: RoutineCategoryKind): Int = when (kind) {
+    RoutineCategoryKind.COMPRAS -> R.string.routine_category_kind_shopping
+    else -> R.string.routine_category_kind_simple
 }
 
 @Composable

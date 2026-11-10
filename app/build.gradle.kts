@@ -32,7 +32,7 @@ val hasUploadKeystore = uploadStoreFile != null && uploadStorePassword != null &
 // mesmo espírito (SemVer + código monotônico), mecânica agora automática. Para subir de versão,
 // edite SOMENTE appVersionName; o release é publicado por push da tag "v$appVersionName"
 // (ver .github/workflows/release.yml).
-val appVersionName = "1.2.1"
+val appVersionName = "1.3.0"
 val appVersionCode = appVersionName.split(".").let { parts ->
     require(parts.size == 3) { "versionName deve ser MAJOR.MINOR.PATCH, recebido: $appVersionName" }
     val (major, minor, patch) = parts.map(String::toInt)

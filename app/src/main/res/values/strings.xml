@@ -99,6 +99,9 @@
     <string name="routine_category_delete">Excluir %1$s</string>
     <string name="routine_category_delete_title">Excluir categoria?</string>
     <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
+    <string name="routine_category_kind_label">Tipo</string>
+    <string name="routine_category_kind_simple">Simples</string>
+    <string name="routine_category_kind_shopping">Compras</string>
 
     <!-- Configurações: rotinas -->
     <string name="settings_section_routines">Rotinas</string>
@@ -162,6 +165,22 @@
     <string name="routine_discard_message">As alterações feitas nesta rotina serão perdidas.</string>
     <string name="routine_not_found_title">Rotina não encontrada</string>
     <string name="routine_not_found_message">Ela pode ter sido excluída.</string>
+    <!-- Editor de rotina: lista de compras (categorias do tipo COMPRAS) -->
+    <string name="shopping_section_title">Lista de compras</string>
+    <string name="shopping_empty">Nenhum item ainda. Toque em \"Adicionar item\".</string>
+    <string name="shopping_new_routine_hint">Salve a rotina para montar a lista de compras.</string>
+    <string name="shopping_add_item">Adicionar item</string>
+    <string name="shopping_add_title">Novo item</string>
+    <string name="shopping_edit_title">Editar item</string>
+    <string name="shopping_item_name_label">Item</string>
+    <string name="shopping_item_quantity_label">Quantidade</string>
+    <string name="shopping_item_price_label">Preço (opcional)</string>
+    <string name="shopping_item_edit">Editar item</string>
+    <string name="shopping_item_delete">Remover item</string>
+    <string name="shopping_item_picked">Marcar como pego</string>
+    <string name="shopping_item_quantity_badge">×%1$d</string>
+    <string name="shopping_price_invalid">Informe um preço válido ou deixe em branco.</string>
+    <string name="shopping_total">Total</string>
     <string name="routine_icon_option">Ícone %1$s</string>
     <string name="routine_color_option">Cor %1$s</string>
     <!-- Na ordem de RoutineIcon. -->
