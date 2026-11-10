@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,21 @@ interface ExerciseItemDao {
 
     @Delete
     suspend fun delete(item: ExerciseItem)
+
+    /** Apaga os exercícios de UMA rotina (restauro do snapshot ao descartar o editor). */
+    @Query("DELETE FROM exercise_item WHERE routineId = :routineId")
+    suspend fun deleteByRoutine(routineId: Long)
+
+    /**
+     * Restaura a lista de uma rotina exatamente como [items] (descartar edições de item no editor):
+     * limpa a rotina e reinsere o snapshot preservando ids/position/createdAt via [insertAll].
+     * Atômico, para a lista nunca ficar meio-trocada.
+     */
+    @Transaction
+    suspend fun replaceForRoutine(routineId: Long, items: List<ExerciseItem>) {
+        deleteByRoutine(routineId)
+        insertAll(items)
+    }
 
     /** Todos os itens, leitura única para a exportação do backup. */
     @Query("SELECT * FROM exercise_item ORDER BY routineId, position, id")

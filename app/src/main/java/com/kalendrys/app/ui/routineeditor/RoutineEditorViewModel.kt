@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -72,12 +73,35 @@ class RoutineEditorViewModel(
         val shoppingItems: List<ShoppingItem> = emptyList(),
         /** Exercícios (só populado quando a rotina já existe e é do tipo EXERCICIO). */
         val exerciseItems: List<ExerciseItem> = emptyList(),
+        /** Compras como estavam ao abrir o editor (snapshot); null até a 1ª leitura da lista. */
+        val shoppingBaseline: List<ShoppingItem>? = null,
+        /** Exercícios como estavam ao abrir o editor (snapshot); null até a 1ª leitura da lista. */
+        val exerciseBaseline: List<ExerciseItem>? = null,
     ) {
+        /**
+         * Compras diferem do snapshot de abertura? Compara ignorando [ShoppingItem.picked]: marcar/
+         * desmarcar no carrinho persiste na hora e NÃO conta como "alteração a descartar" (nem arma
+         * o diálogo nem reverte); só add/editar/remover é que conta.
+         */
+        val shoppingItemsChanged: Boolean
+            get() = shoppingBaseline?.let { base ->
+                shoppingItems.map { it.copy(picked = false) } != base.map { it.copy(picked = false) }
+            } ?: false
+
+        /** Exercícios diferem do snapshot de abertura (add/editar/remover/reordenar)? */
+        val exerciseItemsChanged: Boolean
+            get() = exerciseBaseline?.let { base -> exerciseItems != base } ?: false
+
+        /** Houve edição de item (compras ou exercícios) desde a abertura do editor. */
+        val itemsChanged: Boolean get() = shoppingItemsChanged || exerciseItemsChanged
+
         val hasChanges: Boolean
             get() = when {
                 draft == null -> false
-                routine != null -> draft.differsFrom(routine)
-                else -> draft != initialDraft
+                // Agora o descartar/salvar também enxerga as edições de item: o diálogo "Descartar
+                // alterações?" aparece e o Salvar habilita quando só os itens mudaram.
+                routine != null -> draft.differsFrom(routine) || itemsChanged
+                else -> draft != initialDraft || itemsChanged
             }
         val canSave: Boolean get() = draft != null && draft.isValid && (isNew || hasChanges)
 
@@ -91,10 +115,12 @@ class RoutineEditorViewModel(
         val shoppingTotalCents: Long get() = ShoppingTotals.totalCents(shoppingItems)
     }
 
-    /** Itens dos módulos de item (compras/exercícios), combinados num ponto só para o combine do estado. */
+    /** Itens dos módulos de item (compras/exercícios) + seus snapshots de abertura, num ponto só para o combine do estado. */
     private data class ModuleItems(
         val shopping: List<ShoppingItem> = emptyList(),
         val exercise: List<ExerciseItem> = emptyList(),
+        val shoppingBaseline: List<ShoppingItem>? = null,
+        val exerciseBaseline: List<ExerciseItem>? = null,
     )
 
     sealed interface Event {
@@ -103,6 +129,10 @@ class RoutineEditorViewModel(
 
     private val draft = MutableStateFlow<RoutineDraft?>(null)
     private val initialDraft = MutableStateFlow<RoutineDraft?>(null)
+    // Snapshot dos itens como estavam ao abrir o editor (1ª leitura da lista do módulo ativo); serve
+    // de base para detectar edição e para restaurar no "Descartar alterações?". Null = ainda não lido.
+    private val shoppingBaseline = MutableStateFlow<List<ShoppingItem>?>(null)
+    private val exerciseBaseline = MutableStateFlow<List<ExerciseItem>?>(null)
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
     val events: Flow<Event> = eventChannel.receiveAsFlow()
 
@@ -122,7 +152,10 @@ class RoutineEditorViewModel(
         } else {
             selectedKind.flatMapLatest { kind ->
                 if (kind == RoutineCategoryKind.COMPRAS) {
+                    // Captura o snapshot na 1ª leitura REAL da lista (dentro do ramo COMPRAS, nunca o
+                    // emptyList() do gate), para a base refletir o estado de abertura, não o vazio inicial.
                     shoppingRepository.observeItems(routineId)
+                        .onEach { if (shoppingBaseline.value == null) shoppingBaseline.value = it }
                 } else {
                     flowOf(emptyList())
                 }
@@ -139,6 +172,7 @@ class RoutineEditorViewModel(
             selectedKind.flatMapLatest { kind ->
                 if (kind == RoutineCategoryKind.EXERCICIO) {
                     exerciseRepository.observeItems(routineId)
+                        .onEach { if (exerciseBaseline.value == null) exerciseBaseline.value = it }
                 } else {
                     flowOf(emptyList())
                 }
@@ -148,7 +182,9 @@ class RoutineEditorViewModel(
     // Combina os dois módulos num ponto só para caber no combine de 5 do estado (só um é não-vazio
     // por vez: o gate por kind garante que compras e exercícios nunca populam ao mesmo tempo).
     private val moduleItems: Flow<ModuleItems> =
-        combine(shoppingItems, exerciseItems) { shopping, exercise -> ModuleItems(shopping, exercise) }
+        combine(shoppingItems, exerciseItems, shoppingBaseline, exerciseBaseline) { shopping, exercise, sBase, eBase ->
+            ModuleItems(shopping, exercise, sBase, eBase)
+        }
 
     val uiState: StateFlow<UiState> =
         combine(
@@ -169,6 +205,8 @@ class RoutineEditorViewModel(
                 selectedKind = kindOf(draft, categories),
                 shoppingItems = module.shopping,
                 exerciseItems = module.exercise,
+                shoppingBaseline = module.shoppingBaseline,
+                exerciseBaseline = module.exerciseBaseline,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -241,6 +279,25 @@ class RoutineEditorViewModel(
         val existing = uiState.value.routine ?: return
         viewModelScope.launch {
             repository.archive(existing)
+            eventChannel.send(Event.Closed)
+        }
+    }
+
+    /**
+     * Confirmação do "Descartar alterações?": antes de fechar, desfaz as edições de item (add/editar/
+     * remover/reordenar) que já tinham persistido na sessão, restaurando cada lista ao snapshot de
+     * abertura. Os campos do rascunho já eram descartados ao fechar sem salvar; agora os itens casam
+     * com essa mesma promessa. (Marcar/desmarcar compras no carrinho não conta e não é revertido.)
+     */
+    fun discardChanges() {
+        val state = uiState.value
+        viewModelScope.launch {
+            if (state.shoppingItemsChanged) {
+                state.shoppingBaseline?.let { shoppingRepository.replaceItems(routineId, it) }
+            }
+            if (state.exerciseItemsChanged) {
+                state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
+            }
             eventChannel.send(Event.Closed)
         }
     }

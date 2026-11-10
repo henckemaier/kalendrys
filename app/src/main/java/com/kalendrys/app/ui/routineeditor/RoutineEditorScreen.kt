@@ -232,7 +232,9 @@ fun RoutineEditorScreen(
                 TextButton(
                     onClick = {
                         showDiscardDialog = false
-                        onBack()
+                        // Reverte as edições de item persistidas na sessão e só então fecha (via
+                        // Event.Closed) — sem isso, o "Descartar" só desfazia os campos do rascunho.
+                        viewModel.discardChanges()
                     },
                 ) {
                     Text(stringResource(R.string.discard))
@@ -780,7 +782,12 @@ private fun ShoppingItemDialog(
                 OutlinedTextField(
                     // Filtra: dígitos + no máximo um separador decimal. Entrada inválida não chega ao parse.
                     value = priceText,
-                    onValueChange = { priceText = MoneyFormat.filterPriceInput(it) },
+                    onValueChange = { new ->
+                        val filtered = MoneyFormat.filterPriceInput(new)
+                        // Limita a MÁX. MAX_PRICE_DIGITS dígitos: um preço absurdo estouraria o Long do
+                        // total (quantity * priceCents). Só barra a entrada; o parser fica intocado.
+                        if (filtered.count { it.isDigit() } <= MAX_PRICE_DIGITS) priceText = filtered
+                    },
                     label = { Text(stringResource(R.string.shopping_item_price_label)) },
                     singleLine = true,
                     isError = priceInvalid,
@@ -920,7 +927,9 @@ private fun ExerciseItemDialog(
                 Spacer(Modifier.size(8.dp))
                 OutlinedTextField(
                     value = loadText,
-                    onValueChange = { loadText = it },
+                    // Carga é texto livre (ex. "20kg"), mas com teto: limita a MAX_LOAD_CHARS, como
+                    // séries/reps/descanso já limitam os seus. Só barra a entrada; o trim no save fica igual.
+                    onValueChange = { loadText = it.take(MAX_LOAD_CHARS) },
                     label = { Text(stringResource(R.string.exercise_item_load_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -1176,6 +1185,11 @@ private fun RoutineDatePicker(initialEpochDay: Long?, onConfirm: (Long) -> Unit,
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L
+
+// Tetos de entrada (B2): a carga é texto livre e o preço só limita dígitos — ambos evitam campos
+// gigantes (o preço, em especial, impede estourar o Long de ShoppingTotals.totalCents).
+private const val MAX_LOAD_CHARS = 24
+private const val MAX_PRICE_DIGITS = 12
 private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 
 private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFormatter)
