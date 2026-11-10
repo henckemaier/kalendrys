@@ -101,12 +101,28 @@ class RoutineRepositoryTest {
     }
 
     @Test
-    fun `routineForNotification e null quando a ocorrencia foi remarcada enquanto adiada`() = runTest {
+    fun `routineForNotification devolve a propria ocorrencia remarcada no dia (snooze mantem o lembrete)`() = runTest {
         val saved = repository.add(routine())
         val today = LocalDate.now()
-        // Remarcada no mesmo dia: ainda "ocorre" hoje, mas o aviso adiado é do horário ANTIGO (stale),
-        // então não reexibe — o agendamento normal cuida do novo horário.
+        // A ocorrência JÁ É a remarcada (só mudou o minuto, continua hoje): "Adiar" nela tem de
+        // reexibir o aviso, senão o lembrete some em silêncio (A1/A2 do T36).
         repository.rescheduleOccurrence(saved.id, today.toEpochDay(), newStartMinute = 660, newEpochDay = null)
+
+        assertNotNull(repository.routineForNotification(saved.id, today))
+    }
+
+    @Test
+    fun `routineForNotification e null quando a ocorrencia foi remarcada para OUTRO dia`() = runTest {
+        val saved = repository.add(routine())
+        val today = LocalDate.now()
+        // Remarcada para outro dia: hoje o disparo ficou obsoleto (o alarme do novo dia cuida dela),
+        // então o aviso adiado não reexibe aqui. Não regride o filtro legítimo.
+        repository.rescheduleOccurrence(
+            saved.id,
+            today.toEpochDay(),
+            newStartMinute = null,
+            newEpochDay = today.plusDays(1).toEpochDay(),
+        )
 
         assertNull(repository.routineForNotification(saved.id, today))
     }

@@ -12,7 +12,9 @@ import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.RoutineSnooze
 import java.time.LocalDate
 import java.time.LocalTime
@@ -21,7 +23,7 @@ import java.time.format.DateTimeFormatter
 /** Aviso de início de um bloco de rotina, com a ação "Concluir". */
 open class RoutineNotifications(private val context: Context) {
 
-    open fun show(routine: Routine, date: LocalDate) {
+    open fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride> = emptyList()) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -38,7 +40,7 @@ open class RoutineNotifications(private val context: Context) {
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(routine.title)
-            .setContentText(timeLabel(routine))
+            .setContentText(timeLabel(routine, date, overrides))
             .setContentIntent(tapIntent)
             .addAction(
                 0,
@@ -85,18 +87,28 @@ open class RoutineNotifications(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun timeLabel(routine: Routine): String {
-        val start = timeOf(routine.startMinute)
-        if (routine.durationMinutes == 0) return start
-        return "$start–${timeOf(routine.endMinute)} · ${DurationFormat.format(routine.durationMinutes)}"
-    }
-
-    private fun timeOf(minute: Int): String = LocalTime.of(minute % 1440 / 60, minute % 60).format(TIME)
-
-    private companion object {
+    companion object {
         // Tag própria: os ids das rotinas e das tarefas começam ambos em 1.
-        const val TAG = "routine"
-        const val NO_DURATION_TIMEOUT_MINUTES = 60
-        val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+        private const val TAG = "routine"
+        private const val NO_DURATION_TIMEOUT_MINUTES = 60
+        private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        /**
+         * Texto do aviso: horário EFETIVO da ocorrência do dia e a duração. Honra um `RESCHEDULE`
+         * do dia resolvendo pelo [RoutineSchedule.startOn] — o mesmo caminho que a timeline e o
+         * resumo já usam —, não pelo [Routine.startMinute] base. Sem exceção, é o horário base.
+         */
+        internal fun timeLabel(
+            routine: Routine,
+            date: LocalDate,
+            overrides: List<RoutineOverride> = emptyList(),
+        ): String {
+            val start = RoutineSchedule.startOn(routine, date, overrides).toLocalTime()
+            if (routine.durationMinutes == 0) return start.format(TIME)
+            val endMinute = start.hour * 60 + start.minute + routine.durationMinutes
+            return "${start.format(TIME)}–${timeOf(endMinute)} · ${DurationFormat.format(routine.durationMinutes)}"
+        }
+
+        private fun timeOf(minute: Int): String = LocalTime.of(minute % 1440 / 60, minute % 60).format(TIME)
     }
 }

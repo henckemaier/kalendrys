@@ -107,11 +107,22 @@ class RoutineRepository(
         if (!RoutineSchedule.occursOn(routine, date, zone)) return null
         if (routine.id in completionDao.doneOn(date.toEpochDay())) return null
         // Exceção pontual (T20) aplicada enquanto o aviso estava adiado: um SKIP cancela a ocorrência
-        // e um RESCHEDULE a moveu (o alarme estrutural cuida do novo horário) — nos dois casos o aviso
-        // adiado virou obsoleto, então não reexibe. Reusa o override do Forja, só leitura.
-        if (occurrenceOverride(routineId, date.toEpochDay()) != null) return null
+        // e uma remarcação para OUTRO dia a tira daqui — nos dois casos o aviso adiado virou obsoleto,
+        // então não reexibe. Mas a PRÓPRIA ocorrência remarcada neste dia (só mudou o minuto) continua
+        // acontecendo hoje: "Adiar" nela tem de manter o lembrete, senão o aviso some em silêncio.
+        val override = occurrenceOverride(routineId, date.toEpochDay())
+        if (override != null && !isSameDayReschedule(override, date.toEpochDay())) return null
         return routine
     }
+
+    /** Remarcação da ocorrência DESTE dia sem trocar de dia (só o minuto): continua valendo hoje. */
+    private fun isSameDayReschedule(override: RoutineOverride, epochDay: Long): Boolean =
+        override.type == RoutineOverrideType.RESCHEDULE &&
+            (override.newEpochDay == null || override.newEpochDay == epochDay)
+
+    /** Exceções de UMA rotina, para o aviso montar o horário efetivo (honra o RESCHEDULE do dia). */
+    suspend fun overridesFor(routineId: Long): List<RoutineOverride> =
+        overrideDao.all().filter { it.routineId == routineId }
 
     // --- Exceções pontuais (T20): pular/remarcar UMA ocorrência sem desligar a rotina. ---
 
