@@ -72,10 +72,18 @@ class MoneyFormatTest {
     }
 
     @Test
-    fun `filtro mantem so o primeiro separador`() {
-        // Segundo separador é descartado (impede entrada ambígua de milhar/decimal).
-        assertEquals("1.00050", MoneyFormat.filterPriceInput("1.000,50"))
-        assertEquals("4,99", MoneyFormat.filterPriceInput("4,9,9"))
+    fun `filtro mantem so o ultimo separador descartando milhar`() {
+        // Último separador = decimal (consistente com o parse); os anteriores (milhar) caem.
+        assertEquals("1000,50", MoneyFormat.filterPriceInput("1.000,50"))
+        assertEquals("49,9", MoneyFormat.filterPriceInput("4,9,9"))
+        // Separador no fim (digitação em progresso) continua válido.
+        assertEquals("5,", MoneyFormat.filterPriceInput("5,"))
+    }
+
+    @Test
+    fun `preco BR com milhar parseia certo apos o filtro`() {
+        // "1.000,50" -> filtro "1000,50" -> R$ 1000,50 = 100050 centavos (antes lia R$ 1,00).
+        assertEquals(100050L, MoneyFormat.parseReaisToCents(MoneyFormat.filterPriceInput("1.000,50")))
     }
 
     @Test

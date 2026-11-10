@@ -39,21 +39,21 @@ object MoneyFormat {
     }
 
     /**
-     * Filtra a digitação de um preço: mantém dígitos e NO MÁXIMO um separador decimal (o primeiro;
-     * vírgula ou ponto). Descarta separadores extras e qualquer outro caractere — assim o campo nunca
-     * chega a um estado que o parse não entenda (reduz também a ambiguidade de milhar BR 1.000).
+     * Filtra a digitação de um preço: mantém dígitos e NO MÁXIMO um separador decimal — o ÚLTIMO
+     * digitado (vírgula ou ponto), descartando os anteriores (milhar) e qualquer outro caractere.
+     * Manter o último casa com [parseReaisToCents] (último separador = decimal): assim "1.000,50"
+     * vira "1000,50" (R$ 1000,50), eliminando a ambiguidade de milhar BR. Um separador no fim
+     * (digitação em progresso, ex. "5,") continua válido.
      */
     fun filterPriceInput(text: String): String {
+        val chars = text.filter { it.isDigit() || it == ',' || it == '.' }
+        val lastSeparator = maxOf(chars.lastIndexOf(','), chars.lastIndexOf('.'))
+        if (lastSeparator < 0) return chars
         val out = StringBuilder()
-        var hasSeparator = false
-        for (c in text) {
-            when {
-                c.isDigit() -> out.append(c)
-                (c == ',' || c == '.') && !hasSeparator -> {
-                    out.append(c)
-                    hasSeparator = true
-                }
-            }
+        for (i in chars.indices) {
+            val c = chars[i]
+            // Dígitos entram; dos separadores, só o último sobrevive (os anteriores eram milhar).
+            if (c.isDigit() || i == lastSeparator) out.append(c)
         }
         return out.toString()
     }
