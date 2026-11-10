@@ -9,6 +9,7 @@ import androidx.room.migration.AutoMigrationSpec
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.kalendrys.app.data.local.dao.CompletionLogDao
+import com.kalendrys.app.data.local.dao.ExerciseItemDao
 import com.kalendrys.app.data.local.dao.RoutineCategoryDao
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
@@ -16,6 +17,7 @@ import com.kalendrys.app.data.local.dao.RoutineOverrideDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
@@ -34,14 +36,16 @@ import java.time.ZoneId
         RoutineCategory::class,
         RoutineOverride::class,
         ShoppingItem::class,
+        ExerciseItem::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
     // v4: rotinas (só tabelas novas). v5: data e local das tarefas. v6: recorrência custom
     // (intervalEvery/intervalUnit/byWeekdays em tasks — aditivo com default). v7: fundação de
     // rotinas — colunas novas em routines (categoryId/pausedAt/weekInterval/startEpochDay/
     // endEpochDay) + tabelas routine_category e routine_override. v8: fundação de compras — só a
-    // tabela nova shopping_item (lista de compras da rotina). Tudo aditivo (sem SQL manual).
+    // tabela nova shopping_item (lista de compras da rotina). v9: fundação de exercícios — só a
+    // tabela nova exercise_item (lista de exercícios da rotina). Tudo aditivo (sem SQL manual).
     // O Room confere o SQL gerado contra os arquivos de schemas/.
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
@@ -49,6 +53,7 @@ import java.time.ZoneId
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
     ],
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,6 +71,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineOverrideDao(): RoutineOverrideDao
 
     abstract fun shoppingItemDao(): ShoppingItemDao
+
+    abstract fun exerciseItemDao(): ExerciseItemDao
 
     /**
      * v5: antes a tarefa só tinha o lembrete. A que tinha lembrete ganha como data o dia dele;

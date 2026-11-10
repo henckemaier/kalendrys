@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import com.kalendrys.app.BuildConfig
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
@@ -56,10 +57,11 @@ class BackupManager(
         val routineCategories: Int = 0,
         val routineOverrides: Int = 0,
         val shoppingItems: Int = 0,
+        val exerciseItems: Int = 0,
     ) {
         val total: Int
             get() = tasks + completionLogs + routines + routineCompletions +
-                routineCategories + routineOverrides + shoppingItems
+                routineCategories + routineOverrides + shoppingItems + exerciseItems
     }
 
     /** Grava o backup no arquivo escolhido; devolve o que foi exportado. Lança [IOException] se não abrir. */
@@ -96,6 +98,7 @@ class BackupManager(
         lateinit var categories: List<RoutineCategory>
         lateinit var overrides: List<RoutineOverride>
         lateinit var shoppingItems: List<ShoppingItem>
+        lateinit var exerciseItems: List<ExerciseItem>
         // Snapshot consistente mesmo com o app gravando no meio da exportação.
         database.withTransaction {
             tasks = database.taskDao().all()
@@ -105,6 +108,7 @@ class BackupManager(
             categories = database.routineCategoryDao().all()
             overrides = database.routineOverrideDao().all()
             shoppingItems = database.shoppingItemDao().all()
+            exerciseItems = database.exerciseItemDao().all()
         }
 
         val root = JSONObject().apply {
@@ -119,6 +123,7 @@ class BackupManager(
             put("routineCategories", categories.toJsonArray(RoutineCategory::toJson))
             put("routineOverrides", overrides.toJsonArray(RoutineOverride::toJson))
             put("shoppingItems", shoppingItems.toJsonArray(ShoppingItem::toJson))
+            put("exerciseItems", exerciseItems.toJsonArray(ExerciseItem::toJson))
             put("settings", current.toJson())
         }
         val stats = Stats(
@@ -129,6 +134,7 @@ class BackupManager(
             routineCategories = categories.size,
             routineOverrides = overrides.size,
             shoppingItems = shoppingItems.size,
+            exerciseItems = exerciseItems.size,
         )
         return root.toString(2) to stats
     }
@@ -154,6 +160,8 @@ class BackupManager(
         val overrides = root.optJSONArray("routineOverrides").orEmpty().map(JSONObject::toRoutineOverride)
         // Retrocompatível: um backup v3 (schemaVersion < 4) não tem esta array -> lista vazia.
         val shoppingItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
+        // Retrocompatível: um backup v4 (schemaVersion < 5) não tem esta array -> lista vazia.
+        val exerciseItems = root.optJSONArray("exerciseItems").orEmpty().map(JSONObject::toExerciseItem)
 
         // Limpa e reinsere numa transação só: ou o restauro vale inteiro, ou não vale nada.
         database.withTransaction {
@@ -164,6 +172,7 @@ class BackupManager(
             database.routineCategoryDao().clear()
             database.routineOverrideDao().clear()
             database.shoppingItemDao().clear()
+            database.exerciseItemDao().clear()
             database.taskDao().insertAll(tasks)
             database.completionLogDao().insertAll(logs)
             database.routineDao().insertAll(routines)
@@ -171,6 +180,7 @@ class BackupManager(
             database.routineCategoryDao().insertAll(categories)
             database.routineOverrideDao().insertAll(overrides)
             database.shoppingItemDao().insertAll(shoppingItems)
+            database.exerciseItemDao().insertAll(exerciseItems)
         }
 
         // Configurações ficam no DataStore (fora da transação do Room).
@@ -188,6 +198,7 @@ class BackupManager(
             routineCategories = categories.size,
             routineOverrides = overrides.size,
             shoppingItems = shoppingItems.size,
+            exerciseItems = exerciseItems.size,
         )
     }
 
@@ -200,11 +211,13 @@ class BackupManager(
          * (sem esses campos/arrays) restaura com os defaults e as novas tabelas vazias.
          * v4: array shoppingItems (itens da lista de compras). A leitura segue retrocompatível — um
          * backup v3 (sem a array) restaura com a lista de compras vazia.
+         * v5: array exerciseItems (exercícios da rotina). A leitura segue retrocompatível — um
+         * backup v4 (sem a array) restaura com a lista de exercícios vazia.
          */
-        const val SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = 5
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 8
+        private const val DATABASE_VERSION = 9
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -366,6 +379,30 @@ private fun JSONObject.toShoppingItem() = ShoppingItem(
     createdAt = getLong("createdAt"),
 )
 
+private fun ExerciseItem.toJson() = JSONObject().apply {
+    put("id", id)
+    put("routineId", routineId)
+    put("name", name)
+    put("sets", sets)
+    put("reps", reps)
+    putNullableString("load", load)
+    putNullableInt("restSeconds", restSeconds)
+    put("position", position)
+    put("createdAt", createdAt)
+}
+
+private fun JSONObject.toExerciseItem() = ExerciseItem(
+    id = getLong("id"),
+    routineId = getLong("routineId"),
+    name = getString("name"),
+    sets = optInt("sets", 0),
+    reps = optInt("reps", 0),
+    load = nullableString("load"),
+    restSeconds = nullableInt("restSeconds"),
+    position = optInt("position", 0),
+    createdAt = getLong("createdAt"),
+)
+
 private fun RoutineCompletion.toJson() = JSONObject().apply {
     put("id", id)
     put("routineId", routineId)
@@ -407,3 +444,9 @@ private fun JSONObject.putNullableInt(key: String, value: Int?) {
 }
 
 private fun JSONObject.nullableInt(key: String): Int? = if (isNull(key)) null else getInt(key)
+
+private fun JSONObject.putNullableString(key: String, value: String?) {
+    if (value == null) put(key, JSONObject.NULL) else put(key, value)
+}
+
+private fun JSONObject.nullableString(key: String): String? = if (isNull(key)) null else getString(key)
