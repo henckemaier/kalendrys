@@ -11,11 +11,15 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
+import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.ShoppingTotals
 import com.kalendrys.app.ui.tasks.ReminderTime
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -38,6 +42,7 @@ class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: RoutineRepository,
     private val categoryRepository: RoutineCategoryRepository,
+    private val shoppingRepository: ShoppingRepository,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -52,6 +57,13 @@ class RoutineEditorViewModel(
         val initialDraft: RoutineDraft? = null,
         /** Categorias disponíveis para atribuir à rotina. */
         val categories: List<RoutineCategory> = emptyList(),
+        /**
+         * Tipo da categoria selecionada no rascunho. ÚNICO ponto de fallback: categoria desconhecida
+         * ou sem categoria → [RoutineCategoryKind.SIMPLE] (via [RoutineCategoryKind.fromKey]).
+         */
+        val selectedKind: RoutineCategoryKind = RoutineCategoryKind.SIMPLE,
+        /** Itens da lista de compras (só populado quando a rotina já existe e é do tipo COMPRAS). */
+        val shoppingItems: List<ShoppingItem> = emptyList(),
     ) {
         val hasChanges: Boolean
             get() = when {
@@ -60,6 +72,12 @@ class RoutineEditorViewModel(
                 else -> draft != initialDraft
             }
         val canSave: Boolean get() = draft != null && draft.isValid && (isNew || hasChanges)
+
+        /** Mostra a seção de compras quando a categoria selecionada é COMPRAS. */
+        val isShoppingCategory: Boolean get() = selectedKind == RoutineCategoryKind.COMPRAS
+
+        /** Total da lista, calculado na leitura (soma quantity*priceCents). */
+        val shoppingTotalCents: Long get() = ShoppingTotals.totalCents(shoppingItems)
     }
 
     sealed interface Event {
@@ -73,8 +91,23 @@ class RoutineEditorViewModel(
 
     private val routine: Flow<Routine?> = if (isNew) flowOf(null) else repository.observeRoutine(routineId)
 
+    // A lista de compras vive na rotina salva (tem id real); numa rotina nova fica vazia até salvar.
+    private val shoppingItems: Flow<List<ShoppingItem>> =
+        if (isNew) flowOf(emptyList()) else shoppingRepository.observeItems(routineId)
+
     val uiState: StateFlow<UiState> =
-        combine(routine, draft, initialDraft, categoryRepository.categories) { routine, draft, initial, categories ->
+        combine(
+            routine,
+            draft,
+            initialDraft,
+            categoryRepository.categories,
+            shoppingItems,
+        ) { routine, draft, initial, categories, items ->
+            // ÚNICO ponto de fallback do kind: sem categoria ou kind desconhecido → SIMPLE.
+            val kind = draft?.categoryId
+                ?.let { id -> categories.firstOrNull { it.id == id } }
+                ?.let { RoutineCategoryKind.fromKey(it.kind) }
+                ?: RoutineCategoryKind.SIMPLE
             UiState(
                 isNew = isNew,
                 // Depois de excluir, a rotina continua no banco (arquivada) mas o editor já fechou.
@@ -83,6 +116,8 @@ class RoutineEditorViewModel(
                 draft = draft,
                 initialDraft = initial,
                 categories = categories,
+                selectedKind = kind,
+                shoppingItems = items,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -149,6 +184,26 @@ class RoutineEditorViewModel(
         }
     }
 
+    // --- Lista de compras (T30): só vale para uma rotina já salva (routineId real). ---
+
+    fun addShoppingItem(name: String, quantity: Int, priceCents: Long?) {
+        if (isNew || name.isBlank()) return
+        viewModelScope.launch { shoppingRepository.add(routineId, name, quantity, priceCents) }
+    }
+
+    fun updateShoppingItem(item: ShoppingItem, name: String, quantity: Int, priceCents: Long?) {
+        if (name.isBlank()) return
+        viewModelScope.launch { shoppingRepository.update(item, name, quantity, priceCents) }
+    }
+
+    fun toggleShoppingPicked(item: ShoppingItem) {
+        viewModelScope.launch { shoppingRepository.setPicked(item, !item.picked) }
+    }
+
+    fun removeShoppingItem(item: ShoppingItem) {
+        viewModelScope.launch { shoppingRepository.remove(item) }
+    }
+
     /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
     fun applyDraft(newDraft: RoutineDraft) {
         draft.value = newDraft
@@ -190,7 +245,12 @@ class RoutineEditorViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutineEditorViewModel(createSavedStateHandle(), app.routineRepository, app.routineCategoryRepository)
+                RoutineEditorViewModel(
+                    createSavedStateHandle(),
+                    app.routineRepository,
+                    app.routineCategoryRepository,
+                    app.shoppingRepository,
+                )
             }
         }
     }
