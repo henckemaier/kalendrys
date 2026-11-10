@@ -287,13 +287,26 @@ class RoutineEditorViewModel(
      * Confirmação do "Descartar alterações?": antes de fechar, desfaz as edições de item (add/editar/
      * remover/reordenar) que já tinham persistido na sessão, restaurando cada lista ao snapshot de
      * abertura. Os campos do rascunho já eram descartados ao fechar sem salvar; agora os itens casam
-     * com essa mesma promessa. (Marcar/desmarcar compras no carrinho não conta e não é revertido.)
+     * com essa mesma promessa.
+     *
+     * Marcar/desmarcar compras no carrinho NUNCA é revertido — nem no caso picked-puro (não arma o
+     * diálogo), nem quando há edição concomitante: ao restaurar as compras, reaplicamos o [picked]
+     * CORRENTE de cada item sobrevivente (casado por id) sobre os demais campos do baseline. Sem
+     * isso, o replace traria o picked COMO ESTAVA NA ABERTURA e os toggles da sessão sumiriam junto
+     * (S1). Item removido na sessão não tem estado corrente → volta com o picked do baseline.
+     * (Exercício não tem picked, então restaura o baseline direto.)
      */
     fun discardChanges() {
         val state = uiState.value
         viewModelScope.launch {
             if (state.shoppingItemsChanged) {
-                state.shoppingBaseline?.let { shoppingRepository.replaceItems(routineId, it) }
+                state.shoppingBaseline?.let { baseline ->
+                    val currentPicked = state.shoppingItems.associate { it.id to it.picked }
+                    val restored = baseline.map { item ->
+                        currentPicked[item.id]?.let { item.copy(picked = it) } ?: item
+                    }
+                    shoppingRepository.replaceItems(routineId, restored)
+                }
             }
             if (state.exerciseItemsChanged) {
                 state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
