@@ -10,6 +10,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
@@ -54,10 +55,11 @@ class BackupManager(
         val routineCompletions: Int,
         val routineCategories: Int = 0,
         val routineOverrides: Int = 0,
+        val shoppingItems: Int = 0,
     ) {
         val total: Int
             get() = tasks + completionLogs + routines + routineCompletions +
-                routineCategories + routineOverrides
+                routineCategories + routineOverrides + shoppingItems
     }
 
     /** Grava o backup no arquivo escolhido; devolve o que foi exportado. Lança [IOException] se não abrir. */
@@ -93,6 +95,7 @@ class BackupManager(
         lateinit var routineLogs: List<RoutineCompletion>
         lateinit var categories: List<RoutineCategory>
         lateinit var overrides: List<RoutineOverride>
+        lateinit var shoppingItems: List<ShoppingItem>
         // Snapshot consistente mesmo com o app gravando no meio da exportação.
         database.withTransaction {
             tasks = database.taskDao().all()
@@ -101,6 +104,7 @@ class BackupManager(
             routineLogs = database.routineCompletionDao().all()
             categories = database.routineCategoryDao().all()
             overrides = database.routineOverrideDao().all()
+            shoppingItems = database.shoppingItemDao().all()
         }
 
         val root = JSONObject().apply {
@@ -114,6 +118,7 @@ class BackupManager(
             put("routineCompletions", routineLogs.toJsonArray(RoutineCompletion::toJson))
             put("routineCategories", categories.toJsonArray(RoutineCategory::toJson))
             put("routineOverrides", overrides.toJsonArray(RoutineOverride::toJson))
+            put("shoppingItems", shoppingItems.toJsonArray(ShoppingItem::toJson))
             put("settings", current.toJson())
         }
         val stats = Stats(
@@ -123,6 +128,7 @@ class BackupManager(
             routineCompletions = routineLogs.size,
             routineCategories = categories.size,
             routineOverrides = overrides.size,
+            shoppingItems = shoppingItems.size,
         )
         return root.toString(2) to stats
     }
@@ -146,6 +152,8 @@ class BackupManager(
         // Retrocompatível: um backup v2 (schemaVersion < 3) não tem estas arrays -> vazias.
         val categories = root.optJSONArray("routineCategories").orEmpty().map(JSONObject::toRoutineCategory)
         val overrides = root.optJSONArray("routineOverrides").orEmpty().map(JSONObject::toRoutineOverride)
+        // Retrocompatível: um backup v3 (schemaVersion < 4) não tem esta array -> lista vazia.
+        val shoppingItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
 
         // Limpa e reinsere numa transação só: ou o restauro vale inteiro, ou não vale nada.
         database.withTransaction {
@@ -155,12 +163,14 @@ class BackupManager(
             database.routineCompletionDao().clear()
             database.routineCategoryDao().clear()
             database.routineOverrideDao().clear()
+            database.shoppingItemDao().clear()
             database.taskDao().insertAll(tasks)
             database.completionLogDao().insertAll(logs)
             database.routineDao().insertAll(routines)
             database.routineCompletionDao().insertAll(routineLogs)
             database.routineCategoryDao().insertAll(categories)
             database.routineOverrideDao().insertAll(overrides)
+            database.shoppingItemDao().insertAll(shoppingItems)
         }
 
         // Configurações ficam no DataStore (fora da transação do Room).
@@ -177,6 +187,7 @@ class BackupManager(
             routineCompletions = routineLogs.size,
             routineCategories = categories.size,
             routineOverrides = overrides.size,
+            shoppingItems = shoppingItems.size,
         )
     }
 
@@ -187,11 +198,13 @@ class BackupManager(
          * v3: colunas novas de rotina (categoryId/pausedAt/weekInterval/startEpochDay/endEpochDay) e
          * as arrays routineCategories/routineOverrides. A leitura é retrocompatível — um backup v1/v2
          * (sem esses campos/arrays) restaura com os defaults e as novas tabelas vazias.
+         * v4: array shoppingItems (itens da lista de compras). A leitura segue retrocompatível — um
+         * backup v3 (sem a array) restaura com a lista de compras vazia.
          */
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 7
+        private const val DATABASE_VERSION = 8
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -328,6 +341,28 @@ private fun JSONObject.toRoutineOverride() = RoutineOverride(
     type = getString("type"),
     newStartMinute = nullableInt("newStartMinute"),
     newEpochDay = nullableLong("newEpochDay"),
+    createdAt = getLong("createdAt"),
+)
+
+private fun ShoppingItem.toJson() = JSONObject().apply {
+    put("id", id)
+    put("routineId", routineId)
+    put("name", name)
+    put("quantity", quantity)
+    putNullableLong("priceCents", priceCents)
+    put("picked", picked)
+    put("position", position)
+    put("createdAt", createdAt)
+}
+
+private fun JSONObject.toShoppingItem() = ShoppingItem(
+    id = getLong("id"),
+    routineId = getLong("routineId"),
+    name = getString("name"),
+    quantity = optInt("quantity", 1),
+    priceCents = nullableLong("priceCents"),
+    picked = optBoolean("picked", false),
+    position = optInt("position", 0),
     createdAt = getLong("createdAt"),
 )
 

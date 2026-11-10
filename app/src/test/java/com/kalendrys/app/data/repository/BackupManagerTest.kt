@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.RecurrenceUnit
@@ -100,12 +101,19 @@ class BackupManagerTest {
                 ),
             ),
         )
+        // Itens de compras (v8/schema v4): preço nullable, picked e position têm que sobreviver.
+        sourceDb.shoppingItemDao().insertAll(
+            listOf(
+                ShoppingItem(id = 30, routineId = 5, name = "Leite", quantity = 2, priceCents = 499, position = 0),
+                ShoppingItem(id = 31, routineId = 5, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
+            ),
+        )
 
         val (json, stats) = BackupManager(sourceDb, context.contentResolver, source).serialize()
         assertEquals(
             BackupManager.Stats(
                 tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
-                routineCategories = 2, routineOverrides = 2,
+                routineCategories = 2, routineOverrides = 2, shoppingItems = 2,
             ),
             stats,
         )
@@ -122,6 +130,7 @@ class BackupManagerTest {
         assertEquals(sourceDb.routineCompletionDao().all(), destDb.routineCompletionDao().all())
         assertEquals(sourceDb.routineCategoryDao().all(), destDb.routineCategoryDao().all())
         assertEquals(sourceDb.routineOverrideDao().all(), destDb.routineOverrideDao().all())
+        assertEquals(sourceDb.shoppingItemDao().all(), destDb.shoppingItemDao().all())
 
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
@@ -216,6 +225,27 @@ class BackupManagerTest {
         // As tabelas novas ficam vazias, sem quebrar o restauro de um backup anterior à v3.
         assertTrue(destDb.routineCategoryDao().all().isEmpty())
         assertTrue(destDb.routineOverrideDao().all().isEmpty())
+    }
+
+    @Test
+    fun `restaura backup v3 sem a array de compras caindo na lista vazia`() = runTest {
+        val source = settingsRepo("source-v3")
+        sourceDb.routineDao().insert(
+            Routine(id = 1, title = "Mercado", startMinute = 600, durationMinutes = 30, remind = true),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Simula um backup do formato v3: schemaVersion=3, sem a array shoppingItems.
+        val root = JSONObject(json).put("schemaVersion", 3)
+        root.remove("shoppingItems")
+
+        val dest = settingsRepo("dest-v3")
+        val stats = BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        // A rotina é preservada e a lista de compras fica vazia, sem quebrar o restauro de um v3.
+        assertEquals("Mercado", destDb.routineDao().all().single().title)
+        assertEquals(0, stats.shoppingItems)
+        assertTrue(destDb.shoppingItemDao().all().isEmpty())
     }
 
     private fun inMemoryDb(): AppDatabase =

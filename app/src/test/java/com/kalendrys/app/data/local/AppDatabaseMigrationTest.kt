@@ -17,9 +17,9 @@ import org.robolectric.annotation.Config
  * como teste unitário (`:app:testDebugUnitTest`), sem precisar de aparelho/emulador.
  *
  * Com o 1.json reconstruído (schema anterior à MIGRATION_1_2, sem a coluna reminderRepeat), a
- * cadeia completa v1 → v7 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
- * demais migrações (inclusive a auto 5→6 da recorrência custom e a auto 6→7 da fundação de
- * rotinas) seguem até o schema atual.
+ * cadeia completa v1 → v8 fica coberta: a MIGRATION_1_2 é exercitada e validada pelo helper e as
+ * demais migrações (inclusive a auto 5→6 da recorrência custom, a auto 6→7 da fundação de rotinas
+ * e a auto 7→8 da fundação de compras) seguem até o schema atual.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -138,6 +138,28 @@ class AppDatabaseMigrationTest {
             }
             assertTrue("tabela routine_category ausente após 6→7", hasTable(v7, "routine_category"))
             assertTrue("tabela routine_override ausente após 6→7", hasTable(v7, "routine_override"))
+        }
+    }
+
+    @Test
+    fun `migra v7 para v8 cria a tabela shopping_item preservando os dados`() {
+        val name = "kalendrys-migration-v7-v8"
+        helper.createDatabase(name, 7).use { v7 ->
+            // Formato v7: ainda sem a tabela shopping_item. Uma rotina já existente deve sobreviver.
+            v7.execSQL(
+                "INSERT INTO routines " +
+                    "(title, notes, icon, color, startMinute, durationMinutes, daysOfWeek, remind, createdAt) " +
+                    "VALUES ('Mercado', '', 'STAR', 'GREEN', 600, 30, 127, 1, 0)",
+            )
+        }
+
+        // 7→8 é AutoMigration aditiva (só a tabela nova shopping_item); valida vs 8.json.
+        helper.runMigrationsAndValidate(name, 8, true).use { v8 ->
+            v8.query("SELECT title FROM routines").use { c ->
+                assertTrue("a rotina v7 deveria sobreviver à migração", c.moveToFirst())
+                assertEquals("Mercado", c.getString(0))
+            }
+            assertTrue("tabela shopping_item ausente após 7→8", hasTable(v8, "shopping_item"))
         }
     }
 
