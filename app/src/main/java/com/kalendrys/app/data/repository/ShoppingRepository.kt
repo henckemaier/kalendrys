@@ -34,4 +34,12 @@ class ShoppingRepository(private val dao: ShoppingItemDao) {
     suspend fun setPicked(item: ShoppingItem, picked: Boolean) = dao.update(item.copy(picked = picked))
 
     suspend fun remove(item: ShoppingItem) = dao.delete(item)
+
+    /**
+     * Restaura a lista da rotina exatamente como [snapshot] — usado pelo "Descartar alterações?" do
+     * editor para desfazer as edições de item (add/editar/remover) persistidas durante a sessão.
+     * Troca atômica; o [snapshot] traz os itens como estavam ao abrir o editor (ids preservados).
+     */
+    suspend fun replaceItems(routineId: Long, snapshot: List<ShoppingItem>) =
+        dao.replaceForRoutine(routineId, snapshot)
 }

@@ -61,4 +61,12 @@ class ExerciseRepository(private val dao: ExerciseItemDao) {
         dao.update(item.copy(position = other.position))
         dao.update(other.copy(position = item.position))
     }
+
+    /**
+     * Restaura a lista da rotina exatamente como [snapshot] — usado pelo "Descartar alterações?" do
+     * editor para desfazer as edições de exercício (add/editar/remover/reordenar) persistidas durante
+     * a sessão. Troca atômica; o [snapshot] traz os itens como estavam ao abrir o editor (ids/ordem).
+     */
+    suspend fun replaceItems(routineId: Long, snapshot: List<ExerciseItem>) =
+        dao.replaceForRoutine(routineId, snapshot)
 }

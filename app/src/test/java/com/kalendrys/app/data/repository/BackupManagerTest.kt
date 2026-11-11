@@ -279,6 +279,33 @@ class BackupManagerTest {
         assertTrue(destDb.exerciseItemDao().all().isEmpty())
     }
 
+    @Test
+    fun `restaura exercicio sem sets reps caindo em 1 e nao 0`() = runTest {
+        val source = settingsRepo("source-ex-defaults")
+        sourceDb.routineDao().insert(
+            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true),
+        )
+        sourceDb.exerciseItemDao().insert(
+            ExerciseItem(id = 40, routineId = 1, name = "Agachamento", sets = 3, reps = 12, position = 0),
+        )
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        // Backup parcial/hand-edited: um exercício SEM os campos sets/reps no JSON.
+        val root = JSONObject(json)
+        val exercises = root.getJSONArray("exerciseItems")
+        for (i in 0 until exercises.length()) {
+            exercises.getJSONObject(i).apply { remove("sets"); remove("reps") }
+        }
+
+        val dest = settingsRepo("dest-ex-defaults")
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        // Default alinhado ao invariante da entidade (>= 1): restaura 1/1, não 0/0 (evita "0x0").
+        val restored = destDb.exerciseItemDao().all().single()
+        assertEquals(1, restored.sets)
+        assertEquals(1, restored.reps)
+    }
+
     private fun inMemoryDb(): AppDatabase =
         Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
