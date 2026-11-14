@@ -21,6 +21,16 @@ import kotlinx.coroutines.cancel
  * Aqui o Room usa um executor próprio de uma thread. No [close]: cancela o `viewModelScope` dos
  * ViewModels registrados em [track], espera o executor esvaziar e só então fecha o banco. Chame
  * [close] ANTES do `Dispatchers.resetMain()`.
+ *
+ * Limitações conhecidas:
+ * - O MESMO executor de uma thread atende consultas e transações. Funciona porque, dentro de uma
+ *   transação, o Room roda as chamadas de DAO na própria thread da transação. Mas um teste que,
+ *   dentro de `withTransaction`, BLOQUEIE esperando o resultado de uma consulta agendada no executor
+ *   (ex.: `flow.first()` fora do contexto da transação, ou `Future.get()`) trava: a única thread está
+ *   ocupada com a transação. Se isso for preciso, use executores separados.
+ * - As barreiras do [close] são heurísticas: esvaziam o que estava na fila e o que essas tarefas
+ *   enfileiraram, o que basta para os testes atuais. Uma cadeia mais longa de tarefas que reagendam
+ *   outras (ou trabalho em outro executor) não é garantida pelas duas barreiras.
  */
 class ViewModelTestDatabase(context: Context) {
 
