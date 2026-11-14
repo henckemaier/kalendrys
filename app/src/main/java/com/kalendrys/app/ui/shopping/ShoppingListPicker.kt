@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -22,16 +23,23 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
@@ -56,23 +64,36 @@ fun ShoppingListPicker(
 ) {
     var creating by rememberSaveable { mutableStateOf(false) }
     val defaultName = stringResource(R.string.list_picker_default_name)
-    var name by rememberSaveable { mutableStateOf(suggestedName.trim().ifEmpty { defaultName }) }
+    // TextFieldValue para abrir com o nome sugerido todo selecionado: digitar já substitui.
+    var field by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        val initial = suggestedName.trim().ifEmpty { defaultName }
+        mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length)))
+    }
+    val name = field.text
 
     if (creating) {
+        val focusRequester = remember { FocusRequester() }
+        val keyboard = LocalSoftwareKeyboardController.current
+        // Foco e teclado já abertos, como nos diálogos de nome da aba Listas.
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.list_picker_new_title)) },
             text = {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
+                    value = field,
+                    onValueChange = { field = it },
                     label = { Text(stringResource(R.string.list_picker_name_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done,
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onCreate(name.trim()) }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
             },
             confirmButton = {

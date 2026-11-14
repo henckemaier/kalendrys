@@ -63,6 +63,7 @@ fun ShoppingListScreen(
     var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val removedMessage = stringResource(R.string.shopping_list_item_removed)
+    val clearedMessage = stringResource(R.string.shopping_list_picked_cleared)
     val undoLabel = stringResource(R.string.undo)
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.events.collectLatest { event ->
@@ -74,6 +75,14 @@ fun ShoppingListScreen(
                         duration = SnackbarDuration.Short,
                     )
                     if (result == SnackbarResult.ActionPerformed) viewModel.undoRemove(event.item)
+                }
+                is Event.PickedCleared -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = clearedMessage,
+                        actionLabel = undoLabel,
+                        duration = SnackbarDuration.Short,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) viewModel.undoClearPicked(event.itemIds)
                 }
             }
         }

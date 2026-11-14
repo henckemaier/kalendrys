@@ -48,6 +48,10 @@ interface ShoppingItemDao {
     @Query("UPDATE shopping_item SET picked = 0 WHERE listId = :listId")
     suspend fun clearPicked(listId: Long)
 
+    /** "Desfazer" do "Desmarcar todos": volta a marcar só estes itens (os que ainda existem). */
+    @Query("UPDATE shopping_item SET picked = 1 WHERE id IN (:itemIds)")
+    suspend fun markPicked(itemIds: List<Long>)
+
     @Query("UPDATE shopping_item SET pickedBeforeReset = picked, picked = 0 WHERE listId = :listId")
     suspend fun snapshotAndClearPicked(listId: Long)
 

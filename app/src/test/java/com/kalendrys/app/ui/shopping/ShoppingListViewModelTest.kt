@@ -189,6 +189,40 @@ class ShoppingListViewModelTest {
     }
 
     @Test
+    fun `desmarcar todos emite evento e desfazer devolve so o que estava marcado`() = runTest {
+        val listId = repository.createList("Mercado")
+        repository.add(listId, "Arroz", quantity = 1, priceCents = null)
+        repository.add(listId, "Feijão", quantity = 1, priceCents = null)
+        repository.add(listId, "Sal", quantity = 1, priceCents = null)
+        repository.observeItems(listId).first().filter { it.name != "Sal" }.forEach { repository.setPicked(it, true) }
+
+        val vm = viewModel(listId)
+        vm.uiState.first { it.progress.picked == 2 }
+        vm.events.test {
+            vm.clearPicked()
+            val event = awaitItem() as ShoppingListViewModel.Event.PickedCleared
+            assertEquals(2, event.itemIds.size)
+            vm.undoClearPicked(event.itemIds)
+        }
+
+        val items = vm.uiState.first { it.progress.picked == 2 }.items
+        assertEquals(mapOf("Arroz" to true, "Feijão" to true, "Sal" to false), items.associate { it.name to it.picked })
+    }
+
+    @Test
+    fun `desmarcar todos sem nada marcado nao emite evento`() = runTest {
+        val listId = repository.createList("Mercado")
+        repository.add(listId, "Arroz", quantity = 1, priceCents = null)
+
+        val vm = viewModel(listId)
+        vm.uiState.first { it.items.size == 1 }
+        vm.events.test {
+            vm.clearPicked()
+            expectNoEvents()
+        }
+    }
+
+    @Test
     fun `renomear troca o nome e ignora nome em branco`() = runTest {
         val listId = repository.createList("Mercado")
         val vm = viewModel(listId)

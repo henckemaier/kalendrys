@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
@@ -21,13 +22,21 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -219,18 +228,33 @@ internal fun ShoppingListNameDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf(initial) }
+    // TextFieldValue para abrir com o cursor no fim do nome (Renomear) e não no começo.
+    var field by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length)))
+    }
+    val name = field.text
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Foco e teclado já abertos ao mostrar o diálogo (Nova lista e Renomear lista).
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             OutlinedTextField(
-                value = name,
-                onValueChange = { name = it.take(MAX_LIST_NAME_CHARS) },
+                value = field,
+                onValueChange = { field = it.copy(text = it.text.take(MAX_LIST_NAME_CHARS)) },
                 label = { Text(stringResource(R.string.shopping_list_name_label)) },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onConfirm(name.trim()) }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
         },
         confirmButton = {
