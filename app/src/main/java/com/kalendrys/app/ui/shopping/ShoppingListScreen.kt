@@ -2,7 +2,6 @@
 
 package com.kalendrys.app.ui.shopping
 
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.shopping.ShoppingListViewModel.Event
 import kotlinx.coroutines.flow.collectLatest
@@ -163,7 +163,7 @@ fun ShoppingListScreen(
             )
             else -> LazyColumn(
                 modifier = Modifier.padding(innerPadding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                contentPadding = fabListContentPadding(horizontal = 16.dp, top = 8.dp),
             ) {
                 item(key = "progress") {
                     Text(

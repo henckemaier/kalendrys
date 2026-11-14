@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,6 +84,7 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.groupedItemShape
@@ -197,7 +197,7 @@ fun TaskListScreen(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 104.dp),
+                        contentPadding = fabListContentPadding(horizontal = 16.dp),
                     ) {
                         item(key = "today_label", contentType = "today") {
                             Text(
