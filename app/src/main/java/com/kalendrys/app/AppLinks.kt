@@ -12,6 +12,9 @@ sealed interface LaunchRequest {
     data object NewTask : LaunchRequest
     data class OpenRoutines(val date: LocalDate) : LaunchRequest
     data object OpenCalendar : LaunchRequest
+
+    /** Aba Listas e, sobre ela, a tela da lista. [taskId] é a tarefa de origem (oferta P3), se houver. */
+    data class OpenList(val listId: Long, val taskId: Long? = null) : LaunchRequest
 }
 
 /**
@@ -26,6 +29,8 @@ object AppLinks {
     private const val HOST_ROUTINES = "routines"
     private const val HOST_ROUTINE = "routine"
     private const val HOST_CALENDAR = "calendar"
+    private const val HOST_LIST = "list"
+    private const val PARAM_TASK_ID = "taskId"
     private const val HOST_REMINDER_COMPLETE = "reminder-complete"
     private const val HOST_REMINDER_SNOOZE = "reminder-snooze"
     private const val HOST_REMINDER_SNOOZE_FIRE = "reminder-snooze-fire"
@@ -48,6 +53,18 @@ object AppLinks {
     /** A aba do calendário (ex.: toque no widget de calendário). */
     fun openCalendar(context: Context): Intent =
         baseIntent(context).setData(Uri.parse("$SCHEME://$HOST_CALENDAR"))
+
+    /**
+     * A tela de uma lista sobre a aba Listas (ADR-0002, E-1): `kalendrys://list/{listId}?taskId={id}`.
+     * [taskId] é a tarefa de origem, que alimenta a oferta "Concluir tarefa" (P3).
+     */
+    fun openList(context: Context, listId: Long, taskId: Long? = null): Intent =
+        baseIntent(context).setData(listUri(listId, taskId))
+
+    internal fun listUri(listId: Long, taskId: Long? = null): Uri =
+        Uri.parse(
+            if (taskId == null) "$SCHEME://$HOST_LIST/$listId" else "$SCHEME://$HOST_LIST/$listId?$PARAM_TASK_ID=$taskId",
+        )
 
     /** Identifica a ação "Concluir" de um bloco num dia (não abre o app). */
     fun routineOccurrence(routineId: Long, epochDay: Long): Uri =
@@ -77,6 +94,9 @@ object AppLinks {
             HOST_NEW_TASK -> LaunchRequest.NewTask
             HOST_ROUTINES -> LaunchRequest.OpenRoutines(parseDate(data.lastPathSegment) ?: LocalDate.now())
             HOST_CALENDAR -> LaunchRequest.OpenCalendar
+            HOST_LIST -> data.lastPathSegment?.toLongOrNull()?.let { listId ->
+                LaunchRequest.OpenList(listId, data.getQueryParameter(PARAM_TASK_ID)?.toLongOrNull())
+            }
             else -> null
         }
     }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
@@ -148,7 +149,7 @@ private fun listSubtitle(summary: ShoppingListSummary): String {
     val status = if (progress.total == 0) {
         stringResource(R.string.list_card_empty)
     } else {
-        stringResource(R.string.list_card_progress, progress.picked, progress.total)
+        pluralStringResource(R.plurals.list_card_progress, progress.markedQuantity, progress.picked, progress.total)
     }
     val owners = if (summary.owners.isEmpty()) {
         stringResource(R.string.list_picker_standalone)

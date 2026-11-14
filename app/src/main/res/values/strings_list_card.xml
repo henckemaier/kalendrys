@@ -5,10 +5,21 @@
     <string name="list_card_add">Adicionar lista</string>
     <string name="list_card_hint">Anexe uma lista para levar às compras desta rotina.</string>
     <string name="list_card_empty">Lista vazia</string>
-    <string name="list_card_progress">%1$d de %2$d marcados</string>
+    <!-- Quantidade = itens marcados (ver ShoppingProgress.markedQuantity): no pt-BR só o 1 fica no singular. -->
+    <plurals name="list_card_progress">
+        <item quantity="one">%1$d de %2$d marcado</item>
+        <item quantity="other">%1$d de %2$d marcados</item>
+    </plurals>
     <string name="list_card_total">Total %1$s</string>
     <string name="list_card_shared_with">Também em: %1$s</string>
     <string name="list_card_detach">Desvincular lista</string>
+    <string name="list_card_hint_task">Anexe uma lista para levar às compras desta tarefa.</string>
+    <string name="list_card_new_pending">Nova lista: %1$s</string>
+    <string name="list_card_remove_choice">Remover lista</string>
+    <plurals name="list_progress_description">
+        <item quantity="one">Lista de compras: %1$d de %2$d marcado</item>
+        <item quantity="other">Lista de compras: %1$d de %2$d marcados</item>
+    </plurals>
 
     <string name="list_picker_title">Adicionar lista</string>
     <string name="list_picker_create">Criar nova</string>

@@ -9,6 +9,10 @@ import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.domain.ShoppingProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,6 +41,8 @@ class ShoppingListViewModelTest {
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
     private lateinit var repository: ShoppingRepository
+    private lateinit var taskRepository: TaskRepository
+    private lateinit var scheduler: FakeReminderScheduler
 
     @Before
     fun setup() {
@@ -45,6 +51,8 @@ class ShoppingListViewModelTest {
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
         repository = ShoppingRepository(db)
+        scheduler = FakeReminderScheduler(context)
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
     @After
@@ -58,7 +66,7 @@ class ShoppingListViewModelTest {
             put(SHOPPING_LIST_ID_ARG, listId)
             if (taskId != null) put(SHOPPING_LIST_TASK_ID_ARG, taskId)
         }
-        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository))
+        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository, taskRepository))
     }
 
     private suspend fun ReceiveTurbine<ShoppingListViewModel.UiState>.awaitUntil(
@@ -246,5 +254,126 @@ class ShoppingListViewModelTest {
     fun `rota da lista com e sem tarefa`() {
         assertEquals("shopping-list/7", shoppingListRoute(7))
         assertEquals("shopping-list/7?taskId=3", shoppingListRoute(7, taskId = 3))
+    }
+
+    // --- Oferta "Concluir tarefa" (P3, v1.6.0) ------------------------------------------------------
+
+    /** Lista com [names] itens; marca todos menos o último e devolve o id da lista. */
+    private suspend fun listMissingOne(vararg names: String): Long {
+        val listId = repository.createList("Mercado")
+        names.forEach { repository.add(listId, it, quantity = 1, priceCents = null) }
+        repository.observeItems(listId).first().dropLast(1).forEach { repository.setPicked(it, true) }
+        return listId
+    }
+
+    private suspend fun lastUnpicked(listId: Long) = repository.observeItems(listId).first().single { !it.picked }
+
+    @Test
+    fun `marcar o ultimo item oferece concluir a unica tarefa pendente vinculada`() = runTest {
+        val listId = listMissingOne("Arroz", "Feijão")
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+
+        val vm = viewModel(listId)
+        vm.events.test {
+            vm.togglePicked(lastUnpicked(listId))
+            assertEquals(ShoppingListViewModel.Event.OfferCompleteTask(taskId, "Ir ao mercado"), awaitItem())
+        }
+    }
+
+    @Test
+    fun `tarefa de origem tem prioridade quando ha mais de uma pendente`() = runTest {
+        val listId = listMissingOne("Arroz", "Feijão")
+        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId))
+        val origin = db.taskDao().insert(Task(title = "Mercado do mês", shoppingListId = listId))
+
+        val vm = viewModel(listId, taskId = origin)
+        vm.events.test {
+            vm.togglePicked(lastUnpicked(listId))
+            assertEquals(ShoppingListViewModel.Event.OfferCompleteTask(origin, "Mercado do mês"), awaitItem())
+        }
+    }
+
+    @Test
+    fun `sem oferta com duas pendentes e sem origem, sem tarefa ou com lista incompleta`() = runTest {
+        // Duas pendentes, sem origem: ambígua.
+        val twoTasks = listMissingOne("Arroz", "Feijão")
+        db.taskDao().insert(Task(title = "Feira", shoppingListId = twoTasks))
+        db.taskDao().insert(Task(title = "Mercado", shoppingListId = twoTasks))
+        // Só rotina vinculada: rotinas não recebem oferta.
+        val routineOnly = listMissingOne("Leite")
+        db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = routineOnly))
+        // Lista que continua incompleta depois da marcação (2 de 3 desmarcados; marca 1).
+        val incomplete = repository.createList("Padaria")
+        listOf("Café", "Açúcar", "Sal").forEach { repository.add(incomplete, it, quantity = 1, priceCents = null) }
+        db.taskDao().insert(Task(title = "Padaria", shoppingListId = incomplete))
+        val firstUnpicked = repository.observeItems(incomplete).first().first { !it.picked }
+
+        val vms = listOf(viewModel(twoTasks), viewModel(routineOnly), viewModel(incomplete))
+        vms.zip(listOf(lastUnpicked(twoTasks), lastUnpicked(routineOnly), firstUnpicked)).forEach { (vm, item) ->
+            vm.events.test {
+                vm.togglePicked(item).join()
+                expectNoEvents()
+            }
+        }
+    }
+
+    @Test
+    fun `desmarcar nunca oferece`() = runTest {
+        val listId = listMissingOne("Arroz")
+        db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        repository.setPicked(lastUnpicked(listId), true)
+        val picked = repository.observeItems(listId).first().single()
+
+        val vm = viewModel(listId)
+        vm.events.test {
+            vm.togglePicked(picked).join()
+            expectNoEvents()
+        }
+    }
+
+    @Test
+    fun `aceitar a oferta conclui a tarefa e desfazer remove a conclusao`() = runTest {
+        val listId = listMissingOne("Arroz")
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+
+        val vm = viewModel(listId)
+        vm.events.test {
+            vm.togglePicked(lastUnpicked(listId))
+            val offer = awaitItem() as ShoppingListViewModel.Event.OfferCompleteTask
+            vm.completeTask(offer.taskId)
+            val completed = awaitItem() as ShoppingListViewModel.Event.TaskCompleted
+            assertEquals(listOf(completed.logId), db.completionLogDao().observeForTask(taskId).first().map { it.id })
+            // Concluir pela oferta tira da tela o lembrete já exibido dessa tarefa.
+            assertEquals(listOf(taskId), scheduler.dismissed)
+
+            vm.undoTaskCompletion(completed.logId)
+        }
+        // O Desfazer apaga o CompletionLog (espera o banco refletir).
+        assertTrue(db.completionLogDao().observeForTask(taskId).first { it.isEmpty() }.isEmpty())
+        // Tarefa única: concluir não reinicia as marcações (P4).
+        assertTrue(repository.observeItems(listId).first().all { it.picked })
+    }
+
+    @Test
+    fun `abrir a lista pela tarefa nao dispensa o lembrete`() = runTest {
+        val listId = listMissingOne("Arroz")
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+
+        val vm = viewModel(listId, taskId)
+        vm.uiState.first { it.items.isNotEmpty() }
+        assertTrue("só abrir a lista (ação Abrir lista) mantém a notificação", scheduler.dismissed.isEmpty())
+    }
+
+    @Test
+    fun `tarefa ja concluida nao recebe oferta`() = runTest {
+        val listId = listMissingOne("Arroz")
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        taskRepository.logCompletion(taskId)
+
+        val vm = viewModel(listId)
+        vm.events.test {
+            vm.togglePicked(lastUnpicked(listId)).join()
+            expectNoEvents()
+        }
     }
 }

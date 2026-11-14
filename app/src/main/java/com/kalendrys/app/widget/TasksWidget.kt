@@ -45,6 +45,7 @@ import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.AppLocale
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.ui.routines.RoutinePalette
 import java.time.LocalDate
@@ -168,7 +169,7 @@ private fun TaskRow(task: TodayOverview.PendingTask) {
         )
         Spacer(GlanceModifier.width(6.dp))
         Text(
-            text = task.title,
+            text = ShoppingProgress.titleWithProgress(task.title, task.listProgress),
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
             maxLines = 1,
             modifier = GlanceModifier.defaultWeight(),
@@ -217,7 +218,7 @@ private fun RoutineRow(block: TodayOverview.RoutineBlock, date: LocalDate) {
         )
         Spacer(GlanceModifier.width(6.dp))
         Text(
-            text = block.title,
+            text = ShoppingProgress.titleWithProgress(block.title, block.listProgress),
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
             maxLines = 1,
             modifier = GlanceModifier.defaultWeight(),

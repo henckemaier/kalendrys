@@ -14,15 +14,24 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderSnooze
+import com.kalendrys.app.domain.ShoppingProgress
 
 /**
- * Monta e exibe a notificação de lembrete, com as ações "Concluir" e "Adiar". Compartilhada pelo
- * [ReminderReceiver] (quando o alarme toca) e pelo [ReminderActionReceiver] (ao reexibir depois de
- * adiar), para o visual e as ações ficarem num lugar só.
+ * Monta e exibe a notificação de lembrete, com as ações "Concluir" e "Adiar" (e "Abrir lista"
+ * quando a tarefa tem lista, ADR-0002 E-1). Compartilhada pelo [ReminderReceiver] (quando o alarme
+ * toca) e pelo [ReminderActionReceiver] (ao reexibir depois de adiar), para o visual e as ações
+ * ficarem num lugar só.
  */
 object ReminderNotifications {
 
-    fun show(context: Context, task: Task) {
+    /** Ações do lembrete, na ordem em que aparecem. */
+    enum class Action { COMPLETE, SNOOZE, OPEN_LIST }
+
+    /**
+     * [listProgress] é o progresso da lista da tarefa; `null` quando ela não tem lista ou o vínculo
+     * é órfão (lista excluída), e aí a notificação fica como sempre foi.
+     */
+    fun show(context: Context, task: Task, listProgress: ShoppingProgress? = null) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -34,30 +43,52 @@ object ReminderNotifications {
             AppLinks.openTask(context, task.id),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(context, KalendrysApp.REMINDER_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, KalendrysApp.REMINDER_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
-            .setContentTitle(task.title)
+            .setContentTitle(ShoppingProgress.titleWithProgress(task.title, listProgress))
             .setContentText(task.notes.ifBlank { context.getString(R.string.reminder_text) })
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(tapIntent)
-            .addAction(
-                0,
-                context.getString(R.string.reminder_complete_action),
-                action(context, ReminderActionReceiver.ACTION_COMPLETE, task.id, AppLinks.reminderComplete(task.id)),
-            )
-            .addAction(
-                0,
-                context.getString(R.string.reminder_snooze_action, ReminderSnooze.DEFAULT_MINUTES),
-                action(context, ReminderActionReceiver.ACTION_SNOOZE, task.id, AppLinks.reminderSnooze(task.id)),
-            )
             .setAutoCancel(true)
-            .build()
-        NotificationManagerCompat.from(context).notify(task.id.toInt(), notification)
+        actionsFor(task, listProgress).forEach { action ->
+            when (action) {
+                Action.COMPLETE -> builder.addAction(
+                    0,
+                    context.getString(R.string.reminder_complete_action),
+                    broadcast(context, ReminderActionReceiver.ACTION_COMPLETE, task.id, AppLinks.reminderComplete(task.id)),
+                )
+                Action.SNOOZE -> builder.addAction(
+                    0,
+                    context.getString(R.string.reminder_snooze_action, ReminderSnooze.DEFAULT_MINUTES),
+                    broadcast(context, ReminderActionReceiver.ACTION_SNOOZE, task.id, AppLinks.reminderSnooze(task.id)),
+                )
+                // Abre o app direto na lista, com a tarefa como origem (oferta "Concluir tarefa").
+                Action.OPEN_LIST -> builder.addAction(
+                    0,
+                    context.getString(R.string.reminder_open_list_action),
+                    PendingIntent.getActivity(
+                        context,
+                        task.id.toInt(),
+                        AppLinks.openList(context, checkNotNull(task.shoppingListId), task.id),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ),
+                )
+            }
+        }
+        NotificationManagerCompat.from(context).notify(task.id.toInt(), builder.build())
     }
 
+    /** Com lista (vínculo válido): Concluir, Adiar, Abrir lista. Sem lista ou órfã: Concluir, Adiar. */
+    internal fun actionsFor(task: Task, listProgress: ShoppingProgress?): List<Action> =
+        if (task.shoppingListId != null && listProgress != null) {
+            listOf(Action.COMPLETE, Action.SNOOZE, Action.OPEN_LIST)
+        } else {
+            listOf(Action.COMPLETE, Action.SNOOZE)
+        }
+
     // Uri próprio por tarefa e ação: extras não diferenciam PendingIntents, o Uri sim.
-    private fun action(context: Context, action: String, taskId: Long, data: Uri): PendingIntent =
+    private fun broadcast(context: Context, action: String, taskId: Long, data: Uri): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             taskId.toInt(),

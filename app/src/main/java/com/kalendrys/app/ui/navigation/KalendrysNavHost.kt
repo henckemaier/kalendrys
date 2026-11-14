@@ -213,7 +213,11 @@ fun KalendrysNavHost(
                 enterTransition = { slideIntoContainer(SlideDirection.Start) },
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
-                TaskDetailScreen(onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) })
+                TaskDetailScreen(
+                    onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) },
+                    // Abre a lista com a tarefa como origem (oferta "Concluir tarefa", P3).
+                    onOpenShoppingList = { listId, taskId -> navController.navigate(shoppingListRoute(listId, taskId)) },
+                )
             }
             composable(
                 route = SETTINGS_ROUTE,
@@ -258,6 +262,15 @@ fun KalendrysNavHost(
             is LaunchRequest.OpenRoutines -> {
                 navController.openTab(AppTab.Routines)
                 routinesDateRequested = launchRequest.date
+            }
+            // ADR-0002, E-1: aba Listas e, sobre ela, SÓ a lista pedida (voltar cai na aba). O openTab
+            // restaura a pilha salva da aba, que pode já ter uma lista aberta: desempilha até a aba
+            // (sem tirá-la) antes de abrir, para não empilhar lista sobre lista nem duplicar a mesma.
+            // Lista inexistente cai no estado "não encontrada" da própria tela.
+            is LaunchRequest.OpenList -> {
+                navController.openTab(AppTab.Lists)
+                navController.popBackStack(AppTab.Lists.route, inclusive = false)
+                navController.navigate(shoppingListRoute(launchRequest.listId, launchRequest.taskId))
             }
         }
         onLaunchRequestHandled()

@@ -41,7 +41,7 @@ class KalendrysApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.create(this) }
 
     val repository: TaskRepository by lazy {
-        TaskRepository(database.taskDao(), database.completionLogDao(), ReminderScheduler(this))
+        TaskRepository(database.taskDao(), database.completionLogDao(), ReminderScheduler(this), database.shoppingItemDao())
     }
 
     val routineNotifications: RoutineNotifications by lazy { RoutineNotifications(this) }
@@ -72,7 +72,7 @@ class KalendrysApp : Application() {
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */
-    val todayRepository: TodayRepository by lazy { TodayRepository(repository, routineRepository) }
+    val todayRepository: TodayRepository by lazy { TodayRepository(repository, routineRepository, shoppingRepository) }
 
     val historyExporter: HistoryExporter by lazy { HistoryExporter(database, contentResolver) }
 

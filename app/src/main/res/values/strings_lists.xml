@@ -30,4 +30,9 @@
     <string name="shopping_list_clear_picked">Desmarcar todos</string>
     <string name="shopping_list_item_removed">Item removido</string>
     <string name="shopping_list_picked_cleared">Itens desmarcados</string>
+
+    <!-- v1.6.0: oferta "Concluir tarefa" (P3) e ação do lembrete (ADR-0002, E-1) -->
+    <string name="shopping_list_offer_complete">Lista completa. Concluir \"%1$s\"?</string>
+    <string name="shopping_list_offer_complete_action">Concluir tarefa</string>
+    <string name="reminder_open_list_action">Abrir lista</string>
 </resources>

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Delete
@@ -67,11 +69,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.shopping.ShoppingListCard
+import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.taskdetail.TaskDetailViewModel.Event
 import com.kalendrys.app.ui.tasks.LocationField
 import com.kalendrys.app.ui.tasks.TaskTimingField
@@ -87,6 +92,11 @@ private val SectionSpacing = 16.dp
 @Composable
 fun TaskDetailScreen(
     onBack: () -> Unit,
+    /**
+     * Abre a tela da lista de compras anexada, com esta tarefa como origem (alimenta a oferta
+     * "Concluir tarefa", P3). Ligado na navegação com `shoppingListRoute(listId, taskId)`.
+     */
+    onOpenShoppingList: (listId: Long, taskId: Long) -> Unit = { _, _ -> },
     viewModel: TaskDetailViewModel = viewModel(factory = TaskDetailViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -94,6 +104,8 @@ fun TaskDetailScreen(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+    // Seletor "Criar nova / Usar lista existente" da lista de compras.
+    var showListPicker by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
 
     val savedMessage = stringResource(R.string.changes_saved)
@@ -163,6 +175,9 @@ fun TaskDetailScreen(
                 onTimingChange = viewModel::updateTiming,
                 onLocationChange = viewModel::updateLocation,
                 onComplete = viewModel::complete,
+                onOpenShoppingList = { listId -> state.task?.let { onOpenShoppingList(listId, it.id) } },
+                onAddShoppingList = { showListPicker = true },
+                onDetachShoppingList = viewModel::detachShoppingList,
                 modifier = Modifier
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
@@ -189,6 +204,22 @@ fun TaskDetailScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
             },
+        )
+    }
+
+    if (showListPicker) {
+        ShoppingListPicker(
+            lists = state.availableLists,
+            suggestedName = state.draft?.title.orEmpty(),
+            onCreate = { name ->
+                viewModel.createShoppingList(name)
+                showListPicker = false
+            },
+            onPick = { listId ->
+                viewModel.attachShoppingList(listId)
+                showListPicker = false
+            },
+            onDismiss = { showListPicker = false },
         )
     }
 
@@ -223,6 +254,9 @@ private fun TaskDetailContent(
     onTimingChange: (TaskTiming) -> Unit,
     onLocationChange: (String) -> Unit,
     onComplete: () -> Unit,
+    onOpenShoppingList: (listId: Long) -> Unit,
+    onAddShoppingList: () -> Unit,
+    onDetachShoppingList: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val zone = state.zone
@@ -281,6 +315,38 @@ private fun TaskDetailContent(
                     null
                 },
             )
+        }
+        item(key = "shopping-list") {
+            val shoppingList = state.shoppingList
+            val taskId = state.task?.id
+            Column(modifier = Modifier.padding(bottom = SectionSpacing)) {
+                Text(
+                    text = stringResource(R.string.list_card_section_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                )
+                if (shoppingList != null) {
+                    ShoppingListCard(
+                        summary = shoppingList,
+                        onOpen = { onOpenShoppingList(shoppingList.id) },
+                        onDetach = onDetachShoppingList,
+                        isCurrentOwner = { it.kind == ShoppingListOwner.Kind.TASK && it.id == taskId },
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.list_card_hint_task),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                    TextButton(onClick = onAddShoppingList) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.list_card_add))
+                    }
+                }
+            }
         }
         item(key = "status") {
             StatusCard(doneAt = state.doneAt, repeats = state.repeats, zone = zone, onComplete = onComplete)

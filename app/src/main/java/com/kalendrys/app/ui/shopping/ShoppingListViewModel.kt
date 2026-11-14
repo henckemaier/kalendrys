@@ -12,8 +12,11 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.ShoppingTotals
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,11 +35,12 @@ import kotlinx.coroutines.launch
 class ShoppingListViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: ShoppingRepository,
+    private val taskRepository: TaskRepository,
 ) : ViewModel() {
 
     private val listId: Long = checkNotNull(savedStateHandle[SHOPPING_LIST_ID_ARG])
 
-    /** Tarefa de origem, quando a tela foi aberta pelo detalhe dela. Usada só na v1.6.0 (oferta P3). */
+    /** Tarefa de origem (detalhe da tarefa ou "Abrir lista" do lembrete): tem prioridade na oferta P3. */
     val originTaskId: Long? = savedStateHandle.get<Long>(SHOPPING_LIST_TASK_ID_ARG)?.takeIf { it != NO_TASK_ID }
 
     data class UiState(
@@ -57,6 +61,12 @@ class ShoppingListViewModel(
 
         /** "Desmarcar todos" feito; a tela oferece "Desfazer" com os ids que estavam marcados. */
         data class PickedCleared(val itemIds: List<Long>) : Event
+
+        /** Oferta P3: a marcação deixou a lista completa e há uma tarefa candidata a concluir. */
+        data class OfferCompleteTask(val taskId: Long, val taskTitle: String) : Event
+
+        /** Tarefa concluída pela oferta; a tela oferece "Desfazer" (conclusão comum). */
+        data class TaskCompleted(val logId: Long) : Event
     }
 
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
@@ -77,8 +87,40 @@ class ShoppingListViewModel(
         viewModelScope.launch { repository.update(item, name, quantity, priceCents) }
     }
 
-    fun togglePicked(item: ShoppingItem) {
-        viewModelScope.launch { repository.setPicked(item, !item.picked) }
+    /** Devolve o [Job] (marcação + checagem da oferta), útil para quem precisa esperar o fim. */
+    fun togglePicked(item: ShoppingItem): Job {
+        val picking = !item.picked
+        return viewModelScope.launch {
+            repository.setPicked(item, picking)
+            if (picking) offerCompletionIfComplete()
+        }
+    }
+
+    /**
+     * Regra P3 (ADR-0001): só uma marcação feita nesta tela que deixa a lista completa (não vazia)
+     * gera a oferta. A candidata é a tarefa de origem, se pendente; senão, a única tarefa pendente
+     * vinculada. Rotinas não recebem oferta. Lido do banco para não depender do estado da tela.
+     */
+    private suspend fun offerCompletionIfComplete() {
+        val items = repository.observeItems(listId).first()
+        val progress = ShoppingProgress(picked = items.count { it.picked }, total = items.size)
+        if (!progress.isComplete) return
+        val taskId = ShoppingCompletionOffer.candidate(progress, originTaskId, taskRepository.linkedTasks(listId))
+            ?: return
+        val task = taskRepository.observeTask(taskId).first() ?: return
+        eventChannel.send(Event.OfferCompleteTask(task.id, task.title))
+    }
+
+    /** Aceite da oferta: conclusão comum (tarefa repetida reinicia a lista; o Desfazer restaura). */
+    fun completeTask(taskId: Long) {
+        viewModelScope.launch {
+            val logId = taskRepository.logCompletion(taskId)
+            eventChannel.send(Event.TaskCompleted(logId))
+        }
+    }
+
+    fun undoTaskCompletion(logId: Long) {
+        viewModelScope.launch { taskRepository.undoCompletion(logId) }
     }
 
     fun removeItem(item: ShoppingItem) {
@@ -117,7 +159,7 @@ class ShoppingListViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                ShoppingListViewModel(createSavedStateHandle(), app.shoppingRepository)
+                ShoppingListViewModel(createSavedStateHandle(), app.shoppingRepository, app.repository)
             }
         }
     }

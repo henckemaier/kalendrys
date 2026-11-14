@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,7 +78,7 @@ fun ShoppingListCard(
                 val status = if (progress.total == 0) {
                     stringResource(R.string.list_card_empty)
                 } else {
-                    stringResource(R.string.list_card_progress, progress.picked, progress.total)
+                    pluralStringResource(R.plurals.list_card_progress, progress.markedQuantity, progress.picked, progress.total)
                 }
                 val total = summary.totalCents.takeIf { it > 0 }
                     ?.let { stringResource(R.string.list_card_total, MoneyFormat.formatCents(it)) }

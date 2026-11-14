@@ -37,7 +37,12 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
                         val minute = intent.getIntExtra(EXTRA_MINUTE, 0)
                         val date = LocalDate.ofEpochDay(epochDay)
                         app.routineRepository.onAlarm(epochDay, minute).forEach { routine ->
-                            app.routineNotifications.show(routine, date, app.routineRepository.overridesFor(routine.id))
+                            app.routineNotifications.show(
+                                routine,
+                                date,
+                                app.routineRepository.overridesFor(routine.id),
+                                app.shoppingRepository.progressOf(routine.shoppingListId),
+                            )
                         }
                     }
                     ACTION_COMPLETE -> {
@@ -57,7 +62,12 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
                         // Reexibe só se o bloco ainda existe, é ativo, ocorre no dia e não foi concluído.
                         val date = LocalDate.ofEpochDay(epochDay)
                         app.routineRepository.routineForNotification(routineId, date)?.let { routine ->
-                            app.routineNotifications.show(routine, date, app.routineRepository.overridesFor(routineId))
+                            app.routineNotifications.show(
+                                routine,
+                                date,
+                                app.routineRepository.overridesFor(routineId),
+                                app.shoppingRepository.progressOf(routine.shoppingListId),
+                            )
                         }
                     }
                 }
