@@ -257,7 +257,10 @@ private fun CategoryEditDialog(
     )
 }
 
-/** Tipos oferecidos na UI: SIMPLE, COMPRAS e EXERCICIO (cada um destrava sua seção no editor). */
+/**
+ * Tipos oferecidos na UI: SIMPLE, COMPRAS e EXERCICIO. Só EXERCICIO destrava uma seção no editor;
+ * desde a v1.5.0 (ADR-0001, P6) COMPRAS é só um rótulo: qualquer rotina pode anexar uma lista.
+ */
 private val CATEGORY_KIND_OPTIONS =
     listOf(RoutineCategoryKind.SIMPLE, RoutineCategoryKind.COMPRAS, RoutineCategoryKind.EXERCICIO)
 

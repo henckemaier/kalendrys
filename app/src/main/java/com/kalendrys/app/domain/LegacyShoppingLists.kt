@@ -14,6 +14,12 @@ import com.kalendrys.app.data.local.entity.ShoppingList
  * - `createdAt` = menor `createdAt` dos itens daquela rotina;
  * - vínculo rotina → lista para toda rotina existente (inclusive arquivada);
  * - itens com id, nome, quantidade, preço, marcação, posição e `createdAt` preservados.
+ *
+ * ATENÇÃO (v11+): a `AppDatabase.MIGRATION_9_10` usa esta conversão e grava as colunas de
+ * [ShoppingList] e [ShoppingItem] com SQL fixo no formato da v10. Se essas entidades mudarem
+ * (coluna nova, renomeada ou removida), a migração 9→10 tem de ser revista: ela precisa continuar
+ * produzindo exatamente o schema `10.json`, e as migrações seguintes partem dele. O mesmo vale para
+ * o restauro de backup ≤ v5, que reaproveita o resultado daqui.
  */
 object LegacyShoppingLists {
 
