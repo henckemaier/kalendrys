@@ -46,6 +46,11 @@ data class Routine(
     val startEpochDay: Long? = null,
     /** Último dia de vigência da rotina (epoch day), ou `null` para sem fim definido. */
     val endEpochDay: Long? = null,
+    /**
+     * Lista de compras anexada ([ShoppingList.id]), ou `null`. Sem foreign key: lista inexistente
+     * equivale a "sem lista". Rotina arquivada mantém o vínculo, que só é ignorado na leitura.
+     */
+    @ColumnInfo(defaultValue = "NULL") val shoppingListId: Long? = null,
 ) {
     val endMinute: Int get() = startMinute + durationMinutes
 }

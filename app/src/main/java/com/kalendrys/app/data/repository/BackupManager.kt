@@ -12,9 +12,11 @@ import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineCategoryKind
@@ -58,10 +60,11 @@ class BackupManager(
         val routineOverrides: Int = 0,
         val shoppingItems: Int = 0,
         val exerciseItems: Int = 0,
+        val shoppingLists: Int = 0,
     ) {
         val total: Int
             get() = tasks + completionLogs + routines + routineCompletions +
-                routineCategories + routineOverrides + shoppingItems + exerciseItems
+                routineCategories + routineOverrides + shoppingItems + exerciseItems + shoppingLists
     }
 
     /** Grava o backup no arquivo escolhido; devolve o que foi exportado. Lança [IOException] se não abrir. */
@@ -99,8 +102,10 @@ class BackupManager(
         lateinit var overrides: List<RoutineOverride>
         lateinit var shoppingItems: List<ShoppingItem>
         lateinit var exerciseItems: List<ExerciseItem>
+        lateinit var shoppingLists: List<ShoppingList>
         // Snapshot consistente mesmo com o app gravando no meio da exportação.
         database.withTransaction {
+            shoppingLists = database.shoppingListDao().all()
             tasks = database.taskDao().all()
             logs = database.completionLogDao().all()
             routines = database.routineDao().all()
@@ -122,6 +127,7 @@ class BackupManager(
             put("routineCompletions", routineLogs.toJsonArray(RoutineCompletion::toJson))
             put("routineCategories", categories.toJsonArray(RoutineCategory::toJson))
             put("routineOverrides", overrides.toJsonArray(RoutineOverride::toJson))
+            put("shoppingLists", shoppingLists.toJsonArray(ShoppingList::toJson))
             put("shoppingItems", shoppingItems.toJsonArray(ShoppingItem::toJson))
             put("exerciseItems", exerciseItems.toJsonArray(ExerciseItem::toJson))
             put("settings", current.toJson())
@@ -135,6 +141,7 @@ class BackupManager(
             routineOverrides = overrides.size,
             shoppingItems = shoppingItems.size,
             exerciseItems = exerciseItems.size,
+            shoppingLists = shoppingLists.size,
         )
         return root.toString(2) to stats
     }
@@ -153,13 +160,27 @@ class BackupManager(
 
         val tasks = root.getJSONArray("tasks").map(JSONObject::toTask)
         val logs = root.getJSONArray("completionLogs").map(JSONObject::toCompletionLog)
-        val routines = root.getJSONArray("routines").map(JSONObject::toRoutine)
+        val parsedRoutines = root.getJSONArray("routines").map(JSONObject::toRoutine)
         val routineLogs = root.getJSONArray("routineCompletions").map(JSONObject::toRoutineCompletion)
         // Retrocompatível: um backup v2 (schemaVersion < 3) não tem estas arrays -> vazias.
         val categories = root.optJSONArray("routineCategories").orEmpty().map(JSONObject::toRoutineCategory)
         val overrides = root.optJSONArray("routineOverrides").orEmpty().map(JSONObject::toRoutineOverride)
-        // Retrocompatível: um backup v3 (schemaVersion < 4) não tem esta array -> lista vazia.
-        val shoppingItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
+        // v6: listas independentes. Backup ≤ v5 (itens presos a routineId, sem listas) passa pela
+        // MESMA regra da migração 9→10 (LegacyShoppingLists); backup v3 nem tem a array -> vazia.
+        val shoppingLists: List<ShoppingList>
+        val shoppingItems: List<ShoppingItem>
+        val routines: List<Routine>
+        if (version >= 6) {
+            shoppingLists = root.optJSONArray("shoppingLists").orEmpty().map(JSONObject::toShoppingList)
+            shoppingItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
+            routines = parsedRoutines
+        } else {
+            val legacy = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toLegacyShoppingItem)
+            val converted = LegacyShoppingLists.convert(legacy, parsedRoutines.associate { it.id to it.title })
+            shoppingLists = converted.lists
+            shoppingItems = converted.items
+            routines = parsedRoutines.map { r -> converted.routineLinks[r.id]?.let { r.copy(shoppingListId = it) } ?: r }
+        }
         // Retrocompatível: um backup v4 (schemaVersion < 5) não tem esta array -> lista vazia.
         val exerciseItems = root.optJSONArray("exerciseItems").orEmpty().map(JSONObject::toExerciseItem)
 
@@ -172,6 +193,7 @@ class BackupManager(
             database.routineCategoryDao().clear()
             database.routineOverrideDao().clear()
             database.shoppingItemDao().clear()
+            database.shoppingListDao().clear()
             database.exerciseItemDao().clear()
             database.taskDao().insertAll(tasks)
             database.completionLogDao().insertAll(logs)
@@ -179,6 +201,7 @@ class BackupManager(
             database.routineCompletionDao().insertAll(routineLogs)
             database.routineCategoryDao().insertAll(categories)
             database.routineOverrideDao().insertAll(overrides)
+            database.shoppingListDao().insertAll(shoppingLists)
             database.shoppingItemDao().insertAll(shoppingItems)
             database.exerciseItemDao().insertAll(exerciseItems)
         }
@@ -199,6 +222,7 @@ class BackupManager(
             routineOverrides = overrides.size,
             shoppingItems = shoppingItems.size,
             exerciseItems = exerciseItems.size,
+            shoppingLists = shoppingLists.size,
         )
     }
 
@@ -213,11 +237,14 @@ class BackupManager(
          * backup v3 (sem a array) restaura com a lista de compras vazia.
          * v5: array exerciseItems (exercícios da rotina). A leitura segue retrocompatível — um
          * backup v4 (sem a array) restaura com a lista de exercícios vazia.
+         * v6: listas de compras independentes (ADR-0001) — array shoppingLists; shoppingItems com
+         * listId/pickedBeforeReset (sem routineId); shoppingListId em tarefas e rotinas. Backup ≤ v5
+         * é convertido pela mesma regra da migração 9→10 ([LegacyShoppingLists]).
          */
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 9
+        private const val DATABASE_VERSION = 10
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -237,6 +264,7 @@ private fun Task.toJson() = JSONObject().apply {
     intervalUnit?.let { put("intervalUnit", it.name) }
     put("byWeekdays", byWeekdays)
     put("location", location)
+    putNullableLong("shoppingListId", shoppingListId)
 }
 
 private fun JSONObject.toTask(): Task {
@@ -266,6 +294,8 @@ private fun JSONObject.toTask(): Task {
         intervalUnit = unit,
         byWeekdays = byWeekdays,
         location = optString("location"),
+        // Retrocompatível: backup ≤ v5 não tem o campo -> sem lista.
+        shoppingListId = nullableLong("shoppingListId"),
     )
 }
 
@@ -298,6 +328,7 @@ private fun Routine.toJson() = JSONObject().apply {
     put("weekInterval", weekInterval)
     putNullableLong("startEpochDay", startEpochDay)
     putNullableLong("endEpochDay", endEpochDay)
+    putNullableLong("shoppingListId", shoppingListId)
 }
 
 private fun JSONObject.toRoutine() = Routine(
@@ -319,6 +350,8 @@ private fun JSONObject.toRoutine() = Routine(
     weekInterval = optInt("weekInterval", 1),
     startEpochDay = nullableLong("startEpochDay"),
     endEpochDay = nullableLong("endEpochDay"),
+    // Retrocompatível: backup ≤ v5 não tem o campo (o vínculo vem do LegacyShoppingLists).
+    shoppingListId = nullableLong("shoppingListId"),
 )
 
 private fun RoutineCategory.toJson() = JSONObject().apply {
@@ -357,18 +390,46 @@ private fun JSONObject.toRoutineOverride() = RoutineOverride(
     createdAt = getLong("createdAt"),
 )
 
+private fun ShoppingList.toJson() = JSONObject().apply {
+    put("id", id)
+    put("name", name)
+    put("createdAt", createdAt)
+    putNullableString("lastResetKey", lastResetKey)
+}
+
+private fun JSONObject.toShoppingList() = ShoppingList(
+    id = getLong("id"),
+    name = getString("name"),
+    createdAt = getLong("createdAt"),
+    lastResetKey = nullableString("lastResetKey"),
+)
+
 private fun ShoppingItem.toJson() = JSONObject().apply {
     put("id", id)
-    put("routineId", routineId)
+    put("listId", listId)
     put("name", name)
     put("quantity", quantity)
     putNullableLong("priceCents", priceCents)
     put("picked", picked)
     put("position", position)
     put("createdAt", createdAt)
+    put("pickedBeforeReset", pickedBeforeReset)
 }
 
 private fun JSONObject.toShoppingItem() = ShoppingItem(
+    id = getLong("id"),
+    listId = getLong("listId"),
+    name = getString("name"),
+    quantity = optInt("quantity", 1),
+    priceCents = nullableLong("priceCents"),
+    picked = optBoolean("picked", false),
+    position = optInt("position", 0),
+    createdAt = getLong("createdAt"),
+    pickedBeforeReset = optBoolean("pickedBeforeReset", false),
+)
+
+/** Item do formato ≤ v5 (preso a uma rotina); a entidade não tem mais routineId. */
+private fun JSONObject.toLegacyShoppingItem() = LegacyShoppingLists.LegacyItem(
     id = getLong("id"),
     routineId = getLong("routineId"),
     name = getString("name"),

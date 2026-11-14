@@ -63,9 +63,10 @@ class RoutineEditorViewModelTest {
             db.routineOverrideDao(),
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
+            db.shoppingItemDao(),
         )
         categoryRepository = RoutineCategoryRepository(db)
-        shoppingRepository = ShoppingRepository(db.shoppingItemDao())
+        shoppingRepository = ShoppingRepository(db)
         exerciseRepository = ExerciseRepository(db.exerciseItemDao())
     }
 
@@ -126,37 +127,6 @@ class RoutineEditorViewModelTest {
     }
 
     @Test
-    fun `descartar reverte add, edicao e remocao de compras`() = runTest {
-        val categoryId = categoryRepository.create("Mercado", RoutineColor.BLUE.name, RoutineCategoryKind.COMPRAS)
-        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600, categoryId = categoryId))
-        shoppingRepository.add(routine.id, "Arroz", quantity = 1, priceCents = 500)
-        shoppingRepository.add(routine.id, "Feijão", quantity = 2, priceCents = 800)
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            var state = awaitItem()
-            while (state.shoppingItems.map { it.name } != listOf("Arroz", "Feijão")) state = awaitItem()
-
-            vm.updateShoppingItem(
-                state.shoppingItems.first { it.name == "Arroz" },
-                name = "Arroz integral", quantity = 3, priceCents = 650,
-            )
-            vm.addShoppingItem("Macarrão", quantity = 1, priceCents = 300)
-            vm.removeShoppingItem(state.shoppingItems.first { it.name == "Feijão" })
-            var changed = awaitItem()
-            while (changed.shoppingItems.map { it.name } != listOf("Arroz integral", "Macarrão")) changed = awaitItem()
-            assertTrue(changed.shoppingItemsChanged)
-
-            vm.discardChanges()
-            var restored = awaitItem()
-            while (restored.shoppingItems.map { it.name } != listOf("Arroz", "Feijão")) restored = awaitItem()
-            assertEquals(listOf(1, 2), restored.shoppingItems.map { it.quantity })
-            assertEquals(listOf(500L, 800L), restored.shoppingItems.map { it.priceCents })
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
     fun `salvar mantem as edicoes de item`() = runTest {
         val categoryId = categoryRepository.create("Academia", RoutineColor.GREEN.name, RoutineCategoryKind.EXERCICIO)
         val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
@@ -189,8 +159,9 @@ class RoutineEditorViewModelTest {
     @Test
     fun `marcar compra no carrinho nao conta como alteracao a descartar`() = runTest {
         val categoryId = categoryRepository.create("Mercado", RoutineColor.BLUE.name, RoutineCategoryKind.COMPRAS)
-        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600, categoryId = categoryId))
-        shoppingRepository.add(routine.id, "Arroz", quantity = 1, priceCents = 500)
+        val listId = shoppingRepository.createList("Compras")
+        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600, categoryId = categoryId, shoppingListId = listId))
+        shoppingRepository.add(listId, "Arroz", quantity = 1, priceCents = 500)
 
         val vm = viewModel(routine.id)
         vm.uiState.test {
@@ -204,47 +175,6 @@ class RoutineEditorViewModelTest {
             // Marcar no carrinho persiste na hora, mas NÃO arma o descarte (picked é ignorado).
             assertFalse(picked.shoppingItemsChanged)
             assertFalse(picked.hasChanges)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `descartar com edicao concomitante reverte os itens mas mantem o picked corrente do sobrevivente`() = runTest {
-        val categoryId = categoryRepository.create("Mercado", RoutineColor.BLUE.name, RoutineCategoryKind.COMPRAS)
-        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600, categoryId = categoryId))
-        shoppingRepository.add(routine.id, "Arroz", quantity = 1, priceCents = 500)
-        shoppingRepository.add(routine.id, "Feijão", quantity = 1, priceCents = 800)
-        shoppingRepository.add(routine.id, "Sal", quantity = 1, priceCents = 200)
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            var state = awaitItem()
-            while (state.shoppingItems.map { it.name } != listOf("Arroz", "Feijão", "Sal")) state = awaitItem()
-            val opened = state.shoppingItems
-
-            // Marca o Arroz no carrinho (sobrevive) E edita/adiciona/remove outros itens na mesma sessão.
-            vm.toggleShoppingPicked(opened.first { it.name == "Arroz" })
-            vm.updateShoppingItem(opened.first { it.name == "Feijão" }, name = "Feijão preto", quantity = 2, priceCents = 850)
-            vm.addShoppingItem("Macarrão", quantity = 1, priceCents = 300)
-            vm.removeShoppingItem(opened.first { it.name == "Sal" })
-            var changed = awaitItem()
-            while (
-                changed.shoppingItems.map { it.name } != listOf("Arroz", "Feijão preto", "Macarrão") ||
-                !changed.shoppingItems.first { it.name == "Arroz" }.picked
-            ) changed = awaitItem()
-            assertTrue("edição de item arma o descarte mesmo com picked ignorado", changed.shoppingItemsChanged)
-
-            vm.discardChanges()
-            var restored = awaitItem()
-            while (restored.shoppingItems.map { it.name } != listOf("Arroz", "Feijão", "Sal")) restored = awaitItem()
-
-            // Edições de item revertem (nome/qtd do Feijão, Macarrão some, Sal volta)...
-            assertEquals(listOf(1, 1, 1), restored.shoppingItems.map { it.quantity })
-            assertEquals("Feijão", restored.shoppingItems.first { it.quantity == 1 && it.name.startsWith("Feij") }.name)
-            // ...MAS o picked corrente do sobrevivente (Arroz) permanece; os demais ficam no baseline (false).
-            assertTrue("o picked do Arroz, marcado na sessão, deve sobreviver ao descarte", restored.shoppingItems.first { it.name == "Arroz" }.picked)
-            assertFalse(restored.shoppingItems.first { it.name == "Feijão" }.picked)
-            assertFalse("Sal foi removido e reaparece com o picked do baseline", restored.shoppingItems.first { it.name == "Sal" }.picked)
             cancelAndIgnoreRemainingEvents()
         }
     }

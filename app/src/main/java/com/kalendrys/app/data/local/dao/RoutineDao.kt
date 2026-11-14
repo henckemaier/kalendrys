@@ -48,6 +48,14 @@ interface RoutineDao {
     @Query("UPDATE routines SET categoryId = NULL WHERE categoryId = :categoryId")
     suspend fun clearCategory(categoryId: Long)
 
+    /** Rotinas não arquivadas com lista anexada (etiqueta de dono na aba Listas e no cartão). */
+    @Query("SELECT id, title, shoppingListId FROM routines WHERE shoppingListId IS NOT NULL AND archivedAt IS NULL ORDER BY title, id")
+    fun observeShoppingListOwners(): Flow<List<ShoppingListOwnerRow>>
+
+    /** Desvincula as rotinas de uma lista (ao excluí-la); rode dentro de uma transação. */
+    @Query("UPDATE routines SET shoppingListId = NULL WHERE shoppingListId = :listId")
+    suspend fun clearShoppingList(listId: Long)
+
     /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM routines")
     suspend fun clear()

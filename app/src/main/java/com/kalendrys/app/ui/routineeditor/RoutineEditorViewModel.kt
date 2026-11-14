@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -154,7 +155,14 @@ class RoutineEditorViewModel(
                 if (kind == RoutineCategoryKind.COMPRAS) {
                     // Captura o snapshot na 1ª leitura REAL da lista (dentro do ramo COMPRAS, nunca o
                     // emptyList() do gate), para a base refletir o estado de abertura, não o vazio inicial.
-                    shoppingRepository.observeItems(routineId)
+                    // Fundação v1.5.0: os itens vêm da lista anexada à rotina (Room v10). A fatia 4
+                    // substitui esta seção pelo cartão da lista (ADR-0001).
+                    repository.observeRoutine(routineId)
+                        .map { it?.shoppingListId }
+                        .distinctUntilChanged()
+                        .flatMapLatest { listId ->
+                            if (listId == null) flowOf(emptyList()) else shoppingRepository.observeItems(listId)
+                        }
                         .onEach { if (shoppingBaseline.value == null) shoppingBaseline.value = it }
                 } else {
                     flowOf(emptyList())
@@ -299,15 +307,7 @@ class RoutineEditorViewModel(
     fun discardChanges() {
         val state = uiState.value
         viewModelScope.launch {
-            if (state.shoppingItemsChanged) {
-                state.shoppingBaseline?.let { baseline ->
-                    val currentPicked = state.shoppingItems.associate { it.id to it.picked }
-                    val restored = baseline.map { item ->
-                        currentPicked[item.id]?.let { item.copy(picked = it) } ?: item
-                    }
-                    shoppingRepository.replaceItems(routineId, restored)
-                }
-            }
+            // Itens de compras não são revertidos (ADR-0001, P7): são da lista e persistem na hora.
             if (state.exerciseItemsChanged) {
                 state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
             }
@@ -319,7 +319,8 @@ class RoutineEditorViewModel(
 
     fun addShoppingItem(name: String, quantity: Int, priceCents: Long?) {
         if (isNew || name.isBlank()) return
-        viewModelScope.launch { shoppingRepository.add(routineId, name, quantity, priceCents) }
+        val listId = uiState.value.routine?.shoppingListId ?: return
+        viewModelScope.launch { shoppingRepository.add(listId, name, quantity, priceCents) }
     }
 
     fun updateShoppingItem(item: ShoppingItem, name: String, quantity: Int, priceCents: Long?) {

@@ -7,7 +7,7 @@ import org.junit.Test
 class ShoppingTotalsTest {
 
     private fun item(quantity: Int, priceCents: Long?) =
-        ShoppingItem(routineId = 1, name = "x", quantity = quantity, priceCents = priceCents, position = 0)
+        ShoppingItem(listId = 1, name = "x", quantity = quantity, priceCents = priceCents, position = 0)
 
     @Test
     fun `soma quantity vezes priceCents dos itens com preco`() {
