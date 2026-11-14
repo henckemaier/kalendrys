@@ -78,4 +78,10 @@ class HistoryCsvTest {
             csv(rows),
         )
     }
+
+    @Test
+    fun `BOM e exatamente o caractere U+FEFF`() {
+        assertEquals(1, HistoryCsv.BOM.length)
+        assertEquals(0xFEFF, HistoryCsv.BOM[0].code)
+    }
 }
