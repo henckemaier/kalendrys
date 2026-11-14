@@ -172,7 +172,8 @@ fun CalendarScreen(
     newTaskEpochDay?.let { epochDay ->
         NewTaskSheet(
             initialDate = LocalDate.ofEpochDay(epochDay),
-            onSave = { title, notes, timing, location ->
+            // O calendário não oferece anexar lista (lists = null), então o último argumento vem sempre null.
+            onSave = { title, notes, timing, location, _ ->
                 viewModel.addTask(title, notes, timing, location)
                 newTaskEpochDay = null
             },

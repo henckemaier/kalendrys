@@ -10,9 +10,23 @@ data class TaskDraft(
     val notes: String,
     val timing: TaskTiming,
     val location: String = "",
+    /**
+     * Lista de compras anexada ([com.kalendrys.app.data.local.entity.ShoppingList.id]), ou null.
+     * Faz parte do rascunho (ADR-0001, P7): grava com "Salvar", volta com "Descartar". Os itens da
+     * lista NÃO são do rascunho; persistem na hora.
+     */
+    val shoppingListId: Long? = null,
 ) {
     fun applyTo(task: Task, zone: ZoneId): Task =
-        timing.applyTo(task.copy(title = title.trim(), notes = notes.trim(), location = location.trim()), zone)
+        timing.applyTo(
+            task.copy(
+                title = title.trim(),
+                notes = notes.trim(),
+                location = location.trim(),
+                shoppingListId = shoppingListId,
+            ),
+            zone,
+        )
 
     fun differsFrom(task: Task, zone: ZoneId): Boolean = applyTo(task, zone) != task
 
@@ -28,6 +42,7 @@ data class TaskDraft(
     fun canSaveOver(task: Task, zone: ZoneId): Boolean = title.isNotBlank() && differsFrom(task, zone)
 
     companion object {
-        fun from(task: Task, zone: ZoneId) = TaskDraft(task.title, task.notes, TaskTiming.of(task, zone), task.location)
+        fun from(task: Task, zone: ZoneId) =
+            TaskDraft(task.title, task.notes, TaskTiming.of(task, zone), task.location, task.shoppingListId)
     }
 }
