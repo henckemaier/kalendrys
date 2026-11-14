@@ -12,7 +12,7 @@ sem internet.
 ui (Compose + ViewModel)  →  data/repository  →  data/local (Room)
                                     ↓
                           reminder (AlarmManager)
-domain/ = lógica pura (calendário, recorrência, linha do tempo das rotinas), testável sem Android
+domain/ = lógica pura (calendário, recorrência, linha do tempo das rotinas, regras das listas), testável sem Android
 ```
 
 ## Estrutura
@@ -25,11 +25,14 @@ app/src/main/java/com/kalendrys/app/
 ├── data/
 │   ├── local/
 │   │   ├── AppDatabase.kt
-│   │   ├── entity/          # Task, CompletionLog (log imutável), Routine, RoutineCompletion
-│   │   └── dao/             # TaskDao, CompletionLogDao, RoutineDao, RoutineCompletionDao
+│   │   ├── entity/          # Task, CompletionLog (log imutável), Routine, RoutineCompletion,
+│   │   │                    # ShoppingList + ShoppingItem (listas de compras independentes)
+│   │   └── dao/             # TaskDao, CompletionLogDao, RoutineDao, RoutineCompletionDao,
+│   │                        # ShoppingListDao, ShoppingItemDao
 │   ├── repository/
 │   │   ├── TaskRepository.kt    # tarefas: banco + alarmes de lembrete sempre em sincronia
 │   │   ├── RoutineRepository.kt # rotinas: banco + alarme do próximo início + notificações
+│   │   ├── ShoppingRepository.kt # listas: itens, progresso, donos e reinício reversível
 │   │   ├── TodayRepository.kt   # retrato do dia (tarefas + rotinas) para o resumo e os widgets
 │   │   └── Clock.kt             # data de hoje que vira sozinha à meia-noite
 │   └── settings/            # AppSettings + SettingsRepository (DataStore)
@@ -39,15 +42,17 @@ app/src/main/java/com/kalendrys/app/
 │   ├── RoutineSchedule.kt    # em que dias e horários cada rotina acontece (relógio local)
 │   ├── DayTimeline.kt        # linha do tempo do dia: blocos, ligações e tempo livre
 │   ├── RoutineDays/Icon/Color.kt, DurationFormat.kt
+│   ├── ShoppingReset.kt, ShoppingProgress.kt, LegacyShoppingLists.kt # regras das listas
 │   └── TodayOverview.kt      # retrato do dia: pendentes, rotinas de hoje, "a seguir"
 ├── ui/
 │   ├── theme/               # Paleta azul-ardósia fixa (Material 3) + tipografia
 │   ├── components/          # EmptyState, lista agrupada, TimePickerDialog, swipe paginado, pontos, relógio
-│   ├── navigation/          # Bottom bar: Tarefas | Rotinas | Calendário
+│   ├── navigation/          # Bottom bar: Tarefas | Rotinas | Calendário | Listas
 │   ├── tasks/               # Lista em seções, arrastar p/ excluir, desfazer, NewTaskSheet, ReminderPicker
 │   ├── taskdetail/          # Detalhe/edição: título, observações, lembrete, status do dia, histórico
 │   ├── routines/            # Faixa da semana + linha do tempo; paleta e ícones das rotinas
-│   ├── routineeditor/       # Criar/editar rotina: ícone, cor, horário, duração, dias, aviso
+│   ├── routineeditor/       # Criar/editar rotina: ícone, cor, horário, duração, dias, aviso, lista anexada
+│   ├── shopping/            # Aba Listas, tela da lista, cartão-resumo e seletor de lista
 │   ├── calendar/            # Mês com marcadores, agenda do dia (rotinas, lembretes, conclusões)
 │   └── settings/            # Configurações: resumo diário (liga/desliga, horário), notificações, sobre
 ├── reminder/
@@ -63,7 +68,8 @@ baselineprofile/             # Gera o Baseline Profile e mede a abertura (Macrob
 ```
 
 O schema do Room fica versionado em `app/schemas/` (base para as migrações; a v4, das rotinas,
-é uma `@AutoMigration` conferida contra esses arquivos).
+é uma `@AutoMigration` conferida contra esses arquivos; a v10, das listas, é a `MIGRATION_9_10`
+manual, com backfill — ver `docs/architecture/ADR-0001-listas-de-compras-independentes.md`).
 
 ## Tarefas
 
@@ -89,8 +95,25 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
   já feito não avisa. As rotinas seguem o relógio local (inclusive no horário de verão).
 - **Excluir arquiva**: a rotina some de hoje em diante, mas os dias passados mantêm o bloco e
   as conclusões. Editar muda também como os dias passados aparecem.
+- **Lista de compras**: qualquer rotina pode anexar uma lista (nova ou existente) pelo cartão do
+  editor; os itens se editam na tela da lista. Concluir o bloco de **hoje** zera as marcações
+  (pela tela, pelo widget ou pela notificação) e o "Desfazer" as devolve. Marcar um dia passado
+  não mexe na lista. Arquivar a rotina não apaga a lista.
 - Aparecem também no **calendário** (seção "Rotinas" do dia), no **resumo das 8h** e nos
   **widgets**.
+
+## Listas
+
+A 4ª aba, **Listas**, reúne as listas de compras, com progresso (3/8), total e a etiqueta de quem
+usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
+
+- **Tela da lista**: marcar, adicionar, editar e remover itens (com "Desfazer"), total calculado
+  na leitura, "Desmarcar todos" e renomear. Tudo é salvo na hora.
+- **Compartilhada**: uma lista pode ter mais de um dono; marcar vale para todos, e o reinício
+  disparado por um dono zera a lista para todos.
+- **Excluir** uma lista apaga os itens e desfaz o vínculo dos donos (o diálogo cita quem perde).
+- As listas antigas, presas a rotinas do tipo Compras, viram listas independentes na atualização
+  (Room v10) e no restauro de backups antigos, pela mesma regra (`LegacyShoppingLists`).
 
 ## Resumo diário e widgets
 
@@ -176,7 +199,7 @@ Macrobenchmark (mesmo build): 2.583 ms sem compilação → 2.049 ms com o Basel
   atualizar por cima da versão instalada sem perder dados. Para publicar na Play Store, criar
   uma chave de upload própria.
 - **Baseline Profile** (`baselineprofile/`): percorre lista, detalhe, rotinas (criando um
-  bloco pelo editor), calendário e configurações. Regerar após mudanças grandes de UI, com um emulador ou aparelho Android 13+
+  bloco pelo editor), listas (criando uma pela aba), calendário e configurações. Regerar após mudanças grandes de UI, com um emulador ou aparelho Android 13+
   conectado: `./gradlew :app:generateReleaseBaselineProfile`. Medir a abertura:
   `./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest`. Requer benchmark 1.4.1+
   (a 1.3.x não entende o `pm dump-profiles` do Android 16+).

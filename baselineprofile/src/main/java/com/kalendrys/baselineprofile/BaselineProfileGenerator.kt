@@ -24,6 +24,7 @@ class BaselineProfileGenerator {
         ensureSampleTasks()
         browseTasks()
         browseRoutines()
+        browseLists()
         browseCalendar()
         browseSettings()
     }

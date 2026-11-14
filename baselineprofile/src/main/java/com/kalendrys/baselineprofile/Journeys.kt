@@ -10,6 +10,7 @@ const val PACKAGE_NAME = "com.kalendrys.app"
 private const val TIMEOUT_MS = 5_000L
 private val SAMPLE_TASKS = listOf("Perfil: revisar e-mails", "Perfil: reunião semanal", "Perfil: pagar contas")
 private const val SAMPLE_ROUTINE = "Perfil: treino"
+private const val SAMPLE_LIST = "Perfil: mercado"
 
 /** Espera a tela de tarefas: lista ou estado vazio. */
 fun MacrobenchmarkScope.waitForTasksScreen() {
@@ -83,6 +84,28 @@ fun MacrobenchmarkScope.browseRoutines() {
     device.waitForIdle()
     device.swipe(device.displayWidth / 5, y, device.displayWidth * 4 / 5, y, 20)
     device.waitForIdle()
+    device.findObject(By.text("Tarefas"))?.click()
+    waitForTasksScreen()
+}
+
+/**
+ * Abre a aba Listas, garante uma lista (criada pela própria aba), abre a tela da lista e volta às
+ * tarefas. Perfila a 4ª aba e a tela de uso da lista (v1.5.0).
+ */
+fun MacrobenchmarkScope.browseLists() {
+    device.findObject(By.text("Listas"))?.click()
+    device.wait(Until.hasObject(By.desc("Nova lista")), TIMEOUT_MS)
+    if (!device.hasObject(By.text(SAMPLE_LIST))) {
+        device.findObject(By.desc("Nova lista"))?.click()
+        device.wait(Until.hasObject(By.clazz("android.widget.EditText")), TIMEOUT_MS)
+        device.findObject(By.clazz("android.widget.EditText"))?.text = SAMPLE_LIST
+        device.findObject(By.text("Criar"))?.click()
+        device.wait(Until.hasObject(By.text(SAMPLE_LIST)), TIMEOUT_MS)
+    }
+    device.findObject(By.text(SAMPLE_LIST))?.click()
+    device.wait(Until.hasObject(By.desc("Adicionar item")), TIMEOUT_MS)
+    device.pressBack()
+    device.wait(Until.hasObject(By.desc("Nova lista")), TIMEOUT_MS)
     device.findObject(By.text("Tarefas"))?.click()
     waitForTasksScreen()
 }
