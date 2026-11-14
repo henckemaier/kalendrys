@@ -42,11 +42,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     /**
-     * Último instante (epoch millis) em que o app processou os lembretes — avança quando um alarme
-     * dispara e quando o app vem ao foreground. `null` até a primeira vez. Base da recuperação de
-     * alarmes perdidos ([com.kalendrys.app.reminder.MissedReminderRecovery]). Fica fora de
-     * [AppSettings] de propósito: é bookkeeping interno, não preferência, e não deve reemitir o
-     * fluxo de configurações (que reagenda o resumo diário) a cada atualização.
+     * Último instante (epoch millis) até o qual os lembretes de tarefa foram entregues ou contados.
+     * Só o catch-up ([com.kalendrys.app.reminder.ReminderCatchUpRunner], ADR-0003) a grava. `null` até
+     * a primeira vez. Fica fora de [AppSettings] de propósito: é bookkeeping interno, não preferência,
+     * e não deve reemitir o fluxo de configurações (que reagenda o resumo diário) a cada atualização.
      */
     suspend fun lastSeenAt(): Long? = dataStore.data.first()[LAST_SEEN]
 
