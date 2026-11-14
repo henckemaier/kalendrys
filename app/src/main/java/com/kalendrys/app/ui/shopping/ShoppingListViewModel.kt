@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -53,6 +54,9 @@ class ShoppingListViewModel(
     sealed interface Event {
         /** Item removido; a tela oferece "Desfazer" com o item como estava. */
         data class ItemRemoved(val item: ShoppingItem) : Event
+
+        /** "Desmarcar todos" feito; a tela oferece "Desfazer" com os ids que estavam marcados. */
+        data class PickedCleared(val itemIds: List<Long>) : Event
     }
 
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
@@ -90,7 +94,18 @@ class ShoppingListViewModel(
     }
 
     fun clearPicked() {
-        viewModelScope.launch { repository.clearPicked(listId) }
+        viewModelScope.launch {
+            // Lido do banco (não do estado da tela) para não perder uma marcação recém-feita.
+            val pickedIds = repository.observeItems(listId).first().filter { it.picked }.map { it.id }
+            if (pickedIds.isEmpty()) return@launch
+            repository.clearPicked(listId)
+            eventChannel.send(Event.PickedCleared(pickedIds))
+        }
+    }
+
+    /** "Desfazer" do "Desmarcar todos": volta a marcar os itens que estavam marcados. */
+    fun undoClearPicked(itemIds: List<Long>) {
+        viewModelScope.launch { repository.markPicked(itemIds) }
     }
 
     fun rename(name: String) {

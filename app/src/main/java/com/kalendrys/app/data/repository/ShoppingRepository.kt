@@ -137,6 +137,11 @@ class ShoppingRepository(private val database: AppDatabase) {
     /** "Desmarcar todos" (manual), para listas avulsas e de tarefa única. */
     suspend fun clearPicked(listId: Long) = itemDao.clearPicked(listId)
 
+    /** "Desfazer" do "Desmarcar todos": remarca [itemIds]; itens removidos no meio tempo são ignorados. */
+    suspend fun markPicked(itemIds: List<Long>) {
+        if (itemIds.isNotEmpty()) itemDao.markPicked(itemIds)
+    }
+
     // --- Reinício reversível (P4) ---------------------------------------------------------------
 
     /** Zera as marcações guardando-as sob [key] (ver [com.kalendrys.app.domain.ShoppingReset]). */

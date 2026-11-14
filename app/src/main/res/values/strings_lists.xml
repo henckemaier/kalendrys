@@ -29,4 +29,5 @@
     <string name="shopping_list_more">Mais opções</string>
     <string name="shopping_list_clear_picked">Desmarcar todos</string>
     <string name="shopping_list_item_removed">Item removido</string>
+    <string name="shopping_list_picked_cleared">Itens desmarcados</string>
 </resources>
