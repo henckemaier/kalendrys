@@ -252,6 +252,24 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
+    fun `apos migrar v9 para v10 lista e item novos nao colidem com os ids migrados`() {
+        val name = "kalendrys-migration-v9-v10-autoincrement"
+        helper.createDatabase(name, 9).use { v9 ->
+            v9.execSQL(insertRoutine(1, "Mercado", archivedAt = "NULL"))
+            v9.execSQL(insertRoutine(2, "Feira", archivedAt = "NULL"))
+            v9.execSQL(insertItem(id = 40, routineId = 1, name = "Arroz", picked = 0, position = 0, createdAt = 1))
+            v9.execSQL(insertItem(id = 41, routineId = 2, name = "Banana", picked = 0, position = 0, createdAt = 2))
+        }
+        helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+            // Inserções sem id (como o app faz) seguem a sequência depois dos ids migrados.
+            v10.execSQL("INSERT INTO shopping_list (name, createdAt) VALUES ('Nova', 3)")
+            v10.execSQL("INSERT INTO shopping_item (listId, name, quantity, picked, position, createdAt) VALUES (3, 'Leite', 1, 0, 0, 3)")
+            assertEquals(listOf(3L), v10.rows("SELECT id FROM shopping_list WHERE name = 'Nova'") { it.getLong(0) })
+            assertEquals(listOf(42L), v10.rows("SELECT id FROM shopping_item WHERE name = 'Leite'") { it.getLong(0) })
+        }
+    }
+
+    @Test
     fun `migra v9 sem itens de compras para v10 sem criar listas`() {
         val name = "kalendrys-migration-v9-v10-empty"
         helper.createDatabase(name, 9).use { it.execSQL(insertRoutine(1, "Treino", archivedAt = "NULL")) }

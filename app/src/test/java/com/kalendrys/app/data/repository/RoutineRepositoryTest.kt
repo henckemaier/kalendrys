@@ -365,6 +365,18 @@ class RoutineRepositoryTest {
     }
 
     @Test
+    fun `concluir bloco de hoje de rotina arquivada nao mexe na lista`() = runTest {
+        // P5: o vínculo de rotina arquivada é mantido no banco, mas ignorado no reinício.
+        val today = LocalDate.now()
+        val (routine, listId) = routineWithList()
+        repository.archive(routine)
+
+        repository.complete(routine.id, today, today)
+        assertEquals(listOf(true, true), picked(listId))
+        assertEquals(listId, db.routineDao().byId(routine.id)!!.shoppingListId)
+    }
+
+    @Test
     fun `lista compartilhada por duas rotinas zera para ambas`() = runTest {
         val today = LocalDate.now()
         val (first, listId) = routineWithList("Feira")
