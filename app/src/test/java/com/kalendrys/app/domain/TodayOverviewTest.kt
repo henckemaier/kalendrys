@@ -191,4 +191,32 @@ class TodayOverviewTest {
 
         assertEquals(now.plusDays(1).withHour(12), overview.nextUp?.at)
     }
+
+    // --- Progresso das listas no retrato do dia (ADR-0001, P8) ---
+
+    @Test
+    fun `tarefa e bloco com lista trazem o progresso, avulsa fica de fora e orfao sem progresso`() {
+        val progress = mapOf(10L to ShoppingProgress(3, 8), 11L to ShoppingProgress(1, 2), 12L to ShoppingProgress(0, 4))
+        val tasks = listOf(
+            task(1, "Com lista", reminder = now.plusHours(2)).copy(shoppingListId = 10),
+            task(2, "Órfã", reminder = now.plusHours(3)).copy(shoppingListId = 99),
+            task(3, "Sem lista", reminder = now.plusHours(4)),
+        )
+        val routines = listOf(
+            routine(5, "Feira", LocalTime.of(18, 0)).copy(shoppingListId = 11),
+            routine(6, "Arquivada", LocalTime.of(19, 0)).copy(shoppingListId = 11, archivedAt = millis(now.plusDays(1))),
+        )
+
+        val overview = TodayOverview.build(tasks, emptyList(), now, zone, routines, listProgress = progress)
+
+        assertEquals(
+            listOf(ShoppingProgress(3, 8), null, null),
+            overview.pending.sortedBy { it.taskId }.map { it.listProgress },
+        )
+        assertEquals(ShoppingProgress(1, 2), overview.routines.first { it.routineId == 5L }.listProgress)
+        assertNull("rotina arquivada ignora o vínculo", overview.routines.firstOrNull { it.routineId == 6L }?.listProgress)
+        // A lista 12 é avulsa: não aparece em lugar nenhum do retrato.
+        val shown = overview.pending.mapNotNull { it.listProgress } + overview.routines.mapNotNull { it.listProgress }
+        assertTrue(ShoppingProgress(0, 4) !in shown)
+    }
 }

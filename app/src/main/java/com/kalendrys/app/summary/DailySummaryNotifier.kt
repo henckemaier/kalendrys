@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TodayOverview
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -43,10 +44,10 @@ object DailySummaryNotifier {
         ).joinToString(" · ")
 
         // Primeiro o que tem horário (lembretes de hoje e rotinas), em ordem; depois as tarefas sem horário.
-        val timed = overview.pending.mapNotNull { task -> task.reminderToday?.let { it to task.title } } +
-            routinesAhead.map { it.start to it.title }
+        val timed = overview.pending.mapNotNull { task -> task.reminderToday?.let { it to task.titleWithList() } } +
+            routinesAhead.map { it.start to ShoppingProgress.titleWithProgress(it.title, it.listProgress) }
         val lines = timed.sortedBy { it.first }.map { (time, title) -> "${time.format(TIME)}  $title" } +
-            overview.pending.filter { it.reminderToday == null }.map { it.title }
+            overview.pending.filter { it.reminderToday == null }.map { it.titleWithList() }
 
         val title = context.getString(R.string.summary_title)
         val style = NotificationCompat.InboxStyle().setBigContentTitle(title)
@@ -73,6 +74,8 @@ object DailySummaryNotifier {
     }
 
     /** Já terminou hoje? Um bloco que passa da meia-noite (fim antes do início) ainda não terminou. */
+    private fun TodayOverview.PendingTask.titleWithList(): String = ShoppingProgress.titleWithProgress(title, listProgress)
+
     private fun TodayOverview.RoutineBlock.isOver(now: LocalTime): Boolean {
         val finish = end ?: start
         return !finish.isBefore(start) && !finish.isAfter(now)

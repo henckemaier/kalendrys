@@ -38,4 +38,11 @@ class ShoppingResetTest {
         assertFalse(ShoppingProgress(picked = 2, total = 3).isComplete)
         assertTrue(ShoppingProgress(picked = 3, total = 3).isComplete)
     }
+
+    @Test
+    fun `titulo com progresso so quando ha lista nao vazia`() {
+        assertEquals("Feira · 3/8", ShoppingProgress.titleWithProgress("Feira", ShoppingProgress(3, 8)))
+        assertEquals("Feira", ShoppingProgress.titleWithProgress("Feira", null))
+        assertEquals("Feira", ShoppingProgress.titleWithProgress("Feira", ShoppingProgress.EMPTY))
+    }
 }
