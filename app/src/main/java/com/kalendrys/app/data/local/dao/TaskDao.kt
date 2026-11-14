@@ -23,6 +23,10 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     fun observeById(id: Long): Flow<Task?>
 
+    /** Tarefas vinculadas a uma lista de compras (oferta "Concluir tarefa", ADR-0001 P3). */
+    @Query("SELECT * FROM tasks WHERE shoppingListId = :listId ORDER BY id")
+    suspend fun byShoppingList(listId: Long): List<Task>
+
     /** Lembretes únicos ainda no futuro e todos os recorrentes (sempre têm uma próxima ocorrência). */
     @Query("SELECT * FROM tasks WHERE reminderAt IS NOT NULL AND (reminderAt > :now OR reminderRepeat != 'NONE')")
     suspend fun withPendingReminder(now: Long): List<Task>

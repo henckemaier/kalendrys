@@ -42,7 +42,7 @@ class TaskRepositoryTest {
             .allowMainThreadQueries()
             .build()
         scheduler = FakeReminderScheduler(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler)
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
     @After

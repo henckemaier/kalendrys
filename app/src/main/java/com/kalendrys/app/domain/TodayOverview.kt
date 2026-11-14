@@ -35,6 +35,8 @@ data class TodayOverview(
         val overdue: Boolean = false,
         /** Tem data (é de hoje ou atrasada); as sem data também aparecem como pendentes. */
         val dated: Boolean = true,
+        /** Progresso da lista de compras anexada (ADR-0001, P8); null sem lista ou com vínculo órfão. */
+        val listProgress: ShoppingProgress? = null,
     )
 
     data class RoutineBlock(
@@ -45,6 +47,8 @@ data class TodayOverview(
         val end: LocalTime?,
         val color: RoutineColor,
         val done: Boolean,
+        /** Progresso da lista de compras anexada (ADR-0001, P8); null sem lista ou com vínculo órfão. */
+        val listProgress: ShoppingProgress? = null,
     )
 
     data class Upcoming(val title: String, val at: LocalDateTime, val isRoutine: Boolean)
@@ -68,6 +72,12 @@ data class TodayOverview(
             lastCompletions: Map<Long, Long> = emptyMap(),
             /** Exceções por rotina (T20): um `SKIP` some do retrato e um `RESCHEDULE` muda o dia/horário. */
             overrides: Map<Long, List<RoutineOverride>> = emptyMap(),
+            /**
+             * Progresso de cada lista de compras EXISTENTE (listId → progresso). Só entra no retrato a
+             * lista de uma tarefa pendente ou de um bloco de hoje; lista avulsa fica de fora, e um
+             * vínculo para lista ausente deste mapa (órfão) fica sem progresso.
+             */
+            listProgress: Map<Long, ShoppingProgress> = emptyMap(),
         ): TodayOverview {
             val today = now.toLocalDate()
             val doneToday = completions
@@ -96,6 +106,7 @@ data class TodayOverview(
                         recurring = task.repeat != ReminderRepeat.NONE,
                         overdue = statuses[task.id] == TaskSchedule.Status.OVERDUE,
                         dated = task.dueDate != null,
+                        listProgress = task.shoppingListId?.let(listProgress::get),
                     )
                 }
                 // Primeiro as com horário hoje (em ordem), depois atrasadas, as de hoje e as sem data.
@@ -117,6 +128,10 @@ data class TodayOverview(
                         end = routine.takeIf { it.durationMinutes > 0 }?.let { timeOfDay(startMinute + it.durationMinutes) },
                         color = RoutineColor.fromKey(routine.color),
                         done = routine.id in routinesDoneToday,
+                        // Rotina arquivada mantém o vínculo, mas ele é ignorado na leitura (P5).
+                        listProgress = routine.shoppingListId
+                            ?.takeIf { routine.archivedAt == null }
+                            ?.let(listProgress::get),
                     )
                 }
                 .sortedWith(compareBy({ it.start }, { it.routineId }))

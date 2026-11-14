@@ -90,6 +90,19 @@ class ShoppingRepository(private val database: AppDatabase) {
             }
         }
 
+    /**
+     * Progresso de TODAS as listas existentes (listId → marcados/total; lista vazia = 0/0), para o
+     * retrato do dia ([com.kalendrys.app.domain.TodayOverview]). Um `shoppingListId` que não está no
+     * mapa é vínculo órfão: sem progresso.
+     */
+    fun observeProgressByList(): Flow<Map<Long, ShoppingProgress>> =
+        combine(listDao.observeAll(), itemDao.observeStats()) { lists, stats ->
+            val statsById = stats.associateBy { it.listId }
+            lists.associate { list ->
+                list.id to (statsById[list.id]?.let { ShoppingProgress(it.picked, it.total) } ?: ShoppingProgress.EMPTY)
+            }
+        }.distinctUntilChanged()
+
     /** Resumo de uma lista; `null` quando ela não existe (vínculo órfão equivale a "sem lista"). */
     fun observeSummary(listId: Long): Flow<ShoppingListSummary?> =
         observeSummaries().map { all -> all.firstOrNull { it.id == listId } }.distinctUntilChanged()

@@ -1,10 +1,13 @@
 package com.kalendrys.app.data.repository
 
 import com.kalendrys.app.data.local.dao.CompletionLogDao
+import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.ShoppingCompletionOffer
+import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderScheduler
@@ -21,6 +24,7 @@ class TaskRepository(
     private val taskDao: TaskDao,
     private val completionLogDao: CompletionLogDao,
     private val scheduler: ReminderScheduler,
+    private val shoppingItemDao: ShoppingItemDao,
 ) {
 
     val tasks: Flow<List<Task>> = taskDao.observeAll()
@@ -114,7 +118,11 @@ class TaskRepository(
         taskDao.delete(task)
     }
 
-    /** Reinsere uma tarefa excluída com o mesmo id, reconectando-a ao histórico de conclusões. */
+    /**
+     * Reinsere uma tarefa excluída com o mesmo id, reconectando-a ao histórico de conclusões. O
+     * vínculo com a lista de compras ([Task.shoppingListId]) volta junto (ADR-0001, P5): excluir a
+     * tarefa nunca apagou a lista.
+     */
     suspend fun restoreTask(task: Task) {
         taskDao.insert(task)
         if (!isFinished(task)) scheduler.schedule(task)
@@ -124,6 +132,11 @@ class TaskRepository(
      * Devolve o id do evento, usado para desfazer a conclusão. Uma tarefa sem repetição fica
      * encerrada: o lembrete dela, se ainda não tocou, é cancelado. Concluída antes do dia dela,
      * ela passa a ser de hoje (foi feita hoje) e perde o lembrete futuro.
+     *
+     * Tarefa que se REPETE com lista anexada zera as marcações da lista (ADR-0001, P4), de forma
+     * reversível pelo [undoCompletion]. Ordem: grava o log e depois reinicia com o id dele (uma falha
+     * entre os dois deixa a conclusão sem reinício, o que é inofensivo). Tarefa única mantém as
+     * marcações. Mora aqui, e não na tela, para valer também no widget e na notificação.
      */
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
         val task = taskDao.byId(taskId)
@@ -135,15 +148,46 @@ class TaskRepository(
                 taskDao.update(task.copy(dueDate = day, reminderAt = null))
             }
         }
-        return completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
+        val logId = completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
+        val listId = task?.shoppingListId
+        if (listId != null && ShoppingReset.taskResets(task.repeat)) {
+            shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(logId))
+        }
+        return logId
     }
 
-    /** Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. */
+    /**
+     * Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. As
+     * marcações que essa conclusão tinha zerado voltam (se ainda for o último reinício da lista).
+     */
     suspend fun undoCompletion(logId: Long) {
         val log = completionLogDao.byId(logId) ?: return
         completionLogDao.deleteById(logId)
+        shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
         val task = taskDao.byId(log.taskId) ?: return
         if (!isFinished(task)) scheduler.schedule(task)
+    }
+
+    /**
+     * Tarefas vinculadas à lista [listId] e se cada uma está pendente agora (atrasada, de hoje ou
+     * sem data, ainda não concluída), para a oferta "Concluir tarefa" ([ShoppingCompletionOffer]).
+     */
+    suspend fun linkedTasks(
+        listId: Long,
+        today: LocalDate = LocalDate.now(),
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): List<ShoppingCompletionOffer.LinkedTask> {
+        val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return taskDao.byShoppingList(listId).map { task ->
+            val status = TaskSchedule.status(
+                task = task,
+                today = today,
+                doneEver = TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), zone),
+                doneToday = completionLogDao.isCompletedBetween(task.id, start, end),
+            )
+            ShoppingCompletionOffer.LinkedTask(task.id, pending = status in ShoppingCompletionOffer.PENDING_STATUSES)
+        }
     }
 
     /** Refaz todos os alarmes (reinício, atualização do app, mudança de fuso); chamado pelo BootReceiver. */

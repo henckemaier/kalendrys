@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TodayOverview
 import java.time.Duration
 import java.time.LocalDateTime
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.transformLatest
 class TodayRepository(
     private val taskRepository: TaskRepository,
     private val routineRepository: RoutineRepository,
+    private val shoppingRepository: ShoppingRepository,
 ) {
 
     private data class Snapshot(
@@ -31,6 +33,7 @@ class TodayRepository(
         val routineLogs: List<RoutineCompletion>,
         val lastCompletions: Map<Long, Long>,
         val overrides: Map<Long, List<RoutineOverride>>,
+        val listProgress: Map<Long, ShoppingProgress>,
     )
 
     /**
@@ -47,10 +50,14 @@ class TodayRepository(
                 taskRepository.observeCompletionsBetween(today, tomorrow),
                 routineRepository.scheduledRoutines,
                 routineRepository.observeCompletionsBetween(today, tomorrow),
-                // lastCompletions e overrides juntos: o combine tipado vai só até 5 fontes.
-                combine(taskRepository.lastCompletions, routineRepository.overrides) { last, overrides -> last to overrides },
-            ) { tasks, taskLogs, routines, routineLogs, lastAndOverrides ->
-                Snapshot(tasks, taskLogs, routines, routineLogs, lastAndOverrides.first, lastAndOverrides.second)
+                // lastCompletions, overrides e progresso das listas juntos: o combine tipado vai só até 5 fontes.
+                combine(
+                    taskRepository.lastCompletions,
+                    routineRepository.overrides,
+                    shoppingRepository.observeProgressByList(),
+                ) { last, overrides, progress -> Triple(last, overrides, progress) },
+            ) { tasks, taskLogs, routines, routineLogs, extras ->
+                Snapshot(tasks, taskLogs, routines, routineLogs, extras.first, extras.second, extras.third)
             }.transformLatest { snapshot ->
                 while (true) {
                     val zone = ZoneId.systemDefault()
@@ -64,6 +71,7 @@ class TodayRepository(
                         routineCompletions = snapshot.routineLogs,
                         lastCompletions = snapshot.lastCompletions,
                         overrides = snapshot.overrides,
+                        listProgress = snapshot.listProgress,
                     )
                     emit(overview)
                     // Depois da meia-noite quem recomeça tudo é o currentDate().
