@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import com.kalendrys.app.testutil.ViewModelTestDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +34,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ShoppingListViewModelTest {
 
+    private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
     private lateinit var repository: ShoppingRepository
 
@@ -40,15 +42,14 @@ class ShoppingListViewModelTest {
     fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val context = ApplicationProvider.getApplicationContext<Context>()
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
+        testDb = ViewModelTestDatabase(context)
+        db = testDb.db
         repository = ShoppingRepository(db)
     }
 
     @After
     fun tearDown() {
-        db.close()
+        testDb.close() // cancela os ViewModels e drena o Room antes de fechar e do resetMain
         Dispatchers.resetMain()
     }
 
@@ -57,7 +58,7 @@ class ShoppingListViewModelTest {
             put(SHOPPING_LIST_ID_ARG, listId)
             if (taskId != null) put(SHOPPING_LIST_TASK_ID_ARG, taskId)
         }
-        return ShoppingListViewModel(SavedStateHandle(args), repository)
+        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository))
     }
 
     private suspend fun ReceiveTurbine<ShoppingListViewModel.UiState>.awaitUntil(

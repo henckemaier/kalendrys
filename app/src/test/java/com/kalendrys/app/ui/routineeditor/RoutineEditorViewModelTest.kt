@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import com.kalendrys.app.testutil.ViewModelTestDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +48,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class RoutineEditorViewModelTest {
 
+    private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
     private lateinit var routineRepository: RoutineRepository
     private lateinit var categoryRepository: RoutineCategoryRepository
@@ -58,9 +60,8 @@ class RoutineEditorViewModelTest {
         // viewModelScope roda no Main; Unconfined executa as operações do editor na hora.
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val context = ApplicationProvider.getApplicationContext<Context>()
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
+        testDb = ViewModelTestDatabase(context)
+        db = testDb.db
         routineRepository = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -76,16 +77,18 @@ class RoutineEditorViewModelTest {
 
     @After
     fun tearDown() {
-        db.close()
+        testDb.close() // cancela os ViewModels e drena o Room antes de fechar e do resetMain
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(routineId: Long) = RoutineEditorViewModel(
-        SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
-        routineRepository,
-        categoryRepository,
-        shoppingRepository,
-        exerciseRepository,
+    private fun viewModel(routineId: Long) = testDb.track(
+        RoutineEditorViewModel(
+            SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
+            routineRepository,
+            categoryRepository,
+            shoppingRepository,
+            exerciseRepository,
+        ),
     )
 
     @Test
