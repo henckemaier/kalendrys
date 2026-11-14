@@ -265,6 +265,23 @@ entrada, o caminho passa a ser Hoje > bloco ou Hoje > Todas as rotinas.
 **E-4 (U6, v1.7.0) — tela da lista.** Itens marcados passam a aparecer no grupo "Marcados (n)".
 Não muda dados: `position` e `picked` continuam como estão.
 
+**E-5 (v1.6.0) — regra P3, o que conta como "pendente".** Detalha a seção 3 do ADR-0001 (P3,
+oferta de conclusão). Decisão de produto tomada na revisão da v1.6.0. Para a oferta "Concluir
+tarefa", uma tarefa vinculada à lista é candidata quando ainda não foi concluída e:
+
+- está atrasada, é de hoje ou não tem data (critério do retrato do dia); **ou**
+- é tarefa **única** (`repeat == NONE`) com data **futura**: quem faz a compra antes do dia
+  recebe a oferta. Aceitar é uma conclusão comum: a tarefa passa a ser de hoje e perde o
+  lembrete futuro, como já faz `TaskRepository.logCompletion`.
+
+Tarefa **repetida** cuja próxima ocorrência é futura (inclusive a já concluída hoje) continua
+fora: concluí-la adiantaria a ocorrência seguinte e reiniciaria a lista (P4). O restante da P3
+não muda: origem primeiro, senão a única candidata; zero ou mais de uma, sem oferta.
+
+A regra fica em `domain/ShoppingCompletionOffer` (função pura, recebe estado e repetição da
+tarefa), não na tela. Testes: tarefa única futura como origem e como única candidata; repetida
+futura fora; única futura somada a outra pendente sem origem não gera oferta.
+
 ## 9. Riscos
 
 | Risco | Mitigação |
