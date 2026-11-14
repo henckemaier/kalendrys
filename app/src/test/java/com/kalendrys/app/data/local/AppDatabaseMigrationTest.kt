@@ -1,9 +1,20 @@
 package com.kalendrys.app.data.local
 
+import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kalendrys.app.data.repository.BackupManager
+import com.kalendrys.app.data.repository.legacyBackup
+import com.kalendrys.app.data.repository.legacyItem
+import com.kalendrys.app.data.repository.legacyRoutine
+import com.kalendrys.app.data.settings.SettingsRepository
+import java.io.File
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -197,7 +208,7 @@ class AppDatabaseMigrationTest {
             v9.execSQL(insertItem(id = 10, routineId = 2, name = "Banana", picked = 1, position = 1, createdAt = 900))
             v9.execSQL(insertItem(id = 11, routineId = 1, name = "Arroz", picked = 0, position = 0, createdAt = 500))
             v9.execSQL(insertItem(id = 12, routineId = 99, name = "Órfão", picked = 1, position = 0, createdAt = 800))
-            v9.execSQL(insertItem(id = 13, routineId = 2, name = "Maçã", picked = 0, position = 0, createdAt = 700))
+            v9.execSQL(insertItem(id = 13, routineId = 2, name = "Maçã", picked = 0, position = 0, createdAt = 700, priceCents = "NULL"))
             v9.execSQL(insertItem(id = 14, routineId = 1, name = "Feijão", picked = 1, position = 1, createdAt = 600))
         }
 
@@ -232,7 +243,7 @@ class AppDatabaseMigrationTest {
                     listOf("10", "2", "Banana", "2", "150", "1", "1", "900", "0"),
                     listOf("11", "1", "Arroz", "2", "150", "0", "0", "500", "0"),
                     listOf("12", "3", "Órfão", "2", "150", "1", "0", "800", "0"),
-                    listOf("13", "2", "Maçã", "2", "150", "0", "0", "700", "0"),
+                    listOf("13", "2", "Maçã", "2", null, "0", "0", "700", "0"), // preço nulo continua nulo
                     listOf("14", "1", "Feijão", "2", "150", "1", "1", "600", "0"),
                 ),
                 items,
@@ -272,9 +283,71 @@ class AppDatabaseMigrationTest {
         "INSERT INTO routines (id, title, notes, icon, color, startMinute, durationMinutes, daysOfWeek, remind, createdAt, archivedAt, weekInterval) " +
             "VALUES ($id, '$title', '', 'STAR', 'GREEN', 600, 30, 127, 1, 0, $archivedAt, 1)"
 
-    private fun insertItem(id: Long, routineId: Long, name: String, picked: Int, position: Int, createdAt: Long) =
+    /** [priceCents] é SQL literal: "150" ou "NULL" (item sem preço). */
+    private fun insertItem(id: Long, routineId: Long, name: String, picked: Int, position: Int, createdAt: Long, priceCents: String = "150") =
         "INSERT INTO shopping_item (id, routineId, name, quantity, priceCents, picked, position, createdAt) " +
-            "VALUES ($id, $routineId, '$name', 2, 150, $picked, $position, $createdAt)"
+            "VALUES ($id, $routineId, '$name', 2, $priceCents, $picked, $position, $createdAt)"
+
+    @Test
+    fun `migracao 9 para 10 e restauro de backup v5 dao a mesma saida sobre os mesmos dados`() = runBlocking {
+        // Mesmos dados nos dois formatos antigos: banco v9 e backup v5 (itens presos a routineId).
+        data class Seed(val id: Long, val routineId: Long, val name: String, val picked: Boolean, val position: Int, val createdAt: Long, val price: Long?)
+        val routines = listOf(Triple(1L, "Mercado", true), Triple(2L, "Feira", false), Triple(3L, "Sem lista", false))
+        val seeds = listOf(
+            Seed(10, 2, "Banana", true, 1, 900, 150),
+            Seed(11, 1, "Arroz", false, 0, 500, 150),
+            Seed(12, 99, "Órfão", true, 0, 800, null),
+            Seed(13, 2, "Maçã", false, 0, 700, null),
+            Seed(14, 1, "Feijão", true, 1, 600, 150),
+        )
+
+        val name = "kalendrys-migration-vs-backup"
+        helper.createDatabase(name, 9).use { v9 ->
+            routines.forEach { (id, title, archived) -> v9.execSQL(insertRoutine(id, title, if (archived) "50" else "NULL")) }
+            seeds.forEach { s ->
+                v9.execSQL(insertItem(s.id, s.routineId, s.name, if (s.picked) 1 else 0, s.position, s.createdAt, s.price?.toString() ?: "NULL"))
+            }
+        }
+        val migrated = helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+            Triple(
+                v10.rows("SELECT id, name, createdAt, lastResetKey FROM shopping_list ORDER BY id") { c -> (0..3).map { if (c.isNull(it)) null else c.getString(it) } },
+                v10.rows("SELECT id, listId, name, quantity, priceCents, picked, position, createdAt, pickedBeforeReset FROM shopping_item ORDER BY id") { c ->
+                    (0..8).map { if (c.isNull(it)) null else c.getString(it) }
+                },
+                v10.rows("SELECT id, shoppingListId FROM routines ORDER BY id") { c -> c.getLong(0) to (if (c.isNull(1)) null else c.getLong(1)) },
+            )
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val backup = legacyBackup(
+                5,
+                routines = routines.map { (id, title, archived) -> legacyRoutine(id, title, archived) },
+                shoppingItems = seeds.map { legacyItem(it.id, it.routineId, it.name, it.picked, it.createdAt, it.price, it.position) },
+                exerciseItems = emptyList(),
+            )
+            val settings = SettingsRepository(
+                PreferenceDataStoreFactory.create { File(context.cacheDir, "migration-vs-backup-${System.nanoTime()}.preferences_pb") },
+            )
+            BackupManager(db, context.contentResolver, settings).restore(backup.toString())
+
+            val restoredLists = db.shoppingListDao().all().map { listOf(it.id.toString(), it.name, it.createdAt.toString(), it.lastResetKey) }
+            val restoredItems = db.shoppingItemDao().all().sortedBy { it.id }.map {
+                listOf(
+                    it.id.toString(), it.listId.toString(), it.name, it.quantity.toString(), it.priceCents?.toString(),
+                    if (it.picked) "1" else "0", it.position.toString(), it.createdAt.toString(), if (it.pickedBeforeReset) "1" else "0",
+                )
+            }
+            val restoredLinks = db.routineDao().all().sortedBy { it.id }.map { it.id to it.shoppingListId }
+
+            assertEquals(migrated.first, restoredLists)
+            assertEquals(migrated.second, restoredItems)
+            assertEquals(migrated.third, restoredLinks)
+        } finally {
+            db.close()
+        }
+    }
 
     private fun <T> SupportSQLiteDatabase.rows(sql: String, read: (android.database.Cursor) -> T): List<T> =
         query(sql).use { c -> buildList { while (c.moveToNext()) add(read(c)) } }

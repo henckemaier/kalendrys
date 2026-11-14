@@ -23,6 +23,7 @@ import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -255,39 +256,26 @@ class BackupManagerTest {
 
     @Test
     fun `restaura backup v3 sem a array de compras caindo na lista vazia`() = runTest {
-        val source = settingsRepo("source-v3")
-        sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Mercado", startMinute = 600, durationMinutes = 30, remind = true),
-        )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        // Formato v3 real: sem shoppingItems/exerciseItems/shoppingLists e sem shoppingListId.
+        val root = legacyBackup(3, routines = listOf(legacyRoutine(1, "Mercado")))
 
-        // Simula um backup do formato v3: schemaVersion=3, sem a array shoppingItems.
-        val root = JSONObject(json).put("schemaVersion", 3)
-        root.remove("shoppingItems")
-
-        val dest = settingsRepo("dest-v3")
-        val stats = BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v3")).restore(root.toString())
 
         // A rotina é preservada e a lista de compras fica vazia, sem quebrar o restauro de um v3.
         assertEquals("Mercado", destDb.routineDao().all().single().title)
+        assertNull(destDb.routineDao().all().single().shoppingListId)
         assertEquals(0, stats.shoppingItems)
+        assertEquals(0, stats.shoppingLists)
         assertTrue(destDb.shoppingItemDao().all().isEmpty())
+        assertTrue(destDb.shoppingListDao().all().isEmpty())
     }
 
     @Test
     fun `restaura backup v4 sem a array de exercicios caindo na lista vazia`() = runTest {
-        val source = settingsRepo("source-v4")
-        sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true),
-        )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        // Formato v4 real: com shoppingItems (vazia aqui), sem exerciseItems.
+        val root = legacyBackup(4, routines = listOf(legacyRoutine(1, "Treino")), shoppingItems = emptyList())
 
-        // Simula um backup do formato v4: schemaVersion=4, sem a array exerciseItems.
-        val root = JSONObject(json).put("schemaVersion", 4)
-        root.remove("exerciseItems")
-
-        val dest = settingsRepo("dest-v4")
-        val stats = BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4")).restore(root.toString())
 
         // A rotina é preservada e a lista de exercícios fica vazia, sem quebrar o restauro de um v4.
         assertEquals("Treino", destDb.routineDao().all().single().title)
@@ -296,33 +284,43 @@ class BackupManagerTest {
     }
 
     @Test
+    fun `restaura backup v4 com itens legados convertendo em listas`() = runTest {
+        val root = legacyBackup(
+            4,
+            routines = listOf(legacyRoutine(2, "Mercado")),
+            shoppingItems = listOf(
+                legacyItem(20, 2, "Leite", picked = true, createdAt = 300),
+                legacyItem(21, 2, "Pão", picked = false, createdAt = 200, priceCents = null),
+            ),
+        )
+
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4-items")).restore(root.toString())
+
+        assertEquals(listOf(ShoppingList(id = 1, name = "Mercado", createdAt = 200)), destDb.shoppingListDao().all())
+        assertEquals(1L, destDb.routineDao().byId(2)!!.shoppingListId)
+        val items = destDb.shoppingItemDao().all()
+        assertEquals(listOf(20L, 21L), items.map { it.id })
+        assertEquals(listOf(1L, 1L), items.map { it.listId })
+        assertEquals(listOf(true, false), items.map { it.picked })
+        assertEquals(listOf(150L, null), items.map { it.priceCents })
+        assertEquals(2, stats.shoppingItems)
+        assertEquals(1, stats.shoppingLists)
+    }
+
+    @Test
     fun `restaura backup v5 convertendo itens por rotina em listas como a migracao`() = runTest {
         // JSON no formato v5 escrito à mão: itens com routineId, sem shoppingLists, sem shoppingListId.
-        val routine = { id: Long, title: String, archived: Boolean ->
-            JSONObject()
-                .put("id", id).put("title", title).put("notes", "").put("icon", "").put("color", "")
-                .put("startMinute", 600).put("durationMinutes", 30).put("daysOfWeek", 127).put("remind", true)
-                .put("createdAt", 1).put("archivedAt", if (archived) 5 else JSONObject.NULL)
-        }
-        val item = { id: Long, routineId: Long, name: String, picked: Boolean, createdAt: Long ->
-            JSONObject()
-                .put("id", id).put("routineId", routineId).put("name", name).put("quantity", 2)
-                .put("priceCents", 150).put("picked", picked).put("position", 0).put("createdAt", createdAt)
-        }
-        val root = JSONObject()
-            .put("schemaVersion", 5)
-            .put("tasks", org.json.JSONArray())
-            .put("completionLogs", org.json.JSONArray())
-            .put("routineCompletions", org.json.JSONArray())
-            .put("routines", org.json.JSONArray().put(routine(7, "Feira", false)).put(routine(3, "Mercado", true)))
-            .put(
-                "shoppingItems",
-                org.json.JSONArray()
-                    .put(item(10, 7, "Banana", true, 900))
-                    .put(item(11, 3, "Arroz", false, 500))
-                    .put(item(12, 99, "Órfão", false, 800))
-                    .put(item(13, 7, "Maçã", false, 700)),
-            )
+        val root = legacyBackup(
+            5,
+            routines = listOf(legacyRoutine(7, "Feira"), legacyRoutine(3, "Mercado", archived = true)),
+            shoppingItems = listOf(
+                legacyItem(10, 7, "Banana", true, 900),
+                legacyItem(11, 3, "Arroz", false, 500),
+                legacyItem(12, 99, "Órfão", false, 800),
+                legacyItem(13, 7, "Maçã", false, 700),
+            ),
+            exerciseItems = emptyList(),
+        )
 
         val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v5")).restore(root.toString())
 
@@ -397,3 +395,49 @@ class BackupManagerTest {
             },
         )
 }
+
+// --- Backups legados (≤ v5) escritos à mão, no formato que as versões antigas exportavam -------
+
+/** Rotina como exportada até o backup v5 (sem shoppingListId). */
+internal fun legacyRoutine(id: Long, title: String, archived: Boolean = false): JSONObject =
+    JSONObject()
+        .put("id", id).put("title", title).put("notes", "").put("icon", "").put("color", "")
+        .put("startMinute", 600).put("durationMinutes", 30).put("daysOfWeek", 127).put("remind", true)
+        .put("createdAt", 1).put("archivedAt", if (archived) 5 else JSONObject.NULL)
+
+/** Item de compras como exportado nos backups v4/v5 (preso a routineId). */
+internal fun legacyItem(
+    id: Long,
+    routineId: Long,
+    name: String,
+    picked: Boolean,
+    createdAt: Long,
+    priceCents: Long? = 150,
+    position: Int = 0,
+): JSONObject =
+    JSONObject()
+        .put("id", id).put("routineId", routineId).put("name", name).put("quantity", 2)
+        .put("priceCents", priceCents ?: JSONObject.NULL).put("picked", picked).put("position", position)
+        .put("createdAt", createdAt)
+
+/**
+ * Backup legado mínimo. A array é omitida quando o parâmetro é null, como nas versões que ainda não
+ * a tinham: v3 sem shoppingItems, v4 sem exerciseItems. Nunca tem shoppingLists.
+ */
+internal fun legacyBackup(
+    schemaVersion: Int,
+    routines: List<JSONObject>,
+    shoppingItems: List<JSONObject>? = null,
+    exerciseItems: List<JSONObject>? = null,
+): JSONObject = JSONObject()
+    .put("schemaVersion", schemaVersion)
+    .put("tasks", JSONArray())
+    .put("completionLogs", JSONArray())
+    .put("routines", JSONArray().also { a -> routines.forEach { a.put(it) } })
+    .put("routineCompletions", JSONArray())
+    .put("routineCategories", JSONArray())
+    .put("routineOverrides", JSONArray())
+    .apply {
+        shoppingItems?.let { items -> put("shoppingItems", JSONArray().also { a -> items.forEach { a.put(it) } }) }
+        exerciseItems?.let { items -> put("exerciseItems", JSONArray().also { a -> items.forEach { a.put(it) } }) }
+    }
