@@ -9,6 +9,7 @@ import com.kalendrys.app.domain.ShoppingProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** Quem usa uma lista: rotina (não arquivada) ou tarefa. */
@@ -102,6 +103,13 @@ class ShoppingRepository(private val database: AppDatabase) {
                 list.id to (statsById[list.id]?.let { ShoppingProgress(it.picked, it.total) } ?: ShoppingProgress.EMPTY)
             }
         }.distinctUntilChanged()
+
+    /**
+     * Progresso atual de uma lista, para textos fora da UI (notificações). `null` sem vínculo ou com
+     * vínculo órfão (lista inexistente), que equivalem a "sem lista".
+     */
+    suspend fun progressOf(listId: Long?): ShoppingProgress? =
+        listId?.let { observeProgressByList().first()[it] }
 
     /** Resumo de uma lista; `null` quando ela não existe (vínculo órfão equivale a "sem lista"). */
     fun observeSummary(listId: Long): Flow<ShoppingListSummary?> =

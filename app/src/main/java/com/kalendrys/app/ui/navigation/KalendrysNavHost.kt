@@ -259,6 +259,12 @@ fun KalendrysNavHost(
                 navController.openTab(AppTab.Routines)
                 routinesDateRequested = launchRequest.date
             }
+            // ADR-0002, E-1: aba Listas e, sobre ela, a tela da lista (voltar cai na aba). Lista
+            // inexistente cai no estado "não encontrada" da própria tela.
+            is LaunchRequest.OpenList -> {
+                navController.openTab(AppTab.Lists)
+                navController.navigate(shoppingListRoute(launchRequest.listId, launchRequest.taskId))
+            }
         }
         onLaunchRequestHandled()
     }

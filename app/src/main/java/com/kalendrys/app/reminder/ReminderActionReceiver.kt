@@ -52,7 +52,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
                     ACTION_SNOOZE_FIRE -> {
                         // Reexibe só se a tarefa ainda existe e não foi concluída nesse meio-tempo.
                         val task = app.repository.taskForReminder(taskId) ?: return@launch
-                        ReminderNotifications.show(context, task)
+                        ReminderNotifications.show(context, task, app.shoppingRepository.progressOf(task.shoppingListId))
                     }
                 }
             } finally {

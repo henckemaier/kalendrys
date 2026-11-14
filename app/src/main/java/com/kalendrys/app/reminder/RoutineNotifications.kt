@@ -16,6 +16,7 @@ import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.RoutineSnooze
+import com.kalendrys.app.domain.ShoppingProgress
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -23,7 +24,13 @@ import java.time.format.DateTimeFormatter
 /** Aviso de início de um bloco de rotina, com a ação "Concluir". */
 open class RoutineNotifications(private val context: Context) {
 
-    open fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride> = emptyList()) {
+    /** [listProgress]: progresso da lista do bloco (`null` sem lista ou com vínculo órfão). Só muda o título ("Feira · 3/8"). */
+    open fun show(
+        routine: Routine,
+        date: LocalDate,
+        overrides: List<RoutineOverride> = emptyList(),
+        listProgress: ShoppingProgress? = null,
+    ) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -39,7 +46,7 @@ open class RoutineNotifications(private val context: Context) {
         val notification = NotificationCompat.Builder(context, KalendrysApp.ROUTINE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
-            .setContentTitle(routine.title)
+            .setContentTitle(ShoppingProgress.titleWithProgress(routine.title, listProgress))
             .setContentText(timeLabel(routine, date, overrides))
             .setContentIntent(tapIntent)
             .addAction(

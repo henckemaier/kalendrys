@@ -4,6 +4,7 @@ import android.content.Context
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
@@ -67,7 +68,7 @@ class FakeRoutineNotifications(context: Context) : RoutineNotifications(context)
     val shown = mutableListOf<Long>()
     val cancelled = mutableListOf<Long>()
 
-    override fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride>) {
+    override fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride>, listProgress: ShoppingProgress?) {
         shown += routine.id
     }
 
