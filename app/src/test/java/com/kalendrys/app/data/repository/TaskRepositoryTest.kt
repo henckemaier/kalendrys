@@ -326,4 +326,79 @@ class TaskRepositoryTest {
 
         assertEquals(listOf(false), repository.linkedTasks(listId).map { it.pending })
     }
+
+    // --- Desfazer conclusão adiantada devolve data e lembrete (v1.6.0, item 5, melhor esforço) ---
+
+    private fun tomorrowAtNine() = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0))
+
+    @Test
+    fun `desfazer conclusao adiantada devolve data e lembrete e reagenda`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val original = db.taskDao().byId(task.id)!!
+        val logId = repository.logCompletion(task.id)
+        assertEquals(LocalDate.now().toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
+        scheduler.reset()
+
+        repository.undoCompletion(logId)
+
+        val restored = db.taskDao().byId(task.id)!!
+        assertEquals(original.dueDate, restored.dueDate)
+        assertEquals(original.reminderAt, restored.reminderAt)
+        assertEquals(listOf(restored), scheduler.scheduled.map { it.task })
+        assertEquals(0, repository.earlyCompletionCount())
+    }
+
+    @Test
+    fun `usuario editou a data entre concluir e desfazer e a edicao vence`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        val edited = LocalDate.now().plusDays(5).toEpochDay()
+        repository.updateTask(db.taskDao().byId(task.id)!!.copy(dueDate = edited))
+
+        repository.undoCompletion(logId)
+
+        val after = db.taskDao().byId(task.id)!!
+        assertEquals(edited, after.dueDate)
+        assertNull(after.reminderAt)
+    }
+
+    @Test
+    fun `repositorio novo desfaz sem restaurar e sem falhar`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        // Simula o processo morto: o mapa em memória se perdeu.
+        val fresh = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+
+        fresh.undoCompletion(logId)
+
+        val after = db.taskDao().byId(task.id)!!
+        assertEquals(LocalDate.now().toEpochDay(), after.dueDate)
+        assertNull(after.reminderAt)
+        assertTrue(db.completionLogDao().all().isEmpty())
+    }
+
+    @Test
+    fun `tarefa repetida e tarefa de hoje nao criam entrada`() = runTest {
+        val daily = repository.addTask("Diária", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0), repeat = ReminderRepeat.DAILY))
+        val today = repository.addTask("Hoje", timing = todayTiming())
+        repository.logCompletion(daily.id)
+        repository.logCompletion(today.id)
+        assertEquals(0, repository.earlyCompletionCount())
+    }
+
+    @Test
+    fun `mapa guarda so as 20 conclusoes adiantadas mais recentes`() = runTest {
+        val logs = (1..25).map { n ->
+            val task = repository.addTask("Amanhã $n", timing = tomorrowAtNine())
+            task.id to repository.logCompletion(task.id)
+        }
+        assertEquals(20, repository.earlyCompletionCount())
+
+        // A mais antiga saiu do mapa: desfaz sem restaurar; a mais recente restaura.
+        repository.undoCompletion(logs.first().second)
+        assertEquals(LocalDate.now().toEpochDay(), db.taskDao().byId(logs.first().first)!!.dueDate)
+        repository.undoCompletion(logs.last().second)
+        assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(logs.last().first)!!.dueDate)
+        assertEquals(19, repository.earlyCompletionCount())
+    }
 }

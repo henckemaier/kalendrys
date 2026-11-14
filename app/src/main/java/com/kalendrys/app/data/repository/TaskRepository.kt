@@ -18,6 +18,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Fonte única das tarefas: mantém banco e alarmes de lembrete sempre em sincronia. */
 class TaskRepository(
@@ -149,15 +151,19 @@ class TaskRepository(
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
         scheduler.dismissNotification(taskId)
         val task = taskDao.byId(taskId)
+        var early: EarlyCompletion? = null
         if (task != null && task.repeat == ReminderRepeat.NONE) {
             scheduler.cancel(taskId)
             val zone = ZoneId.systemDefault()
             val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate().toEpochDay()
             if (task.dueDate != null && task.dueDate > day) {
                 taskDao.update(task.copy(dueDate = day, reminderAt = null))
+                early = EarlyCompletion(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = day)
             }
         }
         val logId = completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
+        // Só entra no mapa quando a conclusão DE FATO reescreveu data e lembrete (tarefa única adiantada).
+        if (early != null) earlyLock.withLock { earlyCompletions[logId] = early }
         val listId = task?.shoppingListId
         if (listId != null && ShoppingReset.taskResets(task.repeat)) {
             shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(logId))
@@ -169,14 +175,47 @@ class TaskRepository(
      * Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. As
      * marcações que essa conclusão tinha zerado voltam (se ainda for o último reinício da lista).
      * Só reagenda o alarme: a notificação que já tinha sido exibida NÃO é recriada.
+     *
+     * Tarefa única concluída ADIANTADA (o [logCompletion] trouxe a data para hoje e tirou o lembrete):
+     * a data e o lembrete originais voltam, e SÓ DEPOIS o alarme é reagendado, desde que a tarefa
+     * ainda esteja como a conclusão a deixou (mesma data, sem lembrete). Se o usuário editou a data
+     * no meio, a edição dele vence e nada é restaurado. É MELHOR ESFORÇO: a informação fica em
+     * memória ([earlyCompletions]); com o processo morto não há o que restaurar, e o desfazer segue
+     * como antes. A solução definitiva (colunas no CompletionLog) vem na v1.8.0.
      */
     suspend fun undoCompletion(logId: Long) {
         val log = completionLogDao.byId(logId) ?: return
         completionLogDao.deleteById(logId)
         shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
-        val task = taskDao.byId(log.taskId) ?: return
+        val early = earlyLock.withLock { earlyCompletions.remove(logId) }
+        var task = taskDao.byId(log.taskId) ?: return
+        if (early != null && task.dueDate == early.rewrittenDueDate && task.reminderAt == null) {
+            task = task.copy(dueDate = early.previousDueDate, reminderAt = early.previousReminderAt)
+            taskDao.update(task)
+        }
         if (!isFinished(task)) scheduler.schedule(task)
     }
+
+    /** Data e lembrete que uma conclusão adiantada sobrescreveu (ver [undoCompletion]). */
+    private data class EarlyCompletion(
+        val previousDueDate: Long,
+        val previousReminderAt: Long?,
+        /** Data que o [logCompletion] gravou (o dia da conclusão). */
+        val rewrittenDueDate: Long,
+    )
+
+    /**
+     * logId → conclusão adiantada, só as [MAX_EARLY_COMPLETIONS] mais recentes (o "Desfazer" é uma
+     * snackbar curta). Acessado de tela, widget e receivers: sempre sob [earlyLock].
+     */
+    private val earlyCompletions = object : LinkedHashMap<Long, EarlyCompletion>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, EarlyCompletion>?): Boolean =
+            size > MAX_EARLY_COMPLETIONS
+    }
+    private val earlyLock = Mutex()
+
+    /** Para testes: quantas conclusões adiantadas ainda podem ser desfeitas com restauração. */
+    internal suspend fun earlyCompletionCount(): Int = earlyLock.withLock { earlyCompletions.size }
 
     /**
      * Tarefas vinculadas à lista [listId] e se cada uma está pendente agora (atrasada, de hoje ou
@@ -215,5 +254,6 @@ class TaskRepository(
 
     private companion object {
         const val FIRED_OCCURRENCE_MARGIN_MS = 60_000L
+        const val MAX_EARLY_COMPLETIONS = 20
     }
 }
