@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,6 +74,7 @@ import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.calendar.CalendarViewModel.Entry
 import com.kalendrys.app.ui.calendar.CalendarViewModel.RoutineEntry
 import com.kalendrys.app.ui.calendar.CalendarViewModel.UiState
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
@@ -152,7 +152,7 @@ fun CalendarScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 104.dp),
+                contentPadding = fabListContentPadding(horizontal = 16.dp),
             ) {
                 item(key = "month", contentType = "month") {
                     MonthCard(

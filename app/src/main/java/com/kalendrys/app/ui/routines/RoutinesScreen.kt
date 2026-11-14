@@ -94,6 +94,7 @@ import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
@@ -397,7 +398,7 @@ private fun Timeline(
         state = listState,
         modifier = modifier.fillMaxSize(),
         // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 104.dp),
+        contentPadding = fabListContentPadding(horizontal = 8.dp, top = 4.dp),
     ) {
         if (state.untimedTasks.isNotEmpty()) {
             item(key = "today_tasks_header", contentType = "tasks_header") {
