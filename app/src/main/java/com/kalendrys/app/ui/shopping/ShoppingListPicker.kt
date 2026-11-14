@@ -149,7 +149,7 @@ private fun listSubtitle(summary: ShoppingListSummary): String {
     val status = if (progress.total == 0) {
         stringResource(R.string.list_card_empty)
     } else {
-        pluralStringResource(R.plurals.list_card_progress, progress.markedQuantity, progress.picked, progress.total)
+        pluralStringResource(R.plurals.list_card_progress, progress.pluralQuantity, progress.picked, progress.total)
     }
     val owners = if (summary.owners.isEmpty()) {
         stringResource(R.string.list_picker_standalone)

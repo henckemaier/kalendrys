@@ -5,7 +5,7 @@
     <string name="list_card_add">Adicionar lista</string>
     <string name="list_card_hint">Anexe uma lista para levar às compras desta rotina.</string>
     <string name="list_card_empty">Lista vazia</string>
-    <!-- Quantidade = itens marcados (ver ShoppingProgress.markedQuantity): no pt-BR só o 1 fica no singular. -->
+    <!-- Quantidade = TOTAL de itens (ver ShoppingProgress.pluralQuantity): só o total 1 fica no singular. -->
     <plurals name="list_card_progress">
         <item quantity="one">%1$d de %2$d marcado</item>
         <item quantity="other">%1$d de %2$d marcados</item>

@@ -29,10 +29,11 @@ fun Map<Long, ShoppingProgress>.visibleProgressFor(listId: Long?): ShoppingProgr
 
 /**
  * Quantidade para escolher o plural de "marcado(s)" (R.plurals.list_card_progress e
- * list_progress_description): concorda com os itens marcados. A regra CLDR do pt (pt-BR) põe 0 e 1
- * em "one", mas o zero leva plural ("0 de 8 marcados"), então só o 1 escolhe o singular.
+ * list_progress_description): concorda com o TOTAL de itens ("1 de 1 marcado", "0 de 1 marcado",
+ * "1 de 3 marcados"). A regra CLDR do pt (pt-BR) põe 0 e 1 em "one", mas o total 0 nunca aparece
+ * (lista vazia esconde o progresso) e, se aparecesse, levaria plural; então só o total 1 é singular.
  */
-val ShoppingProgress.markedQuantity: Int get() = if (picked == 1) 1 else PLURAL_OTHER
+val ShoppingProgress.pluralQuantity: Int get() = if (total == 1) 1 else PLURAL_OTHER
 
 /** Qualquer número que a regra do pt põe em "other". */
 private const val PLURAL_OTHER = 2
@@ -46,7 +47,7 @@ fun ShoppingProgressTag(
 ) {
     val description = pluralStringResource(
         R.plurals.list_progress_description,
-        progress.markedQuantity,
+        progress.pluralQuantity,
         progress.picked,
         progress.total,
     )
