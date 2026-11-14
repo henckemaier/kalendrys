@@ -213,7 +213,11 @@ fun KalendrysNavHost(
                 enterTransition = { slideIntoContainer(SlideDirection.Start) },
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
-                TaskDetailScreen(onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) })
+                TaskDetailScreen(
+                    onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) },
+                    // Abre a lista com a tarefa como origem (oferta "Concluir tarefa", P3).
+                    onOpenShoppingList = { listId, taskId -> navController.navigate(shoppingListRoute(listId, taskId)) },
+                )
             }
             composable(
                 route = SETTINGS_ROUTE,
