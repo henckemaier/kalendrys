@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O app é só em português do Brasil (v1.5.1): é o único idioma oferecido nas configurações do sistema. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="pt-BR" />
+</locale-config>

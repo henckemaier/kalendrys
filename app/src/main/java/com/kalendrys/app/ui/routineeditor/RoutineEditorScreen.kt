@@ -74,7 +74,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -92,12 +91,13 @@ import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ExerciseFormat
 import com.kalendrys.app.domain.RoutineColor
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.TimePickerDialog
-import com.kalendrys.app.ui.components.firstDayOfWeek
+import com.kalendrys.app.ui.components.WeekdayToggleRow
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
@@ -110,8 +110,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
-import java.time.format.TextStyle
-import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
@@ -990,37 +988,13 @@ private const val MILLIS_PER_DAY = 86_400_000L
 
 // Teto de entrada (B2): a carga é texto livre, limitada para evitar campos gigantes.
 private const val MAX_LOAD_CHARS = 24
-private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(AppLocale.LOCALE)
 
 private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFormatter)
 
 @Composable
 private fun DayPicker(mask: Int, onToggle: (DayOfWeek) -> Unit) {
-    val locale = Locale.getDefault()
-    val firstDay = firstDayOfWeek(locale)
-    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        for (offset in 0L until 7L) {
-            val day = firstDay.plus(offset)
-            val selected = RoutineDays.contains(mask, day)
-            val colors = MaterialTheme.colorScheme
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) colors.primary else colors.surfaceContainerHigh)
-                    .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onToggle(day) })
-                    .semantics { contentDescription = day.getDisplayName(TextStyle.FULL, locale) },
-            ) {
-                Text(
-                    text = day.getDisplayName(TextStyle.NARROW, locale),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) colors.onPrimary else colors.onSurface,
-                    modifier = Modifier.clearAndSetSemantics {},
-                )
-            }
-        }
-    }
+    WeekdayToggleRow(isSelected = { RoutineDays.contains(mask, it) }, onToggle = onToggle)
 }
 
 @Composable

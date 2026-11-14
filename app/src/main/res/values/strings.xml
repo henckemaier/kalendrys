@@ -460,4 +460,33 @@
     <string name="widget_preview_summary_breakdown">2 tarefas · 1 rotina</string>
     <string name="widget_preview_routine">Treino</string>
     <string name="widget_preview_routine_time" translatable="false">17:20</string>
+
+    <!-- Dias da semana (pt-BR), a partir do DOMINGO. Tabela própria em vez de getDisplayName (v1.5.1). -->
+    <string-array name="weekday_short">
+        <item>Dom</item>
+        <item>Seg</item>
+        <item>Ter</item>
+        <item>Qua</item>
+        <item>Qui</item>
+        <item>Sex</item>
+        <item>Sáb</item>
+    </string-array>
+    <string-array name="weekday_narrow">
+        <item>D</item>
+        <item>S</item>
+        <item>T</item>
+        <item>Q</item>
+        <item>Q</item>
+        <item>S</item>
+        <item>S</item>
+    </string-array>
+    <string-array name="weekday_full">
+        <item>domingo</item>
+        <item>segunda-feira</item>
+        <item>terça-feira</item>
+        <item>quarta-feira</item>
+        <item>quinta-feira</item>
+        <item>sexta-feira</item>
+        <item>sábado</item>
+    </string-array>
 </resources>

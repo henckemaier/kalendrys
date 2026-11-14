@@ -79,6 +79,8 @@ import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.firstDayOfWeek
+import com.kalendrys.app.ui.components.WeekdayName
+import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.monthYearLabel
 import com.kalendrys.app.ui.components.weekdayDateLabel
@@ -90,8 +92,6 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.util.Locale
 
 private val CardShape = RoundedCornerShape(20.dp)
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -186,8 +186,7 @@ private fun MonthCard(
     onNextMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
 ) {
-    val locale = Locale.getDefault()
-    val firstDayOfWeek = remember(locale) { firstDayOfWeek(locale) }
+    val firstDayOfWeek = firstDayOfWeek()
 
     Surface(
         shape = CardShape,
@@ -197,7 +196,7 @@ private fun MonthCard(
         Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = monthYearLabel(state.month, locale),
+                    text = monthYearLabel(state.month),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier
                         .weight(1f)
@@ -217,7 +216,7 @@ private fun MonthCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            WeekdayHeader(firstDayOfWeek, locale)
+            WeekdayHeader(firstDayOfWeek)
             HorizontalSwipeContent(
                 target = state.month,
                 onPrevious = onPreviousMonth,
@@ -238,11 +237,11 @@ private fun MonthCard(
 }
 
 @Composable
-private fun WeekdayHeader(firstDayOfWeek: DayOfWeek, locale: Locale) {
+private fun WeekdayHeader(firstDayOfWeek: DayOfWeek) {
     Row(modifier = Modifier.fillMaxWidth()) {
         repeat(7) { offset ->
             Text(
-                text = firstDayOfWeek.plus(offset.toLong()).getDisplayName(TextStyle.NARROW, locale),
+                text = weekdayName(firstDayOfWeek.plus(offset.toLong()), WeekdayName.NARROW),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

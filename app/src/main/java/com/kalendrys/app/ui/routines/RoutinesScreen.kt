@@ -98,15 +98,15 @@ import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
+import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
 import com.kalendrys.app.ui.routines.RoutinesViewModel.UiState
 import com.kalendrys.app.ui.routines.RoutinesViewModel.WeekDay
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.TextStyle
-import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 
 private val RowPadding = 6.dp
@@ -274,7 +274,6 @@ private fun WeekStrip(
     onPreviousWeek: () -> Unit,
     onNextWeek: () -> Unit,
 ) {
-    val locale = Locale.getDefault()
     val byDate = remember(state.week) { state.week.associateBy { it.date } }
     val previousLabel = stringResource(R.string.routine_week_previous)
     val nextLabel = stringResource(R.string.routine_week_next)
@@ -305,7 +304,6 @@ private fun WeekStrip(
                     day = byDate[date],
                     isToday = date == state.today,
                     isSelected = date == state.selectedDate,
-                    locale = locale,
                     onClick = { onSelect(date) },
                     modifier = Modifier.weight(1f),
                 )
@@ -320,7 +318,6 @@ private fun WeekDayCell(
     day: WeekDay?,
     isToday: Boolean,
     isSelected: Boolean,
-    locale: Locale,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -339,7 +336,7 @@ private fun WeekDayCell(
             .padding(vertical = 6.dp),
     ) {
         Text(
-            text = date.dayOfWeek.getDisplayName(TextStyle.SHORT, locale),
+            text = weekdayName(date.dayOfWeek, WeekdayName.SHORT),
             style = MaterialTheme.typography.labelMedium,
             color = colors.onSurfaceVariant,
             modifier = Modifier.clearAndSetSemantics {},
