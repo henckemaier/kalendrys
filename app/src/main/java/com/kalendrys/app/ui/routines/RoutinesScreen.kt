@@ -85,7 +85,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -105,6 +104,7 @@ import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.rememberCurrentMinute
+import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
@@ -677,15 +677,8 @@ private fun TimeLabel(text: String) {
  * linhas da timeline (bloco, intervalo e tarefa) manterem o trilho alinhado em qualquer escala.
  */
 @Composable
-private fun timeColumnWidth(): Dp {
-    val measurer = rememberTextMeasurer(cacheSize = 1)
-    val style = MaterialTheme.typography.labelMedium
-    val density = LocalDensity.current
-    return remember(measurer, style, density) {
-        val measured = measurer.measure("00:00", style, maxLines = 1, softWrap = false).size.width
-        maxOf(TimeColumnWidth, with(density) { measured.toDp() } + TimeColumnEndGap)
-    }
-}
+private fun timeColumnWidth(): Dp =
+    rememberTimeColumnWidth(TimeColumnWidth, MaterialTheme.typography.labelMedium, TimeColumnEndGap)
 
 /**
  * Uma tarefa pontual na trilha. Destaque OPOSTO ao do bloco de rotina (pílula sólida + círculo):

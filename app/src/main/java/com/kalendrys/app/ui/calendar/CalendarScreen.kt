@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -83,6 +84,7 @@ import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.monthYearLabel
+import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
@@ -516,7 +518,9 @@ private fun RoutineEntryContent(entry: RoutineEntry) {
             text = minuteOfDayLabel(entry.startMinute),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(52.dp),
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.width(dayTimeColumnWidth()),
         )
         Text(
             text = routine.title,
@@ -585,7 +589,10 @@ private fun EntryContent(entry: Entry, icon: ImageVector, iconTint: Color) {
             text = entry.time?.format(TIME) ?: stringResource(R.string.calendar_all_day),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(52.dp),
+            // O horário nunca quebra; "Dia todo" segue podendo ocupar duas linhas, como antes.
+            maxLines = if (entry.time != null) 1 else Int.MAX_VALUE,
+            softWrap = entry.time == null,
+            modifier = Modifier.width(dayTimeColumnWidth()),
         )
         Text(
             text = entry.title ?: stringResource(R.string.calendar_deleted_task),
@@ -612,3 +619,11 @@ private fun dayDescription(date: LocalDate, hasCompleted: Boolean, hasReminders:
     }
     return parts.joinToString(", ")
 }
+
+/**
+ * Coluna de horário da lista do dia (rotinas e tarefas): 52dp na fonte normal; com fonte grande cresce
+ * para "00:00" caber numa linha com 8dp até o título (mesma regra da timeline de Rotinas).
+ */
+@Composable
+private fun dayTimeColumnWidth(): Dp =
+    rememberTimeColumnWidth(minWidth = 52.dp, style = MaterialTheme.typography.labelLarge, endGap = 8.dp)
