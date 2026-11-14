@@ -130,7 +130,8 @@ fun ShoppingListScreen(
                         editingItemId = null
                         showItemDialog = true
                     },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    // O ExtendedFAB remove o texto da semântica; quem dá o rótulo acessível é o ícone.
+                    icon = { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.shopping_add_item)) },
                     text = { Text(stringResource(R.string.shopping_add_item)) },
                 )
             }

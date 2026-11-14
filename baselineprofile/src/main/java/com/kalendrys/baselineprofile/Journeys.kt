@@ -94,19 +94,19 @@ fun MacrobenchmarkScope.browseRoutines() {
  */
 fun MacrobenchmarkScope.browseLists() {
     device.findObject(By.text("Listas"))?.click()
-    device.wait(Until.hasObject(By.text("Nova lista")), TIMEOUT_MS)
+    device.wait(Until.hasObject(By.desc("Nova lista")), TIMEOUT_MS)
     if (device.hasObject(By.text(SAMPLE_LIST))) {
         device.findObject(By.text(SAMPLE_LIST))?.click()
     } else {
         // Criar pela aba já abre a lista nova.
-        device.findObject(By.text("Nova lista"))?.click()
+        device.findObject(By.desc("Nova lista"))?.click()
         device.wait(Until.hasObject(By.clazz("android.widget.EditText")), TIMEOUT_MS)
         device.findObject(By.clazz("android.widget.EditText"))?.text = SAMPLE_LIST
         device.findObject(By.text("Salvar"))?.click()
     }
-    device.wait(Until.hasObject(By.text("Adicionar item")), TIMEOUT_MS)
+    device.wait(Until.hasObject(By.desc("Adicionar item")), TIMEOUT_MS)
     device.pressBack()
-    device.wait(Until.hasObject(By.text("Nova lista")), TIMEOUT_MS)
+    device.wait(Until.hasObject(By.desc("Nova lista")), TIMEOUT_MS)
     device.findObject(By.text("Tarefas"))?.click()
     waitForTasksScreen()
 }

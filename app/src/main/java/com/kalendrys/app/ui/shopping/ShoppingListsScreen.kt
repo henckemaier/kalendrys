@@ -88,7 +88,8 @@ fun ShoppingListsScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { creating = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                // O ExtendedFAB remove o texto da semântica; quem dá o rótulo acessível é o ícone.
+                icon = { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.shopping_list_create)) },
                 text = { Text(stringResource(R.string.shopping_list_create)) },
             )
         },
