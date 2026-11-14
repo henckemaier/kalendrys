@@ -184,7 +184,10 @@ fun KalendrysNavHost(
                 enterTransition = { slideIntoContainer(SlideDirection.Start) },
                 popExitTransition = { slideOutOfContainer(SlideDirection.End) },
             ) {
-                RoutineEditorScreen(onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) })
+                RoutineEditorScreen(
+                    onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) },
+                    onOpenShoppingList = openShoppingList,
+                )
             }
             // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
             // pelo hub de rotinas; aqui fica só a rota + a tela (contrato de navegação).
