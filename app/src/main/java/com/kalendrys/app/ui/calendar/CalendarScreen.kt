@@ -170,13 +170,15 @@ fun CalendarScreen(
     }
 
     newTaskEpochDay?.let { epochDay ->
+        val lists by viewModel.lists.collectAsStateWithLifecycle()
         NewTaskSheet(
             initialDate = LocalDate.ofEpochDay(epochDay),
-            onSave = { title, notes, timing, location ->
-                viewModel.addTask(title, notes, timing, location)
+            onSave = { title, notes, timing, location, list ->
+                viewModel.addTask(title, notes, timing, location, list)
                 newTaskEpochDay = null
             },
             onDismiss = { newTaskEpochDay = null },
+            lists = lists,
         )
     }
 }

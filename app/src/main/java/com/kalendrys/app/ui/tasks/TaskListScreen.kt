@@ -83,12 +83,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
 import java.time.LocalTime
@@ -228,12 +230,14 @@ fun TaskListScreen(
     }
 
     if (showNewTask) {
+        val lists by viewModel.lists.collectAsStateWithLifecycle()
         NewTaskSheet(
-            onSave = { title, notes, timing, location ->
-                viewModel.addTask(title, notes, timing, location)
+            onSave = { title, notes, timing, location, list ->
+                viewModel.addTask(title, notes, timing, location, list)
                 showNewTask = false
             },
             onDismiss = { showNewTask = false },
+            lists = lists,
         )
     }
 }
@@ -501,13 +505,14 @@ private fun TaskRow(
                     reminderTime = item.reminderTime,
                     overdue = overdue,
                     today = today,
+                    listProgress = item.listProgress,
                 )
             }
         }
     }
 }
 
-/** Linha de detalhes: data (fora da seção "Hoje"), horário do lembrete, repetição e local. */
+/** Linha de detalhes: data (fora da seção "Hoje"), horário do lembrete, repetição, local e lista (3/8). */
 @Composable
 private fun TaskMeta(
     task: Task,
@@ -515,10 +520,11 @@ private fun TaskMeta(
     reminderTime: LocalTime?,
     overdue: Boolean,
     today: LocalDate,
+    listProgress: ShoppingProgress?,
 ) {
     // Data em que a repetição se apoia (só existe se a tarefa se repete).
     val repeatFrom = TaskSchedule.dueDate(task)?.takeIf { task.repeat != ReminderRepeat.NONE }
-    if (date == null && reminderTime == null && repeatFrom == null && task.location.isBlank()) return
+    if (date == null && reminderTime == null && repeatFrom == null && task.location.isBlank() && listProgress == null) return
     val accent = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     FlowRow(
@@ -536,6 +542,9 @@ private fun TaskMeta(
         }
         if (task.location.isNotBlank()) {
             MetaItem(Icons.Outlined.Place, task.location, muted)
+        }
+        if (listProgress != null) {
+            ShoppingProgressTag(progress = listProgress, color = muted)
         }
     }
 }

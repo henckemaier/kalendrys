@@ -8,11 +8,15 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskFiltering
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskSchedule.Status
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.ui.shopping.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -28,10 +32,21 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
+class TaskViewModel(
+    private val repository: TaskRepository,
+    private val shoppingRepository: ShoppingRepository,
+) : ViewModel() {
 
-    /** Uma tarefa na lista e o dia a mostrar (a data dela ou, se repete, a próxima vez). */
-    data class Item(val task: Task, val date: LocalDate?, val reminderTime: LocalTime?)
+    /**
+     * Uma tarefa na lista e o dia a mostrar (a data dela ou, se repete, a próxima vez).
+     * [listProgress] é o "3/8" da lista anexada; null sem lista, com vínculo órfão ou lista vazia.
+     */
+    data class Item(
+        val task: Task,
+        val date: LocalDate?,
+        val reminderTime: LocalTime?,
+        val listProgress: ShoppingProgress? = null,
+    )
 
     /** Seções que os chips de filtro ligam/desligam. "Concluídas hoje" fica de fora (não é pendente). */
     enum class Filter { OVERDUE, TODAY, UPCOMING, NO_DATE }
@@ -65,7 +80,12 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
 
     /** Agrupamento/ordenação (caro): só recalcula quando os dados mudam, não a cada tecla da busca. */
     private val baseState: Flow<UiState> =
-        combine(repository.tasks, repository.completionsToday, repository.lastCompletions) { tasks, logsToday, last ->
+        combine(
+            repository.tasks,
+            repository.completionsToday,
+            repository.lastCompletions,
+            shoppingRepository.observeProgressByList(),
+        ) { tasks, logsToday, last, progressByList ->
             val zone = ZoneId.systemDefault()
             val today = LocalDate.now(zone)
             val doneTodayIds = logsToday.mapTo(HashSet()) { it.taskId }
@@ -78,7 +98,14 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                 )
             }
             fun items(status: Status, dateOf: (Task) -> LocalDate?) =
-                byStatus[status].orEmpty().map { Item(it, dateOf(it), TaskSchedule.reminderOn(it, dateOf(it) ?: today, zone)) }
+                byStatus[status].orEmpty().map {
+                    Item(
+                        task = it,
+                        date = dateOf(it),
+                        reminderTime = TaskSchedule.reminderOn(it, dateOf(it) ?: today, zone),
+                        listProgress = progressByList.visibleProgressFor(it.shoppingListId),
+                    )
+                }
             UiState(
                 today = today,
                 overdue = items(Status.OVERDUE, TaskSchedule::dueDate).sortedBy { it.date },
@@ -108,9 +135,19 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     private val undoableActions = Channel<UndoableAction>(Channel.BUFFERED)
     val undoable: Flow<UndoableAction> = undoableActions.receiveAsFlow()
 
-    fun addTask(title: String, notes: String, timing: TaskTiming, location: String) {
+    /** Listas para o "Usar lista existente" do painel de nova tarefa. */
+    val lists: StateFlow<List<ShoppingListSummary>> =
+        shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Cria a tarefa, já com a lista de compras escolhida no painel ([list]). "Criar nova" cria a
+     * lista aqui, só ao salvar (ADR-0001, P2).
+     */
+    fun addTask(title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList? = null) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.addTask(title, notes, timing, location) }
+        viewModelScope.launch {
+            repository.addTask(title, notes, timing, location, shoppingListId = list.resolveListId(shoppingRepository))
+        }
     }
 
     fun complete(task: Task) {
@@ -159,7 +196,7 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskViewModel(app.repository)
+                TaskViewModel(app.repository, app.shoppingRepository)
             }
         }
     }

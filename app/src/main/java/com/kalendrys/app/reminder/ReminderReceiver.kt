@@ -22,7 +22,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 app.settingsRepository.setLastSeen(System.currentTimeMillis())
                 // Lê a versão atual da tarefa (título editado, recorrência) e agenda a próxima ocorrência.
                 val task = app.repository.onReminderFired(taskId) ?: return@launch
-                ReminderNotifications.show(context, task)
+                ReminderNotifications.show(context, task, app.shoppingRepository.progressOf(task.shoppingListId))
                 // O "próximo lembrete" do widget de resumo mudou, mesmo sem nada mudar no banco.
                 KalendrysWidgets.updateAll(context)
             } finally {

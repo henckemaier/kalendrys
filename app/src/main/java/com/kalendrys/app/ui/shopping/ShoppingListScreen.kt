@@ -35,7 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +68,12 @@ fun ShoppingListScreen(
     val removedMessage = stringResource(R.string.shopping_list_item_removed)
     val clearedMessage = stringResource(R.string.shopping_list_picked_cleared)
     val undoLabel = stringResource(R.string.undo)
+    val offerActionLabel = stringResource(R.string.shopping_list_offer_complete_action)
+    val taskCompletedMessage = stringResource(R.string.task_completed)
+    // A mensagem da oferta leva o título da tarefa, então é formatada na hora do evento.
+    val res = LocalContext.current.resources
+    // Retorno tátil leve ao marcar (A5 parcial); o próprio sistema respeita a configuração de toque.
+    val haptic = LocalHapticFeedback.current
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.events.collectLatest { event ->
             when (event) {
@@ -83,6 +92,24 @@ fun ShoppingListScreen(
                         duration = SnackbarDuration.Short,
                     )
                     if (result == SnackbarResult.ActionPerformed) viewModel.undoClearPicked(event.itemIds)
+                }
+                // P3: oferta sem forçar; some sozinha se ignorada.
+                is Event.OfferCompleteTask -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = res.getString(R.string.shopping_list_offer_complete, event.taskTitle),
+                        actionLabel = offerActionLabel,
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) viewModel.completeTask(event.taskId)
+                }
+                is Event.TaskCompleted -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = taskCompletedMessage,
+                        actionLabel = undoLabel,
+                        duration = SnackbarDuration.Short,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) viewModel.undoTaskCompletion(event.logId)
                 }
             }
         }
@@ -182,7 +209,10 @@ fun ShoppingListScreen(
                         item = item,
                         index = index,
                         count = state.items.size,
-                        onTogglePicked = { viewModel.togglePicked(item) },
+                        onTogglePicked = {
+                            if (!item.picked) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.togglePicked(item)
+                        },
                         onEdit = {
                             editingItemId = item.id
                             showItemDialog = true
