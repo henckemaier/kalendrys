@@ -363,6 +363,41 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `usuario pos lembrete mantendo a data entre concluir e desfazer e a edicao vence`() = runTest {
+        // Condição "sem lembrete" do desfazer adiantado: a data continua a da conclusão, mas o usuário
+        // pôs um lembrete novo. A edição dele vence e a data/lembrete originais não voltam.
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        val completed = db.taskDao().byId(task.id)!!
+        val newReminder = LocalDate.now().atTime(23, 59).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        repository.updateTask(completed.copy(reminderAt = newReminder))
+
+        repository.undoCompletion(logId)
+
+        val after = db.taskDao().byId(task.id)!!
+        assertEquals(LocalDate.now().toEpochDay(), after.dueDate)
+        assertEquals(newReminder, after.reminderAt)
+        assertEquals(0, repository.earlyCompletionCount())
+    }
+
+    @Test
+    fun `tarefa unica adiantada com lista nao zera e desfazer devolve a data sem mexer na lista`() = runTest {
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Mercado amanhã", timing = tomorrowAtNine(), shoppingListId = listId)
+        val original = db.taskDao().byId(task.id)!!
+
+        val logId = repository.logCompletion(task.id)
+        assertEquals(listOf(true, true), picked(listId))
+
+        repository.undoCompletion(logId)
+        val restored = db.taskDao().byId(task.id)!!
+        assertEquals(original.dueDate, restored.dueDate)
+        assertEquals(original.reminderAt, restored.reminderAt)
+        assertEquals(listId, restored.shoppingListId)
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
     fun `repositorio novo desfaz sem restaurar e sem falhar`() = runTest {
         val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
         val logId = repository.logCompletion(task.id)
