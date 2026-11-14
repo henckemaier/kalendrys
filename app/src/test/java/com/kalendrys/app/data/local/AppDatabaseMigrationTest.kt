@@ -186,6 +186,100 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
+    fun `migra v9 para v10 transforma itens por rotina em listas independentes`() {
+        val name = "kalendrys-migration-v9-v10"
+        helper.createDatabase(name, 9).use { v9 ->
+            // Rotina 2 fora de COMPRAS com itens (hoje oculta), rotina 1 arquivada com itens, rotina 3
+            // sem itens, e itens da rotina 99, que não existe.
+            v9.execSQL(insertRoutine(1, "Mercado", archivedAt = "50"))
+            v9.execSQL(insertRoutine(2, "Feira", archivedAt = "NULL"))
+            v9.execSQL(insertRoutine(3, "Sem lista", archivedAt = "NULL"))
+            v9.execSQL(insertItem(id = 10, routineId = 2, name = "Banana", picked = 1, position = 1, createdAt = 900))
+            v9.execSQL(insertItem(id = 11, routineId = 1, name = "Arroz", picked = 0, position = 0, createdAt = 500))
+            v9.execSQL(insertItem(id = 12, routineId = 99, name = "Órfão", picked = 1, position = 0, createdAt = 800))
+            v9.execSQL(insertItem(id = 13, routineId = 2, name = "Maçã", picked = 0, position = 0, createdAt = 700))
+            v9.execSQL(insertItem(id = 14, routineId = 1, name = "Feijão", picked = 1, position = 1, createdAt = 600))
+        }
+
+        // Manual (a primeira desde a v3); valida o schema resultante contra 10.json.
+        helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+            // Uma lista por routineId, em ordem crescente: 1 → lista 1, 2 → lista 2, 99 → lista 3.
+            val lists = v10.rows("SELECT id, name, createdAt, lastResetKey FROM shopping_list ORDER BY id") {
+                listOf(it.getLong(0), it.getString(1), it.getLong(2), if (it.isNull(3)) null else it.getString(3))
+            }
+            assertEquals(
+                listOf(
+                    listOf(1L, "Mercado", 500L, null),
+                    listOf(2L, "Feira", 700L, null),
+                    listOf(3L, "Lista de compras", 800L, null),
+                ),
+                lists,
+            )
+            // Vínculo preenchido inclusive na arquivada; rotina sem itens não ganha lista vazia.
+            val links = v10.rows("SELECT id, shoppingListId FROM routines ORDER BY id") {
+                it.getLong(0) to (if (it.isNull(1)) null else it.getLong(1))
+            }
+            assertEquals(listOf(1L to 1L, 2L to 2L, 3L to null), links)
+            val tasksColumn = v10.rows("SELECT COUNT(shoppingListId) FROM tasks") { it.getInt(0) }
+            assertEquals(listOf(0), tasksColumn) // a coluna existe e começa vazia
+
+            // Nenhum item se perde; ids, marcações, posições e datas preservados.
+            val items = v10.rows(
+                "SELECT id, listId, name, quantity, priceCents, picked, position, createdAt, pickedBeforeReset FROM shopping_item ORDER BY id",
+            ) { c -> (0..8).map { i -> if (c.isNull(i)) null else c.getString(i) } }
+            assertEquals(
+                listOf(
+                    listOf("10", "2", "Banana", "2", "150", "1", "1", "900", "0"),
+                    listOf("11", "1", "Arroz", "2", "150", "0", "0", "500", "0"),
+                    listOf("12", "3", "Órfão", "2", "150", "1", "0", "800", "0"),
+                    listOf("13", "2", "Maçã", "2", "150", "0", "0", "700", "0"),
+                    listOf("14", "1", "Feijão", "2", "150", "1", "1", "600", "0"),
+                ),
+                items,
+            )
+        }
+    }
+
+    @Test
+    fun `migra v9 sem itens de compras para v10 sem criar listas`() {
+        val name = "kalendrys-migration-v9-v10-empty"
+        helper.createDatabase(name, 9).use { it.execSQL(insertRoutine(1, "Treino", archivedAt = "NULL")) }
+        helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+            assertEquals(listOf(0), v10.rows("SELECT COUNT(*) FROM shopping_list") { it.getInt(0) })
+            assertEquals(listOf<Long?>(null), v10.rows("SELECT shoppingListId FROM routines") { if (it.isNull(0)) null else it.getLong(0) })
+        }
+    }
+
+    @Test
+    fun `cadeia completa v3 ate v10 com dados de compras`() {
+        val name = "kalendrys-migration-v3-v10"
+        helper.createDatabase(name, 3).use { v3 ->
+            v3.execSQL("INSERT INTO tasks (title, notes, createdAt, reminderAt, reminderRepeat) VALUES ('Tarefa', '', 0, NULL, 'NONE')")
+        }
+        // Sobe até a v9 (auto-migrações) e insere itens no formato antigo antes do 9→10.
+        helper.runMigrationsAndValidate(name, 9, true).use { v9 ->
+            v9.execSQL(insertRoutine(4, "Mercado", archivedAt = "NULL"))
+            v9.execSQL(insertItem(id = 1, routineId = 4, name = "Leite", picked = 1, position = 0, createdAt = 10))
+        }
+        helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+            assertEquals(listOf("Tarefa"), v10.rows("SELECT title FROM tasks") { it.getString(0) })
+            assertEquals(listOf(1L), v10.rows("SELECT shoppingListId FROM routines WHERE id = 4") { it.getLong(0) })
+            assertEquals(listOf(1L to true), v10.rows("SELECT listId, picked FROM shopping_item") { it.getLong(0) to (it.getInt(1) == 1) })
+        }
+    }
+
+    private fun insertRoutine(id: Long, title: String, archivedAt: String) =
+        "INSERT INTO routines (id, title, notes, icon, color, startMinute, durationMinutes, daysOfWeek, remind, createdAt, archivedAt, weekInterval) " +
+            "VALUES ($id, '$title', '', 'STAR', 'GREEN', 600, 30, 127, 1, 0, $archivedAt, 1)"
+
+    private fun insertItem(id: Long, routineId: Long, name: String, picked: Int, position: Int, createdAt: Long) =
+        "INSERT INTO shopping_item (id, routineId, name, quantity, priceCents, picked, position, createdAt) " +
+            "VALUES ($id, $routineId, '$name', 2, 150, $picked, $position, $createdAt)"
+
+    private fun <T> SupportSQLiteDatabase.rows(sql: String, read: (android.database.Cursor) -> T): List<T> =
+        query(sql).use { c -> buildList { while (c.moveToNext()) add(read(c)) } }
+
+    @Test
     fun `a auto-migracao v3 para v4 abre e cria as tabelas de rotina`() {
         val name = "kalendrys-migration-v3-v4"
         helper.createDatabase(name, 3).close()

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Listas independentes (ADR-0001, v1.5.0): aba Listas e tela da lista. Arquivo próprio para não
+     disputar o strings.xml com outras frentes. -->
+<resources>
+    <string name="tab_lists">Listas</string>
+
+    <!-- Aba Listas -->
+    <string name="shopping_lists_empty_title">Nenhuma lista ainda</string>
+    <string name="shopping_lists_empty_message">Crie uma lista de compras e use no mercado. Ela também pode ser anexada a uma rotina.</string>
+    <string name="shopping_list_create">Nova lista</string>
+    <string name="shopping_list_rename">Renomear lista</string>
+    <string name="shopping_list_rename_named">Renomear %1$s</string>
+    <string name="shopping_list_delete_named">Excluir %1$s</string>
+    <string name="shopping_list_name_label">Nome da lista</string>
+    <string name="shopping_list_progress">%1$d/%2$d</string>
+    <string name="shopping_list_owner_routine">Rotina %1$s</string>
+    <string name="shopping_list_owner_task">Tarefa %1$s</string>
+    <string name="shopping_list_standalone">Avulsa</string>
+    <string name="shopping_list_delete_title">Excluir lista?</string>
+    <plurals name="shopping_list_delete_message">
+        <item quantity="one">A lista \"%1$s\" e o seu %2$d item serão excluídos.</item>
+        <item quantity="other">A lista \"%1$s\" e os seus %2$d itens serão excluídos.</item>
+    </plurals>
+    <string name="shopping_list_delete_owners">Perdem o vínculo com ela: %1$s.</string>
+
+    <!-- Tela da lista -->
+    <string name="shopping_list_not_found_title">Lista não encontrada</string>
+    <string name="shopping_list_not_found_message">Ela pode ter sido excluída.</string>
+    <string name="shopping_list_more">Mais opções</string>
+    <string name="shopping_list_clear_picked">Desmarcar todos</string>
+    <string name="shopping_list_item_removed">Item removido</string>
+</resources>

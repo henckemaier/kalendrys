@@ -12,16 +12,15 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
-import com.kalendrys.app.domain.ShoppingTotals
 import com.kalendrys.app.ui.tasks.ReminderTime
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -38,6 +37,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -69,58 +69,42 @@ class RoutineEditorViewModel(
          * ou sem categoria → [RoutineCategoryKind.SIMPLE] (via [RoutineCategoryKind.fromKey]).
          */
         val selectedKind: RoutineCategoryKind = RoutineCategoryKind.SIMPLE,
-        /** Itens da lista de compras (só populado quando a rotina já existe e é do tipo COMPRAS). */
-        val shoppingItems: List<ShoppingItem> = emptyList(),
         /** Exercícios (só populado quando a rotina já existe e é do tipo EXERCICIO). */
         val exerciseItems: List<ExerciseItem> = emptyList(),
-        /** Compras como estavam ao abrir o editor (snapshot); null até a 1ª leitura da lista. */
-        val shoppingBaseline: List<ShoppingItem>? = null,
         /** Exercícios como estavam ao abrir o editor (snapshot); null até a 1ª leitura da lista. */
         val exerciseBaseline: List<ExerciseItem>? = null,
-    ) {
         /**
-         * Compras diferem do snapshot de abertura? Compara ignorando [ShoppingItem.picked]: marcar/
-         * desmarcar no carrinho persiste na hora e NÃO conta como "alteração a descartar" (nem arma
-         * o diálogo nem reverte); só add/editar/remover é que conta.
+         * Resumo da lista de compras anexada ao RASCUNHO ([RoutineDraft.shoppingListId]); null sem
+         * lista ou com vínculo órfão (lista inexistente equivale a "sem lista", ADR-0001 4.1).
          */
-        val shoppingItemsChanged: Boolean
-            get() = shoppingBaseline?.let { base ->
-                shoppingItems.map { it.copy(picked = false) } != base.map { it.copy(picked = false) }
-            } ?: false
-
+        val shoppingList: ShoppingListSummary? = null,
+        /** Todas as listas, para o "Usar lista existente" do seletor. */
+        val availableLists: List<ShoppingListSummary> = emptyList(),
+    ) {
         /** Exercícios diferem do snapshot de abertura (add/editar/remover/reordenar)? */
         val exerciseItemsChanged: Boolean
             get() = exerciseBaseline?.let { base -> exerciseItems != base } ?: false
 
-        /** Houve edição de item (compras ou exercícios) desde a abertura do editor. */
-        val itemsChanged: Boolean get() = shoppingItemsChanged || exerciseItemsChanged
-
         val hasChanges: Boolean
             get() = when {
                 draft == null -> false
-                // Agora o descartar/salvar também enxerga as edições de item: o diálogo "Descartar
-                // alterações?" aparece e o Salvar habilita quando só os itens mudaram.
-                routine != null -> draft.differsFrom(routine) || itemsChanged
-                else -> draft != initialDraft || itemsChanged
+                // O vínculo da lista está no rascunho (conta no differsFrom); os itens da lista não
+                // contam (P7). Exercícios seguem com o snapshot.
+                routine != null -> draft.differsFrom(routine) || exerciseItemsChanged
+                else -> draft != initialDraft || exerciseItemsChanged
             }
         val canSave: Boolean get() = draft != null && draft.isValid && (isNew || hasChanges)
 
-        /** Mostra a seção de compras quando a categoria selecionada é COMPRAS. */
-        val isShoppingCategory: Boolean get() = selectedKind == RoutineCategoryKind.COMPRAS
-
         /** Mostra a seção de exercícios quando a categoria selecionada é EXERCICIO. */
         val isExerciseCategory: Boolean get() = selectedKind == RoutineCategoryKind.EXERCICIO
-
-        /** Total da lista, calculado na leitura (soma quantity*priceCents). */
-        val shoppingTotalCents: Long get() = ShoppingTotals.totalCents(shoppingItems)
     }
 
-    /** Itens dos módulos de item (compras/exercícios) + seus snapshots de abertura, num ponto só para o combine do estado. */
+    /** Exercícios + snapshot e a lista anexada + listas disponíveis, num ponto só para o combine do estado. */
     private data class ModuleItems(
-        val shopping: List<ShoppingItem> = emptyList(),
         val exercise: List<ExerciseItem> = emptyList(),
-        val shoppingBaseline: List<ShoppingItem>? = null,
         val exerciseBaseline: List<ExerciseItem>? = null,
+        val shoppingList: ShoppingListSummary? = null,
+        val availableLists: List<ShoppingListSummary> = emptyList(),
     )
 
     sealed interface Event {
@@ -129,41 +113,29 @@ class RoutineEditorViewModel(
 
     private val draft = MutableStateFlow<RoutineDraft?>(null)
     private val initialDraft = MutableStateFlow<RoutineDraft?>(null)
-    // Snapshot dos itens como estavam ao abrir o editor (1ª leitura da lista do módulo ativo); serve
-    // de base para detectar edição e para restaurar no "Descartar alterações?". Null = ainda não lido.
-    private val shoppingBaseline = MutableStateFlow<List<ShoppingItem>?>(null)
+    // Snapshot dos exercícios como estavam ao abrir o editor (1ª leitura da lista); serve de base para
+    // detectar edição e para restaurar no "Descartar alterações?". Null = ainda não lido.
     private val exerciseBaseline = MutableStateFlow<List<ExerciseItem>?>(null)
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
     val events: Flow<Event> = eventChannel.receiveAsFlow()
 
     private val routine: Flow<Routine?> = if (isNew) flowOf(null) else repository.observeRoutine(routineId)
 
-    /** Tipo da categoria selecionada no rascunho (reativo), para gatear a lista de compras. */
+    /** Tipo da categoria selecionada no rascunho (reativo), para gatear a lista de exercícios. */
     private val selectedKind: Flow<RoutineCategoryKind> =
         combine(draft, categoryRepository.categories) { draft, categories -> kindOf(draft, categories) }
             .distinctUntilChanged()
 
-    // Nit de eficiência: só assina shopping_item quando a categoria é COMPRAS; SIMPLE/EXERCICIO não
-    // consultam. flatMapLatest troca a assinatura ao mudar o kind. Rotina nova (sem id real) fica vazia.
+    // Lista anexada ao RASCUNHO, para qualquer categoria e inclusive em rotina nova (P6): segue o
+    // vínculo do draft, não o do banco, para refletir anexar/desvincular antes de salvar.
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val shoppingItems: Flow<List<ShoppingItem>> =
-        if (isNew) {
-            flowOf(emptyList())
-        } else {
-            selectedKind.flatMapLatest { kind ->
-                if (kind == RoutineCategoryKind.COMPRAS) {
-                    // Captura o snapshot na 1ª leitura REAL da lista (dentro do ramo COMPRAS, nunca o
-                    // emptyList() do gate), para a base refletir o estado de abertura, não o vazio inicial.
-                    shoppingRepository.observeItems(routineId)
-                        .onEach { if (shoppingBaseline.value == null) shoppingBaseline.value = it }
-                } else {
-                    flowOf(emptyList())
-                }
-            }
-        }
+    private val shoppingList: Flow<ShoppingListSummary?> =
+        draft.map { it?.shoppingListId }
+            .distinctUntilChanged()
+            .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) }
 
-    // Mesmo gate do shopping: só assina exercise_item quando a categoria é EXERCICIO; os demais kinds
-    // não consultam. flatMapLatest troca a assinatura ao mudar o kind. Rotina nova (sem id) fica vazia.
+    // Só assina exercise_item quando a categoria é EXERCICIO; os demais kinds não consultam.
+    // flatMapLatest troca a assinatura ao mudar o kind. Rotina nova (sem id) fica vazia.
     @OptIn(ExperimentalCoroutinesApi::class)
     private val exerciseItems: Flow<List<ExerciseItem>> =
         if (isNew) {
@@ -179,11 +151,15 @@ class RoutineEditorViewModel(
             }
         }
 
-    // Combina os dois módulos num ponto só para caber no combine de 5 do estado (só um é não-vazio
-    // por vez: o gate por kind garante que compras e exercícios nunca populam ao mesmo tempo).
+    // Combina os módulos num ponto só para caber no combine de 5 do estado.
     private val moduleItems: Flow<ModuleItems> =
-        combine(shoppingItems, exerciseItems, shoppingBaseline, exerciseBaseline) { shopping, exercise, sBase, eBase ->
-            ModuleItems(shopping, exercise, sBase, eBase)
+        combine(
+            exerciseItems,
+            exerciseBaseline,
+            shoppingList,
+            shoppingRepository.observeSummaries(),
+        ) { exercise, eBase, list, lists ->
+            ModuleItems(exercise, eBase, list, lists)
         }
 
     val uiState: StateFlow<UiState> =
@@ -203,10 +179,10 @@ class RoutineEditorViewModel(
                 initialDraft = initial,
                 categories = categories,
                 selectedKind = kindOf(draft, categories),
-                shoppingItems = module.shopping,
                 exerciseItems = module.exercise,
-                shoppingBaseline = module.shoppingBaseline,
                 exerciseBaseline = module.exerciseBaseline,
+                shoppingList = module.shoppingList,
+                availableLists = module.availableLists,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -284,30 +260,17 @@ class RoutineEditorViewModel(
     }
 
     /**
-     * Confirmação do "Descartar alterações?": antes de fechar, desfaz as edições de item (add/editar/
-     * remover/reordenar) que já tinham persistido na sessão, restaurando cada lista ao snapshot de
-     * abertura. Os campos do rascunho já eram descartados ao fechar sem salvar; agora os itens casam
-     * com essa mesma promessa.
+     * Confirmação do "Descartar alterações?": antes de fechar, desfaz as edições de exercício (add/
+     * editar/remover/reordenar) que já tinham persistido na sessão, restaurando o snapshot de
+     * abertura. Os campos do rascunho (inclusive o vínculo da lista de compras) são descartados só
+     * por fechar sem salvar.
      *
-     * Marcar/desmarcar compras no carrinho NUNCA é revertido — nem no caso picked-puro (não arma o
-     * diálogo), nem quando há edição concomitante: ao restaurar as compras, reaplicamos o [picked]
-     * CORRENTE de cada item sobrevivente (casado por id) sobre os demais campos do baseline. Sem
-     * isso, o replace traria o picked COMO ESTAVA NA ABERTURA e os toggles da sessão sumiriam junto
-     * (S1). Item removido na sessão não tem estado corrente → volta com o picked do baseline.
-     * (Exercício não tem picked, então restaura o baseline direto.)
+     * Itens de compras NÃO são revertidos (ADR-0001, P7): são da lista e persistem na hora. Uma
+     * lista criada nesta sessão e descartada continua existindo como lista avulsa.
      */
     fun discardChanges() {
         val state = uiState.value
         viewModelScope.launch {
-            if (state.shoppingItemsChanged) {
-                state.shoppingBaseline?.let { baseline ->
-                    val currentPicked = state.shoppingItems.associate { it.id to it.picked }
-                    val restored = baseline.map { item ->
-                        currentPicked[item.id]?.let { item.copy(picked = it) } ?: item
-                    }
-                    shoppingRepository.replaceItems(routineId, restored)
-                }
-            }
             if (state.exerciseItemsChanged) {
                 state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
             }
@@ -315,25 +278,25 @@ class RoutineEditorViewModel(
         }
     }
 
-    // --- Lista de compras (T30): só vale para uma rotina já salva (routineId real). ---
+    // --- Lista de compras (ADR-0001): o vínculo vive no rascunho; vale para qualquer rotina. ---
 
-    fun addShoppingItem(name: String, quantity: Int, priceCents: Long?) {
-        if (isNew || name.isBlank()) return
-        viewModelScope.launch { shoppingRepository.add(routineId, name, quantity, priceCents) }
-    }
+    /** "Usar lista existente": anexa [listId] ao rascunho (grava só ao salvar). */
+    fun attachShoppingList(listId: Long) = draft.update { it?.copy(shoppingListId = listId) }
 
-    fun updateShoppingItem(item: ShoppingItem, name: String, quantity: Int, priceCents: Long?) {
+    /**
+     * "Criar nova": cria a lista na hora (persistida, avulsa até a rotina ser salva) e a anexa ao
+     * rascunho. Se o editor for descartado, a lista fica na aba Listas como avulsa (P7).
+     */
+    fun createShoppingList(name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { shoppingRepository.update(item, name, quantity, priceCents) }
+        viewModelScope.launch {
+            val listId = shoppingRepository.createList(name)
+            draft.update { it?.copy(shoppingListId = listId) }
+        }
     }
 
-    fun toggleShoppingPicked(item: ShoppingItem) {
-        viewModelScope.launch { shoppingRepository.setPicked(item, !item.picked) }
-    }
-
-    fun removeShoppingItem(item: ShoppingItem) {
-        viewModelScope.launch { shoppingRepository.remove(item) }
-    }
+    /** "Desvincular": tira a lista do rascunho; a lista e os itens continuam na aba Listas. */
+    fun detachShoppingList() = draft.update { it?.copy(shoppingListId = null) }
 
     // --- Lista de exercícios (T34): só vale para uma rotina já salva (routineId real). ---
 
@@ -356,9 +319,12 @@ class RoutineEditorViewModel(
         viewModelScope.launch { exerciseRepository.move(item, up) }
     }
 
-    /** Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. */
+    /**
+     * Substitui o rascunho atual — usado para aplicar um modelo numa rotina nova. O modelo não sabe
+     * de listas, então a lista já anexada ao rascunho é mantida.
+     */
     fun applyDraft(newDraft: RoutineDraft) {
-        draft.value = newDraft
+        draft.update { current -> newDraft.copy(shoppingListId = current?.shoppingListId ?: newDraft.shoppingListId) }
     }
 
     /**
@@ -368,7 +334,8 @@ class RoutineEditorViewModel(
     fun duplicate(copyTitle: String) {
         val existing = uiState.value.routine ?: return
         viewModelScope.launch {
-            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados.
+            // Uma cópia nasce ativa e não-pausada, mesmo que a original já tenha esses estados. Não
+            // leva a lista de compras (ADR-0001 4.3): a cópia começa sem vínculo.
             repository.add(
                 existing.copy(
                     id = NEW_ROUTINE_ID,
@@ -376,6 +343,7 @@ class RoutineEditorViewModel(
                     createdAt = System.currentTimeMillis(),
                     archivedAt = null,
                     pausedAt = null,
+                    shoppingListId = null,
                 ),
             )
             eventChannel.send(Event.Closed)

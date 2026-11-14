@@ -40,6 +40,14 @@ interface TaskDao {
     @Delete
     suspend fun delete(task: Task)
 
+    /** Tarefas com lista anexada (etiqueta de dono na aba Listas e no cartão). */
+    @Query("SELECT id, title, shoppingListId FROM tasks WHERE shoppingListId IS NOT NULL ORDER BY title, id")
+    fun observeShoppingListOwners(): Flow<List<ShoppingListOwnerRow>>
+
+    /** Desvincula as tarefas de uma lista (ao excluí-la); rode dentro de uma transação. */
+    @Query("UPDATE tasks SET shoppingListId = NULL WHERE shoppingListId = :listId")
+    suspend fun clearShoppingList(listId: Long)
+
     /** Apaga todas as tarefas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM tasks")
     suspend fun clear()

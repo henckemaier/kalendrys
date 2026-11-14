@@ -23,6 +23,12 @@ data class RoutineDraft(
     val startEpochDay: Long? = null,
     /** Último dia (epoch day) em que a rotina vale (rotina temporária), ou null para sem fim. */
     val endEpochDay: Long? = null,
+    /**
+     * Lista de compras anexada ([com.kalendrys.app.data.local.entity.ShoppingList.id]), ou null.
+     * Faz parte do rascunho (ADR-0001, P7): grava com "Salvar", volta com "Descartar". Os itens da
+     * lista NÃO são do rascunho; persistem na hora.
+     */
+    val shoppingListId: Long? = null,
 ) {
     val hasDays: Boolean get() = daysOfWeek and RoutineDays.ALL != 0
 
@@ -59,6 +65,7 @@ data class RoutineDraft(
             weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = startEpochDay,
             endEpochDay = endEpochDay,
+            shoppingListId = shoppingListId,
         )
 
     fun toNewRoutine(now: Long = System.currentTimeMillis()): Routine =
@@ -85,6 +92,7 @@ data class RoutineDraft(
             weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = routine.startEpochDay,
             endEpochDay = routine.endEpochDay,
+            shoppingListId = routine.shoppingListId,
         )
     }
 }

@@ -13,8 +13,10 @@ import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import java.io.File
@@ -102,11 +104,21 @@ class BackupManagerTest {
                 ),
             ),
         )
-        // Itens de compras (v8/schema v4): preço nullable, picked e position têm que sobreviver.
+        // Listas (schema v6): uma ligada à rotina 5 e à tarefa 1, com reinício pendente; uma avulsa.
+        sourceDb.shoppingListDao().insertAll(
+            listOf(
+                ShoppingList(id = 50, name = "Mercado", createdAt = 100, lastResetKey = "routine:5:20000"),
+                ShoppingList(id = 51, name = "Farmácia", createdAt = 200),
+            ),
+        )
+        sourceDb.routineDao().update(sourceDb.routineDao().byId(5)!!.copy(shoppingListId = 50))
+        sourceDb.taskDao().update(sourceDb.taskDao().byId(1)!!.copy(shoppingListId = 50))
+        // Itens de compras: preço nullable, picked, position e pickedBeforeReset têm que sobreviver.
         sourceDb.shoppingItemDao().insertAll(
             listOf(
-                ShoppingItem(id = 30, routineId = 5, name = "Leite", quantity = 2, priceCents = 499, position = 0),
-                ShoppingItem(id = 31, routineId = 5, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
+                ShoppingItem(id = 30, listId = 50, name = "Leite", quantity = 2, priceCents = 499, position = 0, pickedBeforeReset = true),
+                ShoppingItem(id = 31, listId = 50, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
+                ShoppingItem(id = 32, listId = 51, name = "Dipirona", position = 0),
             ),
         )
         // Exercícios (v9/schema v5): carga em texto livre (nullable) e descanso em segundos (nullable)
@@ -122,7 +134,8 @@ class BackupManagerTest {
         assertEquals(
             BackupManager.Stats(
                 tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
-                routineCategories = 2, routineOverrides = 2, shoppingItems = 2, exerciseItems = 2,
+                routineCategories = 2, routineOverrides = 2, shoppingItems = 3, exerciseItems = 2,
+                shoppingLists = 2,
             ),
             stats,
         )
@@ -139,8 +152,11 @@ class BackupManagerTest {
         assertEquals(sourceDb.routineCompletionDao().all(), destDb.routineCompletionDao().all())
         assertEquals(sourceDb.routineCategoryDao().all(), destDb.routineCategoryDao().all())
         assertEquals(sourceDb.routineOverrideDao().all(), destDb.routineOverrideDao().all())
+        assertEquals(sourceDb.shoppingListDao().all(), destDb.shoppingListDao().all())
         assertEquals(sourceDb.shoppingItemDao().all(), destDb.shoppingItemDao().all())
         assertEquals(sourceDb.exerciseItemDao().all(), destDb.exerciseItemDao().all())
+        assertEquals(50L, destDb.routineDao().byId(5)!!.shoppingListId)
+        assertEquals(50L, destDb.taskDao().byId(1)!!.shoppingListId)
 
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
@@ -277,6 +293,69 @@ class BackupManagerTest {
         assertEquals("Treino", destDb.routineDao().all().single().title)
         assertEquals(0, stats.exerciseItems)
         assertTrue(destDb.exerciseItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `restaura backup v5 convertendo itens por rotina em listas como a migracao`() = runTest {
+        // JSON no formato v5 escrito à mão: itens com routineId, sem shoppingLists, sem shoppingListId.
+        val routine = { id: Long, title: String, archived: Boolean ->
+            JSONObject()
+                .put("id", id).put("title", title).put("notes", "").put("icon", "").put("color", "")
+                .put("startMinute", 600).put("durationMinutes", 30).put("daysOfWeek", 127).put("remind", true)
+                .put("createdAt", 1).put("archivedAt", if (archived) 5 else JSONObject.NULL)
+        }
+        val item = { id: Long, routineId: Long, name: String, picked: Boolean, createdAt: Long ->
+            JSONObject()
+                .put("id", id).put("routineId", routineId).put("name", name).put("quantity", 2)
+                .put("priceCents", 150).put("picked", picked).put("position", 0).put("createdAt", createdAt)
+        }
+        val root = JSONObject()
+            .put("schemaVersion", 5)
+            .put("tasks", org.json.JSONArray())
+            .put("completionLogs", org.json.JSONArray())
+            .put("routineCompletions", org.json.JSONArray())
+            .put("routines", org.json.JSONArray().put(routine(7, "Feira", false)).put(routine(3, "Mercado", true)))
+            .put(
+                "shoppingItems",
+                org.json.JSONArray()
+                    .put(item(10, 7, "Banana", true, 900))
+                    .put(item(11, 3, "Arroz", false, 500))
+                    .put(item(12, 99, "Órfão", false, 800))
+                    .put(item(13, 7, "Maçã", false, 700)),
+            )
+
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v5")).restore(root.toString())
+
+        // Uma lista por routineId em ordem crescente: 3 → 1, 7 → 2, 99 (inexistente) → 3 avulsa.
+        assertEquals(
+            listOf(
+                ShoppingList(id = 1, name = "Mercado", createdAt = 500),
+                ShoppingList(id = 2, name = "Feira", createdAt = 700),
+                ShoppingList(id = 3, name = LegacyShoppingLists.FALLBACK_NAME, createdAt = 800),
+            ),
+            destDb.shoppingListDao().all(),
+        )
+        assertEquals(3, stats.shoppingLists)
+        assertEquals(1L, destDb.routineDao().byId(3)!!.shoppingListId) // arquivada também mantém o vínculo
+        assertEquals(2L, destDb.routineDao().byId(7)!!.shoppingListId)
+        val items = destDb.shoppingItemDao().all().associateBy { it.id }
+        assertEquals(listOf(10L, 11L, 12L, 13L), items.keys.sorted())
+        assertEquals(2L, items.getValue(10).listId)
+        assertTrue(items.getValue(10).picked)
+        assertEquals(1L, items.getValue(11).listId)
+        assertEquals(3L, items.getValue(12).listId)
+        assertEquals(listOf("Banana", "Maçã"), items.values.filter { it.listId == 2L }.map { it.name })
+    }
+
+    @Test
+    fun `rejeita backup de versao mais nova`() = runTest {
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("src-new")).serialize()
+        val root = JSONObject(json).put("schemaVersion", BackupManager.SCHEMA_VERSION + 1)
+        val error = runCatching {
+            BackupManager(destDb, context.contentResolver, settingsRepo("dest-new")).restore(root.toString())
+        }.exceptionOrNull()
+        assertTrue(error is java.io.IOException)
+        assertEquals(6, BackupManager.SCHEMA_VERSION)
     }
 
     @Test

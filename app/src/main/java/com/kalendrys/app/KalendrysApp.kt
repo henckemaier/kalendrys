@@ -53,6 +53,7 @@ class KalendrysApp : Application() {
             database.routineOverrideDao(),
             RoutineAlarms(this),
             routineNotifications,
+            database.shoppingItemDao(),
         )
     }
 
@@ -60,9 +61,9 @@ class KalendrysApp : Application() {
         RoutineCategoryRepository(database)
     }
 
-    /** Lista de compras das rotinas do tipo COMPRAS (módulo T28/T30). */
+    /** Listas de compras independentes (ADR-0001): aba Listas, rotinas e tarefas. */
     val shoppingRepository: ShoppingRepository by lazy {
-        ShoppingRepository(database.shoppingItemDao())
+        ShoppingRepository(database)
     }
 
     /** Lista de exercícios das rotinas do tipo EXERCICIO (módulo T33/T34). */

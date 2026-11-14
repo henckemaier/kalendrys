@@ -74,6 +74,26 @@ class RoutineDraftTest {
     }
 
     @Test
+    fun `lista de compras vai e volta e conta como alteracao`() {
+        val linked = routine.copy(shoppingListId = 42)
+        val draft = RoutineDraft.from(linked)
+        assertEquals(42L, draft.shoppingListId)
+        assertFalse(draft.differsFrom(linked))
+        assertEquals(linked, draft.applyTo(linked))
+        // Anexar, trocar ou desvincular a lista é alteração do rascunho (P7).
+        assertTrue(RoutineDraft.from(routine).copy(shoppingListId = 42).differsFrom(routine))
+        assertTrue(draft.copy(shoppingListId = 43).differsFrom(linked))
+        assertTrue(draft.copy(shoppingListId = null).differsFrom(linked))
+        assertEquals(null, draft.copy(shoppingListId = null).applyTo(linked).shoppingListId)
+    }
+
+    @Test
+    fun `rotina nova leva a lista do rascunho`() {
+        assertEquals(9L, RoutineDraft(title = "Feira", startMinute = 480, shoppingListId = 9).toNewRoutine().shoppingListId)
+        assertEquals(null, RoutineDraft(title = "Feira", startMinute = 480).toNewRoutine().shoppingListId)
+    }
+
+    @Test
     fun `intervalo de semanas fica preso entre 1 e o maximo ao aplicar`() {
         val base = RoutineDraft.from(routine)
         assertEquals(1, base.copy(weekInterval = 0).applyTo(routine).weekInterval)

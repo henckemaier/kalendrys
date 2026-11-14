@@ -15,6 +15,7 @@ import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
+import com.kalendrys.app.data.local.dao.ShoppingListDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.ExerciseItem
@@ -23,7 +24,9 @@ import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.LegacyShoppingLists
 import java.time.Instant
 import java.time.ZoneId
 
@@ -37,15 +40,17 @@ import java.time.ZoneId
         RoutineOverride::class,
         ShoppingItem::class,
         ExerciseItem::class,
+        ShoppingList::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
     // v4: rotinas (só tabelas novas). v5: data e local das tarefas. v6: recorrência custom
     // (intervalEvery/intervalUnit/byWeekdays em tasks — aditivo com default). v7: fundação de
     // rotinas — colunas novas em routines (categoryId/pausedAt/weekInterval/startEpochDay/
     // endEpochDay) + tabelas routine_category e routine_override. v8: fundação de compras — só a
     // tabela nova shopping_item (lista de compras da rotina). v9: fundação de exercícios — só a
-    // tabela nova exercise_item (lista de exercícios da rotina). Tudo aditivo (sem SQL manual).
+    // tabela nova exercise_item (lista de exercícios da rotina). Até aqui tudo aditivo (sem SQL
+    // manual). v10: listas de compras independentes (ADR-0001) — MIGRATION_9_10 manual, com backfill.
     // O Room confere o SQL gerado contra os arquivos de schemas/.
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
@@ -71,6 +76,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineOverrideDao(): RoutineOverrideDao
 
     abstract fun shoppingItemDao(): ShoppingItemDao
+
+    abstract fun shoppingListDao(): ShoppingListDao
 
     abstract fun exerciseItemDao(): ExerciseItemDao
 
@@ -105,9 +112,78 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v10: a lista de compras vira entidade própria (ADR-0001, 4.2). Os itens deixam de apontar
+         * para a rotina (`routineId`) e passam a apontar para a lista (`listId`); rotinas e tarefas
+         * ganham `shoppingListId`. O backfill usa a MESMA regra do restauro de backup antigo
+         * ([LegacyShoppingLists]): uma lista por rotina com itens, em ordem crescente de routineId.
+         * Ids, marcações, posições e datas dos itens são preservados. Roda na transação do Room.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val titles = mutableMapOf<Long, String>()
+                db.query("SELECT id, title FROM routines").use { c ->
+                    while (c.moveToNext()) titles[c.getLong(0)] = c.getString(1)
+                }
+                val legacy = mutableListOf<LegacyShoppingLists.LegacyItem>()
+                db.query(
+                    "SELECT id, routineId, name, quantity, priceCents, picked, position, createdAt FROM shopping_item",
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        legacy += LegacyShoppingLists.LegacyItem(
+                            id = c.getLong(0),
+                            routineId = c.getLong(1),
+                            name = c.getString(2),
+                            quantity = c.getInt(3),
+                            priceCents = if (c.isNull(4)) null else c.getLong(4),
+                            picked = c.getInt(5) != 0,
+                            position = c.getInt(6),
+                            createdAt = c.getLong(7),
+                        )
+                    }
+                }
+                val converted = LegacyShoppingLists.convert(legacy, titles)
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `shopping_list` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastResetKey` TEXT)",
+                )
+                db.execSQL("ALTER TABLE `routines` ADD COLUMN `shoppingListId` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `shoppingListId` INTEGER DEFAULT NULL")
+                db.execSQL("DROP TABLE `shopping_item`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `shopping_item` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`listId` INTEGER NOT NULL, `name` TEXT NOT NULL, `quantity` INTEGER NOT NULL, " +
+                        "`priceCents` INTEGER, `picked` INTEGER NOT NULL, `position` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, `pickedBeforeReset` INTEGER NOT NULL DEFAULT 0)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shopping_item_listId` ON `shopping_item` (`listId`)")
+
+                for (list in converted.lists) {
+                    db.execSQL(
+                        "INSERT INTO shopping_list (id, name, createdAt, lastResetKey) VALUES (?, ?, ?, NULL)",
+                        arrayOf<Any>(list.id, list.name, list.createdAt),
+                    )
+                }
+                for ((routineId, listId) in converted.routineLinks) {
+                    db.execSQL("UPDATE routines SET shoppingListId = ? WHERE id = ?", arrayOf<Any>(listId, routineId))
+                }
+                for (item in converted.items) {
+                    db.execSQL(
+                        "INSERT INTO shopping_item (id, listId, name, quantity, priceCents, picked, position, createdAt, " +
+                            "pickedBeforeReset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                        arrayOf<Any?>(
+                            item.id, item.listId, item.name, item.quantity, item.priceCents,
+                            if (item.picked) 1 else 0, item.position, item.createdAt,
+                        ),
+                    )
+                }
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "kalendrys.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_9_10)
                 .build()
     }
 }
