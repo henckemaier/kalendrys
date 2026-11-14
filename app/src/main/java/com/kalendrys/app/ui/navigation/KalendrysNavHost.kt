@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Icon
@@ -53,6 +55,13 @@ import com.kalendrys.app.ui.routineexception.RoutineExceptionScreen
 import com.kalendrys.app.ui.routineexception.routineExceptionRoute
 import com.kalendrys.app.ui.routines.RoutinesScreen
 import com.kalendrys.app.ui.settings.SettingsScreen
+import com.kalendrys.app.ui.shopping.NO_TASK_ID
+import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ID_ARG
+import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ROUTE
+import com.kalendrys.app.ui.shopping.SHOPPING_LIST_TASK_ID_ARG
+import com.kalendrys.app.ui.shopping.ShoppingListScreen
+import com.kalendrys.app.ui.shopping.ShoppingListsScreen
+import com.kalendrys.app.ui.shopping.shoppingListRoute
 import com.kalendrys.app.ui.taskdetail.TASK_DETAIL_ROUTE
 import com.kalendrys.app.ui.taskdetail.TASK_ID_ARG
 import com.kalendrys.app.ui.taskdetail.TaskDetailScreen
@@ -69,6 +78,7 @@ enum class AppTab(
     Tasks("tasks", R.string.tab_tasks, Icons.Filled.TaskAlt, Icons.Outlined.TaskAlt),
     Routines("routines", R.string.tab_routines, Icons.Filled.EventRepeat, Icons.Outlined.EventRepeat),
     Calendar("calendar", R.string.tab_calendar, Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
+    Lists("lists", R.string.tab_lists, Icons.Filled.Checklist, Icons.Outlined.Checklist),
 }
 
 @Composable
@@ -85,6 +95,7 @@ fun KalendrysNavHost(
     val openDiagnostics: () -> Unit = { navController.navigate(ALARM_DIAGNOSTICS_ROUTE) { launchSingleTop = true } }
     val openCategories: () -> Unit = { navController.navigate(ROUTINE_CATEGORIES_ROUTE) { launchSingleTop = true } }
     val openRoutine: (Long) -> Unit = { routineId -> navController.navigate(routineEditorRoute(routineId)) }
+    val openShoppingList: (Long) -> Unit = { listId -> navController.navigate(shoppingListRoute(listId)) }
     val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
         navController.navigate(routineExceptionRoute(routineId, epochDay))
     }
@@ -148,6 +159,24 @@ fun KalendrysNavHost(
             }
             composable(AppTab.Calendar.route) {
                 CalendarScreen(onOpenTask = openTask, onOpenRoutine = openRoutine, onOpenSettings = openSettings)
+            }
+            composable(AppTab.Lists.route) {
+                ShoppingListsScreen(onOpenList = openShoppingList, onOpenSettings = openSettings)
+            }
+            // Tela de uso da lista (ADR-0001, 4.5); a barra de abas some por não ser rota de aba.
+            composable(
+                route = SHOPPING_LIST_ROUTE,
+                arguments = listOf(
+                    navArgument(SHOPPING_LIST_ID_ARG) { type = NavType.LongType },
+                    navArgument(SHOPPING_LIST_TASK_ID_ARG) {
+                        type = NavType.LongType
+                        defaultValue = NO_TASK_ID
+                    },
+                ),
+                enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+            ) {
+                ShoppingListScreen(onBack = { navController.popIfCurrent(SHOPPING_LIST_ROUTE) })
             }
             composable(
                 route = ROUTINE_EDITOR_ROUTE,
