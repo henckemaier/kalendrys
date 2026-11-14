@@ -23,17 +23,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
@@ -72,13 +67,6 @@ fun ShoppingListPicker(
     val name = field.text
 
     if (creating) {
-        val focusRequester = remember { FocusRequester() }
-        val keyboard = LocalSoftwareKeyboardController.current
-        // Foco e teclado já abertos, como nos diálogos de nome da aba Listas.
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-            keyboard?.show()
-        }
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.list_picker_new_title)) },
@@ -93,7 +81,7 @@ fun ShoppingListPicker(
                         imeAction = ImeAction.Done,
                     ),
                     keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onCreate(name.trim()) }),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    modifier = Modifier.fillMaxWidth().then(rememberFocusWhenShown()),
                 )
             },
             confirmButton = {

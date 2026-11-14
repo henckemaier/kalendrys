@@ -22,7 +22,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -233,13 +233,6 @@ internal fun ShoppingListNameDialog(
         mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length)))
     }
     val name = field.text
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    // Foco e teclado já abertos ao mostrar o diálogo (Nova lista e Renomear lista).
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -254,7 +247,7 @@ internal fun ShoppingListNameDialog(
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onConfirm(name.trim()) }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                modifier = Modifier.fillMaxWidth().then(rememberFocusWhenShown()),
             )
         },
         confirmButton = {
@@ -281,3 +274,27 @@ internal fun ownersLabel(owners: List<ShoppingListOwner>): String =
 // Mesmo teto do editor de rotina: impede estourar o Long de ShoppingTotals.totalCents.
 private const val MAX_PRICE_DIGITS = 12
 private const val MAX_LIST_NAME_CHARS = 60
+
+/**
+ * Foco e teclado no campo assim que ele for posicionado na janela do diálogo (Nova lista, Renomear
+ * lista e o "Criar nova" do seletor). Não usa `LaunchedEffect`: o `AlertDialog` compõe numa janela
+ * própria e, na recriação (rotação), o efeito rodava antes de o campo estar anexado, e o
+ * `requestFocus` estourava "FocusRequester is not initialized". No `onGloballyPositioned` o
+ * `focusRequester` já está ligado ao campo. Pede uma vez por composição: após girar, o diálogo
+ * recriado volta com foco e teclado.
+ */
+@Composable
+internal fun rememberFocusWhenShown(): Modifier {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var requested by remember { mutableStateOf(false) }
+    return Modifier
+        .focusRequester(focusRequester)
+        .onGloballyPositioned {
+            if (!requested) {
+                requested = true
+                focusRequester.requestFocus()
+                keyboard?.show()
+            }
+        }
+}
