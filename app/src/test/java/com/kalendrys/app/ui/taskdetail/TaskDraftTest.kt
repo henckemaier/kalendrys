@@ -82,4 +82,25 @@ class TaskDraftTest {
             updated,
         )
     }
+
+    @Test
+    fun `lista de compras vai e volta e conta como alteracao`() {
+        val linked = task.copy(shoppingListId = 42)
+        val draft = TaskDraft.from(linked, zone)
+        assertEquals(42L, draft.shoppingListId)
+        assertFalse(draft.differsFrom(linked, zone))
+        assertEquals(linked, draft.applyTo(linked, zone))
+        // Anexar, trocar ou desvincular a lista é alteração do rascunho (P7) e pode ser salvo.
+        assertTrue(TaskDraft.from(task, zone).copy(shoppingListId = 42).canSaveOver(task, zone))
+        assertTrue(draft.copy(shoppingListId = 43).differsFrom(linked, zone))
+        assertTrue(draft.copy(shoppingListId = null).canSaveOver(linked, zone))
+        assertNull(draft.copy(shoppingListId = null).applyTo(linked, zone).shoppingListId)
+    }
+
+    @Test
+    fun `lista nao mexe no lembrete`() {
+        val draft = TaskDraft.from(task, zone).copy(shoppingListId = 42)
+        assertTrue(draft.keepsReminderOf(task, zone))
+        assertEquals(task.reminderAt, draft.applyTo(task, zone).reminderAt)
+    }
 }

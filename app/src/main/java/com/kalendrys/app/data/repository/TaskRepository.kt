@@ -57,9 +57,11 @@ class TaskRepository(
         notes: String = "",
         timing: TaskTiming = TaskTiming(date = null),
         location: String = "",
+        /** Lista de compras anexada já na criação (ADR-0001, P2), ou null. */
+        shoppingListId: Long? = null,
     ): Task {
         val task = timing.applyTo(
-            Task(title = title.trim(), notes = notes.trim(), location = location.trim()),
+            Task(title = title.trim(), notes = notes.trim(), location = location.trim(), shoppingListId = shoppingListId),
             ZoneId.systemDefault(),
         )
         val saved = task.copy(id = taskDao.insert(task))

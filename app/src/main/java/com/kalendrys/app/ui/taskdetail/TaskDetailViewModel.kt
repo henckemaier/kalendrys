@@ -11,6 +11,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskSchedule
@@ -18,14 +20,19 @@ import com.kalendrys.app.domain.TaskTiming
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -34,6 +41,7 @@ import kotlinx.coroutines.launch
 class TaskDetailViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: TaskRepository,
+    private val shoppingRepository: ShoppingRepository,
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
@@ -50,6 +58,13 @@ class TaskDetailViewModel(
          */
         val doneAt: Long? = null,
         val zone: ZoneId = ZoneId.systemDefault(),
+        /**
+         * Resumo da lista de compras anexada ao RASCUNHO ([TaskDraft.shoppingListId]); null sem
+         * lista ou com vínculo órfão (lista inexistente equivale a "sem lista", ADR-0001 4.1).
+         */
+        val shoppingList: ShoppingListSummary? = null,
+        /** Todas as listas, para o "Usar lista existente" do seletor. */
+        val availableLists: List<ShoppingListSummary> = emptyList(),
     ) {
         val repeats: Boolean get() = task != null && task.repeat != ReminderRepeat.NONE
         val hasChanges: Boolean get() = task != null && draft != null && draft.differsFrom(task, zone)
@@ -66,8 +81,24 @@ class TaskDetailViewModel(
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
     val events: Flow<Event> = eventChannel.receiveAsFlow()
 
+    // Lista anexada ao RASCUNHO: segue o vínculo do draft, não o do banco, para refletir anexar/
+    // desvincular antes de salvar.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val shoppingList: Flow<ShoppingListSummary?> =
+        draft.map { it?.shoppingListId }
+            .distinctUntilChanged()
+            .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) }
+
+    private val lists: Flow<Pair<ShoppingListSummary?, List<ShoppingListSummary>>> =
+        combine(shoppingList, shoppingRepository.observeSummaries()) { linked, all -> linked to all }
+
     val uiState: StateFlow<UiState> =
-        combine(repository.observeTask(taskId), repository.observeCompletions(taskId), draft) { task, logs, draft ->
+        combine(
+            repository.observeTask(taskId),
+            repository.observeCompletions(taskId),
+            draft,
+            lists,
+        ) { task, logs, draft, (linked, available) ->
             val today = LocalDate.now(zone)
             val latest = logs.firstOrNull()
             val doneAt = when {
@@ -85,6 +116,8 @@ class TaskDetailViewModel(
                 history = logs,
                 doneAt = doneAt,
                 zone = zone,
+                shoppingList = linked,
+                availableLists = available,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
@@ -102,6 +135,26 @@ class TaskDetailViewModel(
     fun updateTiming(timing: TaskTiming) = draft.update { it?.copy(timing = timing) }
 
     fun updateLocation(location: String) = draft.update { it?.copy(location = location) }
+
+    // --- Lista de compras (ADR-0001): o vínculo vive no rascunho, igual ao editor de rotina. ---
+
+    /** "Usar lista existente": anexa [listId] ao rascunho (grava só ao salvar). */
+    fun attachShoppingList(listId: Long) = draft.update { it?.copy(shoppingListId = listId) }
+
+    /**
+     * "Criar nova": cria a lista na hora (persistida, avulsa até a tarefa ser salva) e a anexa ao
+     * rascunho. Se as alterações forem descartadas, a lista fica na aba Listas como avulsa (P7).
+     */
+    fun createShoppingList(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val listId = shoppingRepository.createList(name)
+            draft.update { it?.copy(shoppingListId = listId) }
+        }
+    }
+
+    /** "Desvincular": tira a lista do rascunho; a lista e os itens continuam na aba Listas. */
+    fun detachShoppingList() = draft.update { it?.copy(shoppingListId = null) }
 
     fun save() {
         val task = uiState.value.task ?: return
@@ -138,7 +191,7 @@ class TaskDetailViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskDetailViewModel(createSavedStateHandle(), app.repository)
+                TaskDetailViewModel(createSavedStateHandle(), app.repository, app.shoppingRepository)
             }
         }
     }

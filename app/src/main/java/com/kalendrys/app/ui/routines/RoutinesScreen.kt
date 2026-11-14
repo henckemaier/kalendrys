@@ -97,6 +97,7 @@ import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
@@ -110,6 +111,7 @@ import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
 import com.kalendrys.app.ui.routines.RoutinesViewModel.UiState
 import com.kalendrys.app.ui.routines.RoutinesViewModel.WeekDay
+import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.flow.collectLatest
@@ -425,6 +427,7 @@ private fun Timeline(
                 ) { dayTask ->
                     DayTaskRow(
                         dayTask = dayTask,
+                        listProgress = state.progressFor(dayTask.task.shoppingListId),
                         canComplete = state.canComplete,
                         onOpen = { onOpenTask(dayTask.task.id) },
                         onToggle = { onToggleTask(dayTask.task, dayTask.done) },
@@ -456,6 +459,7 @@ private fun Timeline(
             when (item) {
                 is DayTimeline.Block -> BlockRow(
                     block = item,
+                    listProgress = state.progressFor(item.routine.shoppingListId),
                     inProgress = state.isShowingToday && nowMinute >= item.startMinute && nowMinute < item.endMinute,
                     canComplete = state.canComplete,
                     // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar.
@@ -471,6 +475,7 @@ private fun Timeline(
                 is DayTimeline.Gap -> GapRow(item)
                 is DayTimeline.TaskItem -> TaskRow(
                     item = item,
+                    listProgress = state.progressFor(item.task.shoppingListId),
                     canComplete = state.canComplete,
                     onOpen = { onOpenTask(item.task.id) },
                     onToggle = { onToggleTask(item.task, item.done) },
@@ -486,6 +491,7 @@ private fun pillHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).coer
 @Composable
 private fun BlockRow(
     block: DayTimeline.Block,
+    listProgress: ShoppingProgress?,
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
@@ -578,6 +584,9 @@ private fun BlockRow(
                             .padding(start = 4.dp)
                             .size(14.dp),
                     )
+                }
+                if (listProgress != null) {
+                    ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))
                 }
             }
             Text(
@@ -687,6 +696,7 @@ private fun timeColumnWidth(): Dp =
 @Composable
 private fun TaskRow(
     item: DayTimeline.TaskItem,
+    listProgress: ShoppingProgress?,
     canComplete: Boolean,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
@@ -723,7 +733,8 @@ private fun TaskRow(
         ) {
             Diamond(filled = item.done, color = accent)
         }
-        Box(
+        Column(
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier
                 .weight(1f)
                 .padding(vertical = RowPadding)
@@ -738,6 +749,9 @@ private fun TaskRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (listProgress != null) {
+                ShoppingProgressTag(progress = listProgress)
+            }
         }
         TaskCheck(done = item.done, title = task.title, accent = accent, canComplete = canComplete, onToggle = onToggle)
     }
@@ -777,6 +791,7 @@ private fun DayTasksHeader(
 @Composable
 private fun DayTaskRow(
     dayTask: DayTask,
+    listProgress: ShoppingProgress?,
     canComplete: Boolean,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
@@ -803,6 +818,9 @@ private fun DayTaskRow(
                 .weight(1f)
                 .padding(start = 12.dp),
         )
+        if (listProgress != null) {
+            ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))
+        }
         TaskCheck(done = dayTask.done, title = task.title, accent = accent, canComplete = canComplete, onToggle = onToggle)
     }
 }

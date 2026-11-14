@@ -15,14 +15,17 @@ import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineSchedule
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.ui.components.firstDayOfWeek
+import com.kalendrys.app.ui.shopping.visibleProgressFor
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -47,6 +50,7 @@ class RoutinesViewModel(
     private val taskRepository: TaskRepository,
     private val categoryRepository: RoutineCategoryRepository,
     private val firstDayOfWeek: DayOfWeek,
+    private val shoppingRepository: ShoppingRepository,
 ) : ViewModel() {
 
     /** Um ponto na faixa da semana: a cor do bloco e se ele foi feito. */
@@ -71,8 +75,13 @@ class RoutinesViewModel(
         val categories: List<RoutineCategory> = emptyList(),
         /** Categoria do filtro ativo, ou null para "todas". */
         val selectedCategoryId: Long? = null,
+        /** Progresso de cada lista de compras (listId → 3/8), para blocos e tarefas da trilha (P8). */
+        val listProgress: Map<Long, ShoppingProgress> = emptyMap(),
     ) {
         val isShowingToday: Boolean get() = selectedDate == today
+
+        /** "3/8" da lista do dono; null sem lista, com vínculo órfão ou lista vazia. */
+        fun progressFor(listId: Long?): ShoppingProgress? = listProgress.visibleProgressFor(listId)
 
         /** Dias futuros ainda não podem ser marcados como feitos. */
         val canComplete: Boolean get() = !selectedDate.isAfter(today)
@@ -101,7 +110,7 @@ class RoutinesViewModel(
             ) { routineLogs, taskCompletions -> WeekLogs(start, routineLogs.groupLogs(), taskCompletions) }
         }
 
-    val uiState: StateFlow<UiState> =
+    private val dayState: Flow<UiState> =
         combine(
             combine(
                 repository.routines,
@@ -153,7 +162,13 @@ class RoutinesViewModel(
                 categories = categories,
                 selectedCategoryId = category,
             )
-        }.filterNotNull().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+        }.filterNotNull()
+
+    // O progresso das listas entra por cima do retrato do dia: marcar um item não refaz a trilha.
+    val uiState: StateFlow<UiState> =
+        combine(dayState, shoppingRepository.observeProgressByList()) { day, progress ->
+            day.copy(listProgress = progress)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     private val completedEvents = Channel<Completed>(Channel.BUFFERED)
     val completed: Flow<Completed> = completedEvents.receiveAsFlow()
@@ -261,7 +276,13 @@ class RoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutinesViewModel(app.routineRepository, app.repository, app.routineCategoryRepository, firstDayOfWeek())
+                RoutinesViewModel(
+                    app.routineRepository,
+                    app.repository,
+                    app.routineCategoryRepository,
+                    firstDayOfWeek(),
+                    app.shoppingRepository,
+                )
             }
         }
     }
