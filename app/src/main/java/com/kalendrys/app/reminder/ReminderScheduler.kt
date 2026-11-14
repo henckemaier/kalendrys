@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRecurrence
 import java.time.ZoneId
@@ -34,6 +35,15 @@ open class ReminderScheduler(private val context: Context) {
 
     open fun cancel(taskId: Long) {
         alarmManager.cancel(pendingIntent(taskId))
+    }
+
+    /**
+     * Tira da tela a notificação de lembrete JÁ EXIBIDA da tarefa (mesmo id do
+     * [ReminderNotifications.show]), sem mexer no alarme: a próxima ocorrência de uma tarefa
+     * repetida continua agendada. Sem notificação exibida, não faz nada.
+     */
+    open fun dismissNotification(taskId: Long) {
+        NotificationManagerCompat.from(context).cancel(taskId.toInt())
     }
 
     open fun rescheduleAll(tasks: List<Task>) {

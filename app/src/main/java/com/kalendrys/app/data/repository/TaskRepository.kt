@@ -115,8 +115,10 @@ class TaskRepository(
         if (!isFinished(task)) scheduler.schedule(task)
     }
 
+    /** Exclui a tarefa: cancela o alarme e tira da tela o lembrete já exibido dela. */
     suspend fun deleteTask(task: Task) {
         scheduler.cancel(task.id)
+        scheduler.dismissNotification(task.id)
         taskDao.delete(task)
     }
 
@@ -139,8 +141,13 @@ class TaskRepository(
      * reversível pelo [undoCompletion]. Ordem: grava o log e depois reinicia com o id dele (uma falha
      * entre os dois deixa a conclusão sem reinício, o que é inofensivo). Tarefa única mantém as
      * marcações. Mora aqui, e não na tela, para valer também no widget e na notificação.
+     *
+     * Por qualquer caminho (tela, lista de tarefas, oferta da lista, widget, ação da notificação), a
+     * notificação de lembrete já exibida da tarefa some. O alarme da próxima ocorrência de uma
+     * tarefa repetida não é tocado.
      */
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
+        scheduler.dismissNotification(taskId)
         val task = taskDao.byId(taskId)
         if (task != null && task.repeat == ReminderRepeat.NONE) {
             scheduler.cancel(taskId)
@@ -161,6 +168,7 @@ class TaskRepository(
     /**
      * Desfaz uma conclusão; a tarefa volta a ficar pendente e o lembrete, se ainda vale, volta. As
      * marcações que essa conclusão tinha zerado voltam (se ainda for o último reinício da lista).
+     * Só reagenda o alarme: a notificação que já tinha sido exibida NÃO é recriada.
      */
     suspend fun undoCompletion(logId: Long) {
         val log = completionLogDao.byId(logId) ?: return

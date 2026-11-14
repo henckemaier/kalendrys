@@ -42,6 +42,7 @@ class ShoppingListViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: ShoppingRepository
     private lateinit var taskRepository: TaskRepository
+    private lateinit var scheduler: FakeReminderScheduler
 
     @Before
     fun setup() {
@@ -50,7 +51,8 @@ class ShoppingListViewModelTest {
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
         repository = ShoppingRepository(db)
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        scheduler = FakeReminderScheduler(context)
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
     @After
@@ -341,6 +343,8 @@ class ShoppingListViewModelTest {
             vm.completeTask(offer.taskId)
             val completed = awaitItem() as ShoppingListViewModel.Event.TaskCompleted
             assertEquals(listOf(completed.logId), db.completionLogDao().observeForTask(taskId).first().map { it.id })
+            // Concluir pela oferta tira da tela o lembrete já exibido dessa tarefa.
+            assertEquals(listOf(taskId), scheduler.dismissed)
 
             vm.undoTaskCompletion(completed.logId)
         }
@@ -348,6 +352,16 @@ class ShoppingListViewModelTest {
         assertTrue(db.completionLogDao().observeForTask(taskId).first { it.isEmpty() }.isEmpty())
         // Tarefa única: concluir não reinicia as marcações (P4).
         assertTrue(repository.observeItems(listId).first().all { it.picked })
+    }
+
+    @Test
+    fun `abrir a lista pela tarefa nao dispensa o lembrete`() = runTest {
+        val listId = listMissingOne("Arroz")
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+
+        val vm = viewModel(listId, taskId)
+        vm.uiState.first { it.items.isNotEmpty() }
+        assertTrue("só abrir a lista (ação Abrir lista) mantém a notificação", scheduler.dismissed.isEmpty())
     }
 
     @Test

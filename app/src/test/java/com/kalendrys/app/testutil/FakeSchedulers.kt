@@ -21,6 +21,7 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
 
     val scheduled = mutableListOf<Scheduled>()
     val cancelled = mutableListOf<Long>()
+    val dismissed = mutableListOf<Long>()
     val rescheduled = mutableListOf<List<Task>>()
 
     override fun schedule(task: Task, after: Long) {
@@ -31,6 +32,10 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
         cancelled += taskId
     }
 
+    override fun dismissNotification(taskId: Long) {
+        dismissed += taskId
+    }
+
     override fun rescheduleAll(tasks: List<Task>) {
         rescheduled += tasks
     }
@@ -38,6 +43,7 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
     fun reset() {
         scheduled.clear()
         cancelled.clear()
+        dismissed.clear()
         rescheduled.clear()
     }
 }

@@ -8,6 +8,7 @@ import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import java.time.LocalDate
 import java.time.LocalTime
@@ -238,5 +239,66 @@ class TaskRepositoryTest {
             ),
             linked,
         )
+    }
+
+    // --- Lembrete exibido some ao concluir ou excluir (v1.6.0, decisão do usuário) ---
+    // Todos os caminhos de conclusão (detalhe, lista de tarefas, timeline, oferta da lista, widget e a
+    // ação Concluir da notificação) passam por logCompletion; toda exclusão passa por deleteTask.
+
+    @Test
+    fun `concluir tarefa unica dispensa a notificacao e cancela o alarme`() = runTest {
+        val task = repository.addTask("Única", timing = todayTiming())
+        scheduler.reset()
+
+        repository.logCompletion(task.id)
+
+        assertEquals(listOf(task.id), scheduler.dismissed)
+        assertEquals(listOf(task.id), scheduler.cancelled)
+    }
+
+    @Test
+    fun `concluir tarefa repetida dispensa a notificacao e mantem o proximo agendamento`() = runTest {
+        val task = repository.addTask("Diária", timing = todayTiming(ReminderRepeat.DAILY))
+        scheduler.reset()
+
+        repository.logCompletion(task.id)
+
+        assertEquals(listOf(task.id), scheduler.dismissed)
+        assertTrue("o alarme da próxima ocorrência não é cancelado", scheduler.cancelled.isEmpty())
+    }
+
+    @Test
+    fun `excluir tarefa dispensa a notificacao`() = runTest {
+        val task = repository.addTask("Excluir", timing = todayTiming())
+        scheduler.reset()
+
+        repository.deleteTask(task)
+
+        assertEquals(listOf(task.id), scheduler.dismissed)
+        assertEquals(listOf(task.id), scheduler.cancelled)
+    }
+
+    @Test
+    fun `desfazer conclusao ou exclusao reagenda sem reexibir`() = runTest {
+        val task = repository.addTask("Desfazer", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
+        val logId = repository.logCompletion(task.id)
+        scheduler.reset()
+
+        repository.undoCompletion(logId)
+        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+        assertTrue("desfazer não mexe em notificação", scheduler.dismissed.isEmpty())
+
+        val current = db.taskDao().byId(task.id)!!
+        repository.deleteTask(current)
+        scheduler.reset()
+        repository.restoreTask(current)
+        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+        assertTrue(scheduler.dismissed.isEmpty())
+    }
+
+    @Test
+    fun `dispensar sem notificacao exibida nao falha`() {
+        // Scheduler REAL: cancelar uma notificação que não existe é no-op.
+        ReminderScheduler(ApplicationProvider.getApplicationContext()).dismissNotification(9_999)
     }
 }
