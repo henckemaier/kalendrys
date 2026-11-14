@@ -2,7 +2,6 @@
 
 package com.kalendrys.app.ui.tasks
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,11 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -48,29 +44,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.TimePickerDialog
-import com.kalendrys.app.ui.components.firstDayOfWeek
+import com.kalendrys.app.ui.components.WeekdayToggleRow
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.util.Locale
 
 /**
  * Data, repetição e lembrete da tarefa, em chips: a data abre o calendário, o lembrete abre o
@@ -264,8 +255,6 @@ private fun CustomRecurrenceConfig(
     onChange: (TaskTiming) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val locale = Locale.getDefault()
-    val firstDay = firstDayOfWeek(locale)
     val byWeekdayMode = timing.byWeekdays != 0
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -299,42 +288,19 @@ private fun CustomRecurrenceConfig(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            for (offset in 0L until 7L) {
-                val day = firstDay.plus(offset)
-                val selected = RoutineDays.contains(timing.byWeekdays, day)
-                val colors = MaterialTheme.colorScheme
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(if (selected) colors.primary else colors.surfaceContainerHigh)
-                        .toggleable(
-                            value = selected,
-                            role = Role.Checkbox,
-                            onValueChange = {
-                                val mask = RoutineDays.toggle(timing.byWeekdays, day)
-                                // Sem nenhum dia marcado, garante uma unidade para o modo intervalo.
-                                onChange(
-                                    timing.copy(
-                                        byWeekdays = mask,
-                                        intervalUnit = if (mask == 0) timing.intervalUnit ?: RecurrenceUnit.DAYS else timing.intervalUnit,
-                                    ),
-                                )
-                            },
-                        )
-                        .semantics { contentDescription = day.getDisplayName(TextStyle.FULL, locale) },
-                ) {
-                    Text(
-                        text = day.getDisplayName(TextStyle.NARROW, locale),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) colors.onPrimary else colors.onSurface,
-                        modifier = Modifier.clearAndSetSemantics {},
-                    )
-                }
-            }
-        }
+        WeekdayToggleRow(
+            isSelected = { RoutineDays.contains(timing.byWeekdays, it) },
+            onToggle = { day ->
+                val mask = RoutineDays.toggle(timing.byWeekdays, day)
+                // Sem nenhum dia marcado, garante uma unidade para o modo intervalo.
+                onChange(
+                    timing.copy(
+                        byWeekdays = mask,
+                        intervalUnit = if (mask == 0) timing.intervalUnit ?: RecurrenceUnit.DAYS else timing.intervalUnit,
+                    ),
+                )
+            },
+        )
     }
 }
 
@@ -376,8 +342,8 @@ private fun TaskDatePickerDialog(
     }
 }
 
-private val SHORT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, dd/MM")
-private val FULL_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+private val SHORT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, dd/MM", AppLocale.LOCALE)
+private val FULL_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", AppLocale.LOCALE)
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /** "Hoje", "Amanhã", "Ontem", "qua., 30/10" ou, em outro ano, "30/10/2027". */

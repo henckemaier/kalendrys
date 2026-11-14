@@ -4,7 +4,6 @@ package com.kalendrys.app.ui.shopping
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -47,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.MoneyFormat
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.SettingsButton
 import com.kalendrys.app.ui.components.groupedItemShape
@@ -104,7 +104,7 @@ fun ShoppingListsScreen(
             )
             else -> LazyColumn(
                 modifier = Modifier.padding(innerPadding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                contentPadding = fabListContentPadding(horizontal = 16.dp, top = 4.dp),
             ) {
                 itemsIndexed(state.lists, key = { _, it -> it.id }) { index, summary ->
                     ShoppingListRow(

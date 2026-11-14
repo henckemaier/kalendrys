@@ -1,8 +1,10 @@
 package com.kalendrys.app
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.reminder.MissedReminderRecovery
 import com.kalendrys.app.ui.navigation.KalendrysNavHost
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -26,6 +29,17 @@ class MainActivity : ComponentActivity() {
 
     /** Pedido de widget/notificação ainda não atendido pela navegação. */
     private var launchRequest by mutableStateOf<LaunchRequest?>(null)
+
+    /**
+     * O app é só pt-BR ([AppLocale]): a configuração da Activity recebe o idioma do app, para os
+     * componentes que leem o idioma da configuração (DatePicker do Material 3, `stringResource`) saírem
+     * em português mesmo com o aparelho em outro idioma. Não usa `Locale.setDefault` (global).
+     * O resto da configuração (tema escuro, escala de fonte, orientação) vem intacto do sistema.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        val config = Configuration(newBase.resources.configuration).apply { setLocale(AppLocale.LOCALE) }
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

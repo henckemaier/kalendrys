@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import com.kalendrys.app.testutil.ViewModelTestDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,6 +35,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ShoppingListsViewModelTest {
 
+    private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
     private lateinit var repository: ShoppingRepository
 
@@ -41,15 +43,14 @@ class ShoppingListsViewModelTest {
     fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val context = ApplicationProvider.getApplicationContext<Context>()
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
+        testDb = ViewModelTestDatabase(context)
+        db = testDb.db
         repository = ShoppingRepository(db)
     }
 
     @After
     fun tearDown() {
-        db.close()
+        testDb.close() // cancela os ViewModels e drena o Room antes de fechar e do resetMain
         Dispatchers.resetMain()
     }
 
@@ -63,7 +64,7 @@ class ShoppingListsViewModelTest {
 
     @Test
     fun `sem listas carrega vazio`() = runTest {
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
             assertTrue(awaitUntil { it.isLoaded }.lists.isEmpty())
         }
@@ -78,7 +79,7 @@ class ShoppingListsViewModelTest {
         repository.setPicked(repository.observeItems(mercado).first().first(), true)
         db.routineDao().insert(Routine(title = "Compras do sábado", startMinute = 540, shoppingListId = mercado))
 
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
             val state = awaitUntil { s -> s.lists.size == 2 && s.lists.first().owners.isNotEmpty() }
             val first = state.lists.first { it.id == mercado }
@@ -95,7 +96,7 @@ class ShoppingListsViewModelTest {
 
     @Test
     fun `criar emite Created com o id da lista nova`() = runTest {
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.events.test {
             vm.create("  Feira  ")
             val event = awaitItem() as ShoppingListsViewModel.Event.Created
@@ -105,7 +106,7 @@ class ShoppingListsViewModelTest {
 
     @Test
     fun `criar com nome em branco nao cria`() = runTest {
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.events.test {
             vm.create("   ")
             expectNoEvents()
@@ -116,7 +117,7 @@ class ShoppingListsViewModelTest {
     @Test
     fun `renomear troca o nome`() = runTest {
         val listId = repository.createList("Mercado")
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
             awaitUntil { it.lists.isNotEmpty() }
             vm.rename(listId, "")
@@ -132,7 +133,7 @@ class ShoppingListsViewModelTest {
         val routineId = db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = listId))
         val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
 
-        val vm = ShoppingListsViewModel(repository)
+        val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
             awaitUntil { s -> s.lists.singleOrNull()?.owners?.size == 2 }
             vm.delete(listId)

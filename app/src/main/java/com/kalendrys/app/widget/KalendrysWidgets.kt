@@ -6,6 +6,7 @@ import androidx.glance.appwidget.updateAll
 import androidx.glance.material3.ColorProviders
 import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.ui.theme.DarkColors
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -31,7 +32,7 @@ object KalendrysWidgets {
     }
 
     private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    private val WEEKDAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, HH:mm")
+    private val WEEKDAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, HH:mm", AppLocale.LOCALE)
 
     /** "18:05" hoje, "Amanhã, 09:00", "qua., 09:00" nos demais dias. */
     fun reminderMoment(context: Context, at: LocalDateTime, today: LocalDate): String = when (at.toLocalDate()) {

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.ui.components.TimePickerDialog
 import java.time.LocalDate
@@ -221,6 +222,6 @@ private fun ActionRow(
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L
-private val fullDateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL)
+private val fullDateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(AppLocale.LOCALE)
 
 private fun formatFullDate(date: LocalDate): String = date.format(fullDateFormatter)
