@@ -18,12 +18,15 @@ class BaselineProfileGenerator {
 
     @Test
     fun generate() = rule.collect(packageName = PACKAGE_NAME, includeInStartupProfile = true) {
+        // O diálogo de permissão de notificação cobre o app e trava as jornadas (Android 13+).
+        device.executeShellCommand("pm grant $PACKAGE_NAME android.permission.POST_NOTIFICATIONS")
         pressHome()
         startActivityAndWait()
         waitForTasksScreen()
         ensureSampleTasks()
         browseTasks()
         browseRoutines()
+        browseLists()
         browseCalendar()
         browseSettings()
     }

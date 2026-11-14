@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Categorias de rotina. O [RoutineCategoryKind] decide o módulo de item da categoria: [SIMPLE]
- * (sem módulo) ou [COMPRAS] (lista de compras, T30). O kind é gravado como a chave do enum
+ * (sem módulo) ou EXERCICIO (lista de exercícios). [COMPRAS] continua existindo (é persistido e está
+ * em backups), mas desde a v1.5.0 é só um rótulo: a lista de compras é anexada a qualquer rotina
+ * (ADR-0001, P6). O kind é gravado como a chave do enum
  * ([RoutineCategoryKind.name]), lido de volta por [RoutineCategoryKind.fromKey] — mesmo contrato de
  * [com.kalendrys.app.domain.RoutineColor]/[com.kalendrys.app.domain.RoutineIcon], sem mexer no schema
  * (a coluna `kind` existe desde o v7).

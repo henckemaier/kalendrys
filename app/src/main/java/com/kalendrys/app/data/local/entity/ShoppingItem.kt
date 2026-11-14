@@ -1,29 +1,32 @@
 package com.kalendrys.app.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Um item da lista de compras de uma rotina do tipo `COMPRAS` ([RoutineCategoryKind.COMPRAS]).
- * [routineId] liga o item à rotina; [position] dá a ordem manual na lista; [picked] marca o item
- * como pego no carrinho; [quantity] e [priceCents] (em centavos, nullable) alimentam o TOTAL —
- * que é CALCULADO na leitura (soma de `quantity * priceCents`), nunca armazenado numa coluna.
+ * Um item de uma [ShoppingList]. [position] dá a ordem manual; [picked] marca o item como pego no
+ * carrinho; [quantity] e [priceCents] (em centavos, nullable) alimentam o TOTAL, que é CALCULADO na
+ * leitura, nunca armazenado.
  *
- * Sem foreign key, como o [RoutineCompletion]/[RoutineOverride]: o item sobrevive à exclusão da
- * rotina e entra no backup. O índice por [routineId] serve às consultas da lista por rotina.
+ * [pickedBeforeReset] guarda o [picked] de antes do último reinício da lista, para o "Desfazer" da
+ * conclusão poder devolver as marcações (ADR-0001, seção 4.4).
+ *
+ * Sem foreign key, como o resto do banco. O índice por [listId] serve às consultas por lista.
  */
 @Entity(
     tableName = "shopping_item",
-    indices = [Index("routineId")],
+    indices = [Index("listId")],
 )
 data class ShoppingItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val routineId: Long,
+    val listId: Long,
     val name: String,
     val quantity: Int = 1,
     val priceCents: Long? = null,
     val picked: Boolean = false,
     val position: Int,
     val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0") val pickedBeforeReset: Boolean = false,
 )

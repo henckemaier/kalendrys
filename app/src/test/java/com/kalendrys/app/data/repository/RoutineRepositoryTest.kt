@@ -50,6 +50,7 @@ class RoutineRepositoryTest {
             db.routineOverrideDao(),
             alarms,
             notifications,
+            db.shoppingItemDao(),
         )
     }
 
@@ -301,5 +302,92 @@ class RoutineRepositoryTest {
 
         assertEquals(listOf(saved.id), due.map { it.id })
         assertEquals(null, repository.occurrenceOverride(saved.id, today.toEpochDay()))
+    }
+
+    // --- Reinício da lista ao concluir o bloco (ADR-0001, P4) ---
+
+    private suspend fun routineWithList(title: String = "Mercado", listId: Long? = null): Pair<Routine, Long> {
+        val shopping = ShoppingRepository(db)
+        val id = listId ?: shopping.createList(title).also { lid ->
+            shopping.add(lid, "Arroz", 1, null)
+            shopping.add(lid, "Feijão", 1, null)
+            db.shoppingItemDao().byList(lid).forEach { shopping.setPicked(it, true) }
+        }
+        return repository.add(Routine(title = title, startMinute = 600, shoppingListId = id)) to id
+    }
+
+    private suspend fun picked(listId: Long) = db.shoppingItemDao().byList(listId).map { it.picked }
+
+    @Test
+    fun `concluir o bloco de hoje zera a lista e desfazer restaura`() = runTest {
+        val today = LocalDate.now()
+        val (routine, listId) = routineWithList()
+
+        repository.complete(routine.id, today, today)
+        assertEquals(listOf(false, false), picked(listId))
+
+        repository.uncomplete(routine.id, today)
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
+    fun `concluir dia passado nao mexe na lista`() = runTest {
+        val today = LocalDate.now()
+        val (routine, listId) = routineWithList()
+
+        repository.complete(routine.id, today.minusDays(1), today)
+        assertEquals(listOf(true, true), picked(listId))
+        repository.uncomplete(routine.id, today.minusDays(1))
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
+    fun `concluir duas vezes nao perde as marcacoes guardadas`() = runTest {
+        val today = LocalDate.now()
+        val (routine, listId) = routineWithList()
+
+        repository.complete(routine.id, today, today)
+        repository.complete(routine.id, today, today)
+        repository.uncomplete(routine.id, today)
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
+    fun `rotina sem lista ou com vinculo orfao conclui sem falhar`() = runTest {
+        val today = LocalDate.now()
+        val plain = repository.add(Routine(title = "Sem lista", startMinute = 600))
+        val orphan = repository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999))
+
+        repository.complete(plain.id, today, today)
+        repository.complete(orphan.id, today, today)
+        repository.uncomplete(orphan.id, today)
+        assertEquals(listOf(plain.id), db.routineCompletionDao().doneOn(today.toEpochDay()))
+    }
+
+    @Test
+    fun `concluir bloco de hoje de rotina arquivada nao mexe na lista`() = runTest {
+        // P5: o vínculo de rotina arquivada é mantido no banco, mas ignorado no reinício.
+        val today = LocalDate.now()
+        val (routine, listId) = routineWithList()
+        repository.archive(routine)
+
+        repository.complete(routine.id, today, today)
+        assertEquals(listOf(true, true), picked(listId))
+        assertEquals(listId, db.routineDao().byId(routine.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `lista compartilhada por duas rotinas zera para ambas`() = runTest {
+        val today = LocalDate.now()
+        val (first, listId) = routineWithList("Feira")
+        val (second, _) = routineWithList("Mercado", listId)
+
+        repository.complete(first.id, today, today)
+        assertEquals(listOf(false, false), picked(listId))
+        // O desfazer do outro dono não tem reinício para reverter.
+        repository.uncomplete(second.id, today)
+        assertEquals(listOf(false, false), picked(listId))
+        repository.uncomplete(first.id, today)
+        assertEquals(listOf(true, true), picked(listId))
     }
 }

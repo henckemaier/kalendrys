@@ -3,11 +3,13 @@ package com.kalendrys.app.data.repository
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
+import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.RoutineSchedule
+import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
 import java.time.LocalDate
@@ -23,6 +25,7 @@ class RoutineRepository(
     private val overrideDao: RoutineOverrideDao,
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
+    private val shoppingItemDao: ShoppingItemDao,
 ) {
 
     /** Todas as rotinas, inclusive as excluídas; quem decide o que aparece em cada dia é o [RoutineSchedule]. */
@@ -85,15 +88,26 @@ class RoutineRepository(
     /**
      * Idempotente: tocar duas vezes em "Concluir" (widget, notificação) não desfaz. Confere se a
      * rotina ainda existe, porque a notificação pode ser de uma rotina já excluída.
+     *
+     * Concluir a ocorrência de HOJE de uma rotina (não arquivada) com lista anexada zera as marcações
+     * da lista (ADR-0001, P4), de forma reversível pelo [uncomplete]. Mora aqui, e não na tela, para
+     * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
+     * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
      */
-    suspend fun complete(routineId: Long, date: LocalDate) {
-        if (routineDao.byId(routineId) == null) return
-        completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay()))
-        if (date == LocalDate.now()) notifications.cancel(routineId)
+    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()) {
+        val routine = routineDao.byId(routineId) ?: return
+        val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
+        if (date == today) notifications.cancel(routineId)
+        val listId = routine.shoppingListId
+        if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
+            shoppingItemDao.resetPicked(listId, ShoppingReset.routineKey(routineId, date.toEpochDay()))
+        }
     }
 
+    /** Desfaz a conclusão e devolve as marcações que ela tinha zerado (se ainda for o último reinício). */
     suspend fun uncomplete(routineId: Long, date: LocalDate) {
         completionDao.delete(routineId, date.toEpochDay())
+        shoppingItemDao.restoreReset(ShoppingReset.routineKey(routineId, date.toEpochDay()))
     }
 
     /**

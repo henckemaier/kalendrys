@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cartão-resumo da lista de compras e seletor "Criar nova / Usar existente" (ADR-0001, v1.5.0). -->
+<resources>
+    <string name="list_card_section_title">Lista de compras</string>
+    <string name="list_card_add">Adicionar lista</string>
+    <string name="list_card_hint">Anexe uma lista para levar às compras desta rotina.</string>
+    <string name="list_card_empty">Lista vazia</string>
+    <string name="list_card_progress">%1$d de %2$d marcados</string>
+    <string name="list_card_total">Total %1$s</string>
+    <string name="list_card_shared_with">Também em: %1$s</string>
+    <string name="list_card_detach">Desvincular lista</string>
+
+    <string name="list_picker_title">Adicionar lista</string>
+    <string name="list_picker_create">Criar nova</string>
+    <string name="list_picker_existing">Usar lista existente</string>
+    <string name="list_picker_no_lists">Nenhuma lista ainda.</string>
+    <string name="list_picker_standalone">Avulsa</string>
+    <string name="list_picker_new_title">Nova lista</string>
+    <string name="list_picker_name_label">Nome da lista</string>
+    <string name="list_picker_default_name">Lista de compras</string>
+    <string name="list_picker_create_confirm">Criar</string>
+</resources>

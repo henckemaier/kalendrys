@@ -46,4 +46,7 @@ data class Task(
     /** Local livre (endereço ou nome do lugar); vazio = sem local. */
     @ColumnInfo(defaultValue = "")
     val location: String = "",
+    /** Lista de compras anexada ([ShoppingList.id]), ou `null`. Usada a partir da v1.6.0. */
+    @ColumnInfo(defaultValue = "NULL")
+    val shoppingListId: Long? = null,
 )
