@@ -18,7 +18,8 @@ import java.time.format.DateTimeFormatter
  */
 object HistoryCsv {
 
-    const val BOM = "﻿"
+    // Escape em vez do caractere cru: U+FEFF invisível no meio do fonte é erro de lint (ByteOrderMark).
+    const val BOM = "\uFEFF"
     const val SEPARATOR = ';'
     private const val LINE_END = "\r\n"
 

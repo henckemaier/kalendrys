@@ -59,7 +59,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
-import java.util.Locale
+import com.kalendrys.app.domain.AppLocale
 
 /**
  * Tela de diagnóstico: mostra, em um lugar só, por que um lembrete pode não disparar no horário.
@@ -344,7 +344,7 @@ private fun nextAlarmClockTriggerMillis(context: Context): Long? {
 }
 
 private val TRIGGER_FORMAT: DateTimeFormatter =
-    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(Locale.getDefault())
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(AppLocale.LOCALE)
 
 private fun formatTrigger(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(TRIGGER_FORMAT)

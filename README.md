@@ -44,6 +44,7 @@ app/src/main/java/com/kalendrys/app/
 │   ├── DayTimeline.kt        # linha do tempo do dia: blocos, ligações e tempo livre
 │   ├── RoutineDays/Icon/Color.kt, DurationFormat.kt
 │   ├── ShoppingReset.kt, ShoppingProgress.kt, LegacyShoppingLists.kt # regras das listas
+│   ├── AppLocale.kt          # idioma fixo do app (pt-BR, semana começando no domingo)
 │   └── TodayOverview.kt      # retrato do dia: pendentes, rotinas de hoje, "a seguir"
 ├── ui/
 │   ├── theme/               # Paleta azul-ardósia fixa (Material 3) + tipografia
@@ -174,6 +175,11 @@ Visual sóbrio e sem gamificação: paleta própria (sem cores do papel de pared
 barras de título grandes, listas agrupadas e ações com "Desfazer" em vez de
 confirmações. A exceção é excluir pela tela de detalhe, que pede confirmação
 porque não há lista para onde voltar com o "Desfazer". Suporta tema claro e escuro.
+
+O app é só em **português do Brasil**, independente do idioma do aparelho: datas, dias da
+semana, meses, seletores de data e hora, widgets, notificações e textos do leitor de tela usam
+`AppLocale` (semana começando no domingo). As telas se adaptam à fonte grande do sistema
+(testado em 1.0, 1.3 e 2.0).
 
 ## Como abrir
 

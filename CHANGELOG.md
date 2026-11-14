@@ -3,6 +3,26 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.5.1 — Polimento: idioma, fonte grande e lint (versionCode 10501)
+
+### Correções
+
+- **App só em pt-BR**, independente do idioma do aparelho: datas, dias da semana, meses,
+  seletores de data e hora, widgets, notificações e textos do leitor de tela. O seletor de dias
+  passa a mostrar Dom…Sáb e quebra a linha em fonte grande em vez de cortar.
+- **Fonte grande**: as horas da timeline de Rotinas e da lista do dia do Calendário ficam numa
+  linha; o intervalo ("Tempo livre") não quebra mais; o rótulo "Calendário" da barra de abas e
+  os chips de categoria cabem numa linha.
+- **Espaço inferior padronizado** sob o botão flutuante (+) em Tarefas, Rotinas, Calendário,
+  Listas, tela da lista e Categorias: a última linha fica sempre acima dele.
+
+### Interno
+
+- Lint sem erros: o BOM do CSV de histórico passa a ser escrito por escape (o arquivo exportado
+  continua idêntico); removidas 2 strings antigas de compras sem uso desde a v1.5.0.
+- Testes intermitentes de ViewModel estabilizados (encerramento ordenado do banco e das
+  corrotinas).
+
 ## v1.5.0 — Listas de compras independentes (versionCode 10500)
 
 Decisão de arquitetura: `docs/architecture/ADR-0001-listas-de-compras-independentes.md`.

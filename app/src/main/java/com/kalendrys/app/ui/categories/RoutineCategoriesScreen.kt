@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +59,7 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.routines.routineTone
@@ -103,7 +103,7 @@ fun RoutineCategoriesScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.padding(innerPadding),
-                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 96.dp),
+                contentPadding = fabListContentPadding(horizontal = 8.dp, top = 4.dp),
             ) {
                 items(categories, key = { it.id }) { category ->
                     CategoryRow(

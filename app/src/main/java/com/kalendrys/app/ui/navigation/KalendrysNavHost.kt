@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
@@ -20,10 +21,12 @@ import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -123,7 +128,7 @@ fun KalendrysNavHost(
                             icon = {
                                 Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null)
                             },
-                            label = { Text(stringResource(tab.labelRes)) },
+                            label = { TabLabel(stringResource(tab.labelRes)) },
                         )
                     }
                 }
@@ -275,5 +280,29 @@ private fun NavHostController.openTab(tab: AppTab) {
         }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/**
+ * Rótulo da aba sempre numa linha e inteiro. Na fonte do sistema 1.0 todos cabem e nada muda; com
+ * fonte grande, um rótulo mais largo que o espaço da aba (ex.: "Calendário" em 2.0) é reduzido só
+ * o bastante para caber, em vez de quebrar em duas linhas ou ser cortado.
+ */
+@Composable
+private fun TabLabel(text: String) {
+    BoxWithConstraints {
+        val style = LocalTextStyle.current
+        val measurer = rememberTextMeasurer(cacheSize = 1)
+        val density = LocalDensity.current
+        val maxWidthPx = constraints.maxWidth
+        val fitted = remember(text, style, density, maxWidthPx) {
+            val width = measurer.measure(text, style, maxLines = 1, softWrap = false).size.width
+            if (constraints.hasBoundedWidth && width > maxWidthPx && width > 0) {
+                style.copy(fontSize = style.fontSize * (maxWidthPx.toFloat() / width) * 0.98f)
+            } else {
+                style
+            }
+        }
+        Text(text = text, style = fitted, maxLines = 1, softWrap = false)
     }
 }

@@ -43,17 +43,18 @@ import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.TodayOverview
+import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.firstDayOfWeek
+import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinePalette
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle as JavaTextStyle
-import java.util.Locale
 
 /** "Calendário": o mês com o dia de hoje marcado e, ao lado, as tarefas e rotinas de hoje. */
 class CalendarWidget : GlanceAppWidget() {
@@ -79,7 +80,7 @@ class CalendarWidgetReceiver : GlanceAppWidgetReceiver() {
 private data class DayItem(val key: Long, val title: String, val subtitle: String, val color: ColorProvider, val time: LocalTime?)
 
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val TITLE: DateTimeFormatter = DateTimeFormatter.ofPattern("d 'de' MMMM")
+private val TITLE: DateTimeFormatter = DateTimeFormatter.ofPattern("d 'de' MMMM", AppLocale.LOCALE)
 
 @Composable
 private fun CalendarContent(overview: TodayOverview) {
@@ -120,8 +121,8 @@ private fun CalendarContent(overview: TodayOverview) {
 
 @Composable
 private fun MonthGrid(today: LocalDate) {
-    val locale = Locale.getDefault()
-    val firstDay = firstDayOfWeek(locale)
+    val resources = LocalContext.current.resources
+    val firstDay = firstDayOfWeek()
     val weekend = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
     val cellStyle = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp, textAlign = TextAlign.Center)
     Column(modifier = GlanceModifier.fillMaxWidth()) {
@@ -129,7 +130,7 @@ private fun MonthGrid(today: LocalDate) {
             for (offset in 0L until 7L) {
                 val day = firstDay.plus(offset)
                 Text(
-                    text = day.getDisplayName(JavaTextStyle.NARROW, locale),
+                    text = resources.weekdayName(day, WeekdayName.NARROW),
                     style = cellStyle.copy(
                         color = if (day in weekend) GlanceTheme.colors.primary else GlanceTheme.colors.onSurfaceVariant,
                         fontWeight = FontWeight.Medium,

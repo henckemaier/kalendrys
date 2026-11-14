@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,6 +82,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -94,23 +97,27 @@ import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.ui.components.fabListContentPadding
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.SettingsButton
+import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.rememberCurrentMinute
+import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
 import com.kalendrys.app.ui.routines.RoutinesViewModel.UiState
 import com.kalendrys.app.ui.routines.RoutinesViewModel.WeekDay
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.TextStyle
-import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 
 private val RowPadding = 6.dp
+// Largura MÍNIMA da coluna de horas; com fonte grande ela cresce para caber "00:00" numa linha (ver timeColumnWidth).
 private val TimeColumnWidth = 44.dp
+private val TimeColumnEndGap = 4.dp
 private val TrackWidth = 64.dp
 private val PillWidth = 48.dp
 private val PillShape = RoundedCornerShape(percent = 50)
@@ -251,14 +258,15 @@ private fun CategoryFilterRow(
             FilterChip(
                 selected = selectedId == null,
                 onClick = { onSelect(null) },
-                label = { Text(stringResource(R.string.routine_category_filter_all)) },
+                label = { Text(stringResource(R.string.routine_category_filter_all), maxLines = 1, softWrap = false) },
             )
         }
         items(categories, key = { it.id }) { category ->
             FilterChip(
                 selected = selectedId == category.id,
                 onClick = { onSelect(category.id) },
-                label = { Text(category.name) },
+                // Uma linha só: o chip cresce na largura e a LazyRow rola (nada corta com fonte grande).
+                label = { Text(category.name, maxLines = 1, softWrap = false) },
                 leadingIcon = {
                     Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
                 },
@@ -274,7 +282,6 @@ private fun WeekStrip(
     onPreviousWeek: () -> Unit,
     onNextWeek: () -> Unit,
 ) {
-    val locale = Locale.getDefault()
     val byDate = remember(state.week) { state.week.associateBy { it.date } }
     val previousLabel = stringResource(R.string.routine_week_previous)
     val nextLabel = stringResource(R.string.routine_week_next)
@@ -305,7 +312,6 @@ private fun WeekStrip(
                     day = byDate[date],
                     isToday = date == state.today,
                     isSelected = date == state.selectedDate,
-                    locale = locale,
                     onClick = { onSelect(date) },
                     modifier = Modifier.weight(1f),
                 )
@@ -320,7 +326,6 @@ private fun WeekDayCell(
     day: WeekDay?,
     isToday: Boolean,
     isSelected: Boolean,
-    locale: Locale,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -339,7 +344,7 @@ private fun WeekDayCell(
             .padding(vertical = 6.dp),
     ) {
         Text(
-            text = date.dayOfWeek.getDisplayName(TextStyle.SHORT, locale),
+            text = weekdayName(date.dayOfWeek, WeekdayName.SHORT),
             style = MaterialTheme.typography.labelMedium,
             color = colors.onSurfaceVariant,
             modifier = Modifier.clearAndSetSemantics {},
@@ -397,7 +402,7 @@ private fun Timeline(
         state = listState,
         modifier = modifier.fillMaxSize(),
         // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 104.dp),
+        contentPadding = fabListContentPadding(horizontal = 8.dp, top = 4.dp),
     ) {
         if (state.untimedTasks.isNotEmpty()) {
             item(key = "today_tasks_header", contentType = "tasks_header") {
@@ -492,6 +497,7 @@ private fun BlockRow(
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val pillHeight = pillHeight(routine.durationMinutes)
     val hasDuration = routine.durationMinutes > 0
+    val timeColumnWidth = timeColumnWidth()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -508,22 +514,14 @@ private fun BlockRow(
         Column(
             verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,
             modifier = Modifier
-                .width(TimeColumnWidth)
+                .width(timeColumnWidth)
                 .fillMaxHeight()
                 .padding(vertical = RowPadding + 2.dp)
                 .clearAndSetSemantics {},
         ) {
-            Text(
-                text = minuteOfDayLabel(block.startMinute),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TimeLabel(minuteOfDayLabel(block.startMinute))
             if (hasDuration) {
-                Text(
-                    text = minuteOfDayLabel(block.endMinute),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                TimeLabel(minuteOfDayLabel(block.endMinute))
             }
         }
         Box(
@@ -611,13 +609,14 @@ private fun BlockRow(
 @Composable
 private fun GapRow(gap: DayTimeline.Gap) {
     val lineColor = MaterialTheme.colorScheme.outlineVariant
+    val timeColumnWidth = timeColumnWidth()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp),
+            .heightIn(min = 44.dp),
     ) {
-        Spacer(Modifier.width(TimeColumnWidth))
+        Spacer(Modifier.width(timeColumnWidth))
         Box(
             modifier = Modifier
                 .width(TrackWidth)
@@ -632,14 +631,54 @@ private fun GapRow(gap: DayTimeline.Gap) {
                 .padding(start = 8.dp)
                 .size(16.dp),
         )
-        Text(
-            text = stringResource(R.string.routine_free_time, DurationFormat.format(gap.minutes)),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 8.dp),
-        )
+        // Sempre numa linha. Se "Tempo livre · 1h 20min" não couber (fonte grande), fica só a duração
+        // ao lado do ícone de café; o leitor de tela continua recebendo a frase inteira.
+        val duration = DurationFormat.format(gap.minutes)
+        val full = stringResource(R.string.routine_free_time, duration)
+        val style = MaterialTheme.typography.bodyMedium
+        val measurer = rememberTextMeasurer(cacheSize = 1)
+        BoxWithConstraints(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+        ) {
+            val maxWidthPx = constraints.maxWidth
+            val fits = remember(measurer, full, style, maxWidthPx) {
+                measurer.measure(full, style, maxLines = 1, softWrap = false).size.width <= maxWidthPx
+            }
+            Text(
+                text = if (fits) full else duration,
+                style = style,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (fits) Modifier else Modifier.semantics { contentDescription = full },
+            )
+        }
     }
 }
+
+/** Hora da coluna da timeline: sempre numa linha ("03:35", nunca "03:" / "35"). */
+@Composable
+private fun TimeLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        softWrap = false,
+    )
+}
+
+/**
+ * Largura da coluna de horas: [TimeColumnWidth] (o layout de sempre na fonte 1.0) ou, se a fonte do
+ * sistema não deixar "00:00" caber nela, a largura medida do texto. Medida, não fixa, para todas as
+ * linhas da timeline (bloco, intervalo e tarefa) manterem o trilho alinhado em qualquer escala.
+ */
+@Composable
+private fun timeColumnWidth(): Dp =
+    rememberTimeColumnWidth(TimeColumnWidth, MaterialTheme.typography.labelMedium, TimeColumnEndGap)
 
 /**
  * Uma tarefa pontual na trilha. Destaque OPOSTO ao do bloco de rotina (pílula sólida + círculo):
@@ -655,6 +694,7 @@ private fun TaskRow(
     val accent = MaterialTheme.colorScheme.secondary
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val task = item.task
+    val timeColumnWidth = timeColumnWidth()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -666,15 +706,11 @@ private fun TaskRow(
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .width(TimeColumnWidth)
+                .width(timeColumnWidth)
                 .padding(vertical = RowPadding + 2.dp)
                 .clearAndSetSemantics {},
         ) {
-            Text(
-                text = minuteOfDayLabel(item.startMinute),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TimeLabel(minuteOfDayLabel(item.startMinute))
         }
         Box(
             contentAlignment = Alignment.Center,

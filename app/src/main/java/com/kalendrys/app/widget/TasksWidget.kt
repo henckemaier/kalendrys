@@ -44,6 +44,7 @@ import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.ui.routines.RoutinePalette
 import java.time.LocalDate
@@ -93,7 +94,7 @@ private val TaskIdKey = ActionParameters.Key<Long>("taskId")
 private val RoutineIdKey = ActionParameters.Key<Long>("routineId")
 private val EpochDayKey = ActionParameters.Key<Long>("epochDay")
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val TITLE_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM")
+private val TITLE_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", AppLocale.LOCALE)
 
 @Composable
 private fun TasksContent(overview: TodayOverview) {

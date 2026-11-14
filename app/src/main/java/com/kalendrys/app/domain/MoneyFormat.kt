@@ -1,7 +1,6 @@
 package com.kalendrys.app.domain
 
 import java.text.NumberFormat
-import java.util.Locale
 
 /**
  * Dinheiro em centavos (Long) — a fonte da verdade do preço — e a ponte com o texto da UI. O preço é
@@ -9,7 +8,7 @@ import java.util.Locale
  */
 object MoneyFormat {
 
-    private val BRL = Locale("pt", "BR")
+    private val BRL = AppLocale.LOCALE
 
     /** Centavos → moeda do Brasil, ex.: 499 → "R$ 4,99". */
     fun formatCents(cents: Long): String =

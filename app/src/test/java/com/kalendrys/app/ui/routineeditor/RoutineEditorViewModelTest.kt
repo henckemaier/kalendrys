@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import com.kalendrys.app.testutil.ViewModelTestDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +48,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class RoutineEditorViewModelTest {
 
+    private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
     private lateinit var routineRepository: RoutineRepository
     private lateinit var categoryRepository: RoutineCategoryRepository
@@ -58,9 +60,8 @@ class RoutineEditorViewModelTest {
         // viewModelScope roda no Main; Unconfined executa as operações do editor na hora.
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val context = ApplicationProvider.getApplicationContext<Context>()
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
+        testDb = ViewModelTestDatabase(context)
+        db = testDb.db
         routineRepository = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -76,16 +77,18 @@ class RoutineEditorViewModelTest {
 
     @After
     fun tearDown() {
-        db.close()
+        testDb.close() // cancela os ViewModels e drena o Room antes de fechar e do resetMain
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(routineId: Long) = RoutineEditorViewModel(
-        SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
-        routineRepository,
-        categoryRepository,
-        shoppingRepository,
-        exerciseRepository,
+    private fun viewModel(routineId: Long) = testDb.track(
+        RoutineEditorViewModel(
+            SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
+            routineRepository,
+            categoryRepository,
+            shoppingRepository,
+            exerciseRepository,
+        ),
     )
 
     @Test
@@ -121,6 +124,9 @@ class RoutineEditorViewModelTest {
 
             // Descartar reverte tudo ao snapshot: ordem, nome, campos — e some o Terra.
             vm.discardChanges()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             var restored = awaitItem()
             while (restored.exerciseItems.map { it.name } != listOf("Agachamento", "Supino")) restored = awaitItem()
             assertEquals(listOf(3, 3), restored.exerciseItems.map { it.sets })
@@ -150,6 +156,9 @@ class RoutineEditorViewModelTest {
             while (changed.exerciseItems.map { it.name } != listOf("Agachamento livre", "Terra")) changed = awaitItem()
 
             vm.save()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
 
@@ -206,6 +215,9 @@ class RoutineEditorViewModelTest {
             assertNull(stored(routine.id).shoppingListId)
 
             vm.save()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(listId, stored(routine.id).shoppingListId)
@@ -232,6 +244,9 @@ class RoutineEditorViewModelTest {
             assertTrue(awaitState { it.shoppingList?.id == other }.hasChanges)
 
             vm.discardChanges()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(original, stored(routine.id).shoppingListId)
@@ -251,6 +266,9 @@ class RoutineEditorViewModelTest {
             val detached = awaitState { it.shoppingList == null }
             assertTrue(detached.hasChanges)
             vm.save()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         assertNull(stored(routine.id).shoppingListId)
@@ -270,6 +288,9 @@ class RoutineEditorViewModelTest {
             assertEquals("Feira de sábado", state.shoppingList?.name)
             assertTrue(state.hasChanges)
             vm.save()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         val created = db.routineDao().all().single()
@@ -285,6 +306,9 @@ class RoutineEditorViewModelTest {
             vm.createShoppingList("Rascunho")
             assertTrue(awaitState { it.shoppingList != null }.hasChanges)
             vm.discardChanges()
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         assertTrue(db.routineDao().all().isEmpty())
@@ -317,6 +341,9 @@ class RoutineEditorViewModelTest {
         vm.uiState.test {
             awaitState { it.routine != null && it.draft != null }
             vm.duplicate("Feira (cópia)")
+            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
+            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
+            vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
         val all = db.routineDao().all()
