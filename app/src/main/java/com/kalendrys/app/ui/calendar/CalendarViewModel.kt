@@ -13,6 +13,8 @@ import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.ReminderRecurrence
@@ -20,6 +22,8 @@ import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.ui.tasks.NewTaskList
+import com.kalendrys.app.ui.tasks.resolveListId
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -37,6 +41,7 @@ import kotlinx.coroutines.launch
 class CalendarViewModel(
     private val repository: TaskRepository,
     private val routineRepository: RoutineRepository,
+    private val shoppingRepository: ShoppingRepository,
 ) : ViewModel() {
 
     /** Um evento no dia: conclusão (do histórico) ou tarefa marcada para o dia. */
@@ -190,9 +195,16 @@ class CalendarViewModel(
 
     fun goToToday() = select(LocalDate.now())
 
-    fun addTask(title: String, notes: String, timing: TaskTiming, location: String) {
+    /** Listas para o "Usar lista existente" do painel de nova tarefa. */
+    val lists: StateFlow<List<ShoppingListSummary>> =
+        shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Igual ao painel de Tarefas: "Criar nova" cria a lista só ao salvar (ADR-0001, P2). */
+    fun addTask(title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList? = null) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.addTask(title, notes, timing, location) }
+        viewModelScope.launch {
+            repository.addTask(title, notes, timing, location, shoppingListId = list.resolveListId(shoppingRepository))
+        }
     }
 
     private fun timeOf(epochMillis: Long, zone: ZoneId): LocalTime =
@@ -202,7 +214,7 @@ class CalendarViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                CalendarViewModel(app.repository, app.routineRepository)
+                CalendarViewModel(app.repository, app.routineRepository, app.shoppingRepository)
             }
         }
     }

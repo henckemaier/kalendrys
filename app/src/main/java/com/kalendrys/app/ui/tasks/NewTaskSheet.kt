@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
@@ -65,6 +66,16 @@ import kotlinx.coroutines.launch
 sealed interface NewTaskList {
     data class Existing(val listId: Long) : NewTaskList
     data class New(val name: String) : NewTaskList
+}
+
+/**
+ * Id da lista a gravar na nova tarefa: a existente escolhida, ou a nova criada AGORA (no salvar).
+ * Regra única para Tarefas e Calendário. Nome em branco não cria lista.
+ */
+suspend fun NewTaskList?.resolveListId(shoppingRepository: ShoppingRepository): Long? = when (this) {
+    null -> null
+    is NewTaskList.Existing -> listId
+    is NewTaskList.New -> name.takeIf { it.isNotBlank() }?.let { shoppingRepository.createList(it) }
 }
 
 /**

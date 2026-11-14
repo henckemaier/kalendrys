@@ -146,12 +146,7 @@ class TaskViewModel(
     fun addTask(title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList? = null) {
         if (title.isBlank()) return
         viewModelScope.launch {
-            val listId = when (list) {
-                null -> null
-                is NewTaskList.Existing -> list.listId
-                is NewTaskList.New -> list.name.takeIf { it.isNotBlank() }?.let { shoppingRepository.createList(it) }
-            }
-            repository.addTask(title, notes, timing, location, shoppingListId = listId)
+            repository.addTask(title, notes, timing, location, shoppingListId = list.resolveListId(shoppingRepository))
         }
     }
 
