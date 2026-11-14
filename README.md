@@ -15,13 +15,20 @@ ui (Compose + ViewModel)  →  data/repository  →  data/local (Room)
 domain/ = lógica pura (calendário, recorrência, linha do tempo das rotinas, regras das listas), testável sem Android
 ```
 
+As listas de compras são entidades próprias (`ShoppingList`), e tarefas e rotinas só guardam o
+vínculo (`shoppingListId`). Concluir um dono recorrente zera a lista pelo `ShoppingRepository`
+(reinício reversível); a oferta "Concluir tarefa" é uma regra pura
+(`domain/ShoppingCompletionOffer`). As notificações e o cartão da lista no detalhe da tarefa
+abrem a lista pelo link interno `kalendrys://list/{id}` (`AppLinks.openList`).
+
 ## Estrutura
 
 ```
 app/src/main/java/com/kalendrys/app/
 ├── KalendrysApp.kt          # Application: DI manual, canais de notificação, widgets em sincronia
 ├── MainActivity.kt          # Entry point + tema + permissão de notificação
-├── AppLinks.kt              # Intents que abrem o app numa tarefa, em "nova tarefa" ou nas rotinas de um dia
+├── AppLinks.kt              # Intents que abrem o app numa tarefa, em "nova tarefa", nas rotinas de um dia
+│                            # ou numa lista (kalendrys://list/{id}?taskId={id})
 ├── data/
 │   ├── local/
 │   │   ├── AppDatabase.kt
@@ -81,6 +88,17 @@ repetição, a tarefa é feita uma vez: concluída, sai das pendentes de vez. Co
 em que ela acontece tem a própria conclusão. A lista separa *Atrasadas*, *Hoje*, *Próximas*,
 *Sem data* e *Concluídas hoje* (`domain/TaskSchedule.kt`).
 
+- **Lista de compras**: o detalhe da tarefa e o painel de nova tarefa (em Tarefas e no
+  Calendário) anexam uma lista, nova ("Criar nova") ou existente ("Usar existente"). A linha da
+  tarefa mostra o progresso (3/8). Concluir uma tarefa **repetida** zera as marcações e o
+  "Desfazer" as devolve; tarefa única não zera.
+- **Lembrete com lista**: ações Concluir, Adiar e **Abrir lista**, e título com o progresso
+  ("Feira · 3/8"). O lembrete já exibido some ao concluir a tarefa por qualquer caminho ou ao
+  excluí-la (o próximo alarme da repetida continua agendado).
+- **Concluir adiantado**: concluir antes do dia uma tarefa única com data futura a traz para hoje
+  e tira o lembrete futuro; o "Desfazer" devolve a data e o lembrete (melhor esforço: se o app
+  foi encerrado no meio, desfaz sem restaurar).
+
 ## Rotinas
 
 Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na aba **Rotinas**:
@@ -92,8 +110,9 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
   feito, contorno se pendente. Dá para marcar dias passados; dias futuros não.
 - **Editor**: título, ícone (35), cor (8, com tons claro e escuro), início, duração ou
   "termina às" (pode passar da meia-noite), dias da semana e aviso no início.
-- **Aviso no início** pelo canal "Rotinas", com o botão **Concluir** (funciona com o app
-  fechado). Um único alarme no `AlarmManager` cobre todas as rotinas: o próximo início. Bloco
+- **Aviso no início** pelo canal "Rotinas", com os botões **Concluir**, **Pular** e **Adiar**
+  (funcionam com o app fechado). Em bloco com lista, **Pular** dá lugar a **Abrir lista** e o
+  título mostra o progresso. Um único alarme no `AlarmManager` cobre todas as rotinas: o próximo início. Bloco
   já feito não avisa. As rotinas seguem o relógio local (inclusive no horário de verão).
 - **Excluir arquiva**: a rotina some de hoje em diante, mas os dias passados mantêm o bloco e
   as conclusões. Editar muda também como os dias passados aparecem.
@@ -112,7 +131,14 @@ A 4ª aba, **Listas**, reúne as listas de compras, com progresso (3/8), total e
 usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
 
 - **Tela da lista**: marcar, adicionar, editar e remover itens (com "Desfazer"), total calculado
-  na leitura, "Desmarcar todos" (com "Desfazer") e renomear. Tudo é salvo na hora.
+  na leitura, "Desmarcar todos" (com "Desfazer") e renomear. Tudo é salvo na hora. Marcar um
+  item dá um retorno tátil leve.
+- **Oferta "Concluir tarefa"**: ao marcar o último item, se a lista tem uma tarefa pendente
+  (a de origem, quando se chegou pela tarefa, senão a única vinculada pendente), aparece a oferta
+  de concluí-la, com "Desfazer". Conta como pendente a tarefa atrasada, de hoje, sem data ou
+  única com data futura; tarefa repetida futura e rotinas não recebem a oferta.
+- **Progresso** (3/8) aparece também no bloco da timeline, no widget Hoje, no resumo diário e
+  nas notificações.
 - **Compartilhada**: uma lista pode ter mais de um dono; marcar vale para todos, e o reinício
   disparado por um dono zera a lista para todos.
 - **Excluir** uma lista apaga os itens e desfaz o vínculo dos donos (o diálogo cita quem perde).

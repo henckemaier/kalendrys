@@ -3,6 +3,32 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.6.0 — Lista de compras na tarefa (versionCode 10600)
+
+Decisões de arquitetura: `docs/architecture/ADR-0001-listas-de-compras-independentes.md` (v1.6.0)
+e `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (emendas E-1 e E-5).
+
+### Novidades
+
+- **Lista de compras na tarefa**: o detalhe da tarefa e o painel de nova tarefa (em Tarefas e no
+  Calendário) anexam uma lista, com "Criar nova" ou "Usar existente".
+- **Progresso (3/8)** na linha da tarefa, no bloco da timeline, no widget Hoje, no resumo diário
+  e nas notificações.
+- **Concluir uma tarefa repetida zera a lista**; o "Desfazer" devolve as marcações.
+- **Oferta "Concluir tarefa"** ao marcar o último item da lista, inclusive para tarefa única com
+  data futura.
+- **Lembrete de tarefa com lista**: ação "Abrir lista", e o lembrete some ao concluir ou excluir
+  a tarefa.
+- **Aviso de bloco com lista**: Concluir, Abrir lista e Adiar (sem Pular). Bloco sem lista segue
+  com Concluir, Pular e Adiar.
+- **Link interno** `kalendrys://list/{id}` para abrir a lista.
+- **Retorno tátil** leve ao marcar um item.
+
+### Mudanças de comportamento
+
+- Desfazer a conclusão de uma tarefa única concluída antes do dia devolve a data e o lembrete
+  (melhor esforço: se o app foi encerrado no meio, desfaz sem restaurar).
+
 ## v1.5.1 — Polimento: idioma, fonte grande e lint (versionCode 10501)
 
 ### Correções
