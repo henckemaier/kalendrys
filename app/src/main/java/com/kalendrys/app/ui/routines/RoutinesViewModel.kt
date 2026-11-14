@@ -16,6 +16,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineColor
@@ -145,7 +146,7 @@ class RoutinesViewModel(
                 timeline = DayTimeline.build(visibleRoutines, routineDoneToday, selected, zone, visibleTasks, taskDoneToday, overrides),
                 untimedTasks = visibleTasks
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
-                    .sortedBy { it.title.lowercase() }
+                    .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
                     .map { DayTask(it, it.id in taskDoneToday) },
                 // O estado vazio olha TODAS as rotinas (inclusive pausadas): ter uma pausada não é "sem rotinas".
                 hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },

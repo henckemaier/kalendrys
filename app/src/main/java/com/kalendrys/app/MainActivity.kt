@@ -35,6 +35,13 @@ class MainActivity : ComponentActivity() {
      * componentes que leem o idioma da configuração (DatePicker do Material 3, `stringResource`) saírem
      * em português mesmo com o aparelho em outro idioma. Não usa `Locale.setDefault` (global).
      * O resto da configuração (tema escuro, escala de fonte, orientação) vem intacto do sistema.
+     *
+     * ATENÇÃO: isto copia a `Configuration` INTEIRA do momento da criação para um contexto fixo. Só é
+     * seguro porque a Activity NÃO declara `android:configChanges` no manifesto: toda mudança (rotação,
+     * tema escuro, fonte) recria a Activity e passa por aqui de novo. Se alguém declarar
+     * `configChanges`, a Activity passaria a viver com a cópia antiga (tema/fonte desatualizados);
+     * nesse caso, sobrepor só o idioma (ex.: `applyOverrideConfiguration` com uma `Configuration`
+     * vazia contendo apenas o locale) em vez de copiar tudo.
      */
     override fun attachBaseContext(newBase: Context) {
         val config = Configuration(newBase.resources.configuration).apply { setLocale(AppLocale.LOCALE) }
