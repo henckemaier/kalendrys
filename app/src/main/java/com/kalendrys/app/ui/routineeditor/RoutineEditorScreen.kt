@@ -44,7 +44,6 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,18 +79,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.ExerciseItem
+import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.data.repository.ShoppingListOwner
+import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ExerciseFormat
-import com.kalendrys.app.domain.MoneyFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
@@ -104,6 +103,8 @@ import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
+import com.kalendrys.app.ui.shopping.ShoppingListCard
+import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -116,6 +117,8 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 fun RoutineEditorScreen(
     onBack: () -> Unit,
+    /** Abre a tela da lista de compras anexada (rota `shopping-list/{listId}`, ligada na navegação). */
+    onOpenShoppingList: (Long) -> Unit = {},
     viewModel: RoutineEditorViewModel = viewModel(factory = RoutineEditorViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -188,12 +191,13 @@ fun RoutineEditorScreen(
             else -> EditorContent(
                 draft = draft,
                 categories = state.categories,
-                isShoppingCategory = state.isShoppingCategory,
-                shoppingItems = state.shoppingItems,
-                shoppingTotalCents = state.shoppingTotalCents,
+                routine = state.routine,
+                shoppingList = state.shoppingList,
+                availableLists = state.availableLists,
                 isExerciseCategory = state.isExerciseCategory,
                 exerciseItems = state.exerciseItems,
                 viewModel = viewModel,
+                onOpenShoppingList = onOpenShoppingList,
                 modifier = Modifier
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
@@ -251,22 +255,22 @@ fun RoutineEditorScreen(
 private fun EditorContent(
     draft: RoutineDraft,
     categories: List<RoutineCategory>,
-    isShoppingCategory: Boolean,
-    shoppingItems: List<ShoppingItem>,
-    shoppingTotalCents: Long,
+    routine: Routine?,
+    shoppingList: ShoppingListSummary?,
+    availableLists: List<ShoppingListSummary>,
     isExerciseCategory: Boolean,
     exerciseItems: List<ExerciseItem>,
     viewModel: RoutineEditorViewModel,
+    onOpenShoppingList: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showStartPicker by rememberSaveable { mutableStateOf(false) }
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
     var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
     var showEndDatePicker by rememberSaveable { mutableStateOf(false) }
-    // Diálogo de add/editar item de compras. editingItemId null + diálogo aberto = novo item; senão, edição.
-    var showItemDialog by rememberSaveable { mutableStateOf(false) }
-    var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
-    // Diálogo de add/editar exercício (análogo ao de compras, mas com os campos do exercício).
+    // Seletor "Criar nova / Usar lista existente" da lista de compras.
+    var showListPicker by rememberSaveable { mutableStateOf(false) }
+    // Diálogo de add/editar exercício. editingExerciseId null + diálogo aberto = novo item; senão, edição.
     var showExerciseDialog by rememberSaveable { mutableStateOf(false) }
     var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -342,59 +346,31 @@ private fun EditorContent(
                 }
             }
         }
-        if (isShoppingCategory) {
-            item(key = "shopping-title") {
-                SectionTitle(stringResource(R.string.shopping_section_title))
-            }
-            if (viewModel.isNew) {
-                item(key = "shopping-hint") {
-                    Text(
-                        text = stringResource(R.string.shopping_new_routine_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    )
-                }
+        // Lista de compras: qualquer rotina pode anexar uma, inclusive a nova ainda não salva (P6).
+        item(key = "shopping-list") {
+            SectionTitle(stringResource(R.string.list_card_section_title))
+            if (shoppingList != null) {
+                val routineId = routine?.id
+                ShoppingListCard(
+                    summary = shoppingList,
+                    onOpen = { onOpenShoppingList(shoppingList.id) },
+                    onDetach = viewModel::detachShoppingList,
+                    isCurrentOwner = { it.kind == ShoppingListOwner.Kind.ROUTINE && it.id == routineId },
+                )
             } else {
-                if (shoppingItems.isEmpty()) {
-                    item(key = "shopping-empty") {
-                        Text(
-                            text = stringResource(R.string.shopping_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                    }
-                } else {
-                    itemsIndexed(shoppingItems, key = { _, it -> "shopping-item-${it.id}" }) { index, item ->
-                        ShoppingItemRow(
-                            item = item,
-                            index = index,
-                            count = shoppingItems.size,
-                            onTogglePicked = { viewModel.toggleShoppingPicked(item) },
-                            onEdit = {
-                                editingItemId = item.id
-                                showItemDialog = true
-                            },
-                            onDelete = { viewModel.removeShoppingItem(item) },
-                        )
-                    }
-                    item(key = "shopping-total") {
-                        ShoppingTotalRow(totalCents = shoppingTotalCents)
-                    }
-                }
-                item(key = "shopping-add") {
-                    TextButton(
-                        onClick = {
-                            editingItemId = null
-                            showItemDialog = true
-                        },
-                        modifier = Modifier.padding(top = 4.dp),
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.shopping_add_item))
-                    }
+                Text(
+                    text = stringResource(R.string.list_card_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                TextButton(
+                    onClick = { showListPicker = true },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.list_card_add))
                 }
             }
         }
@@ -608,23 +584,19 @@ private fun EditorContent(
             onDismiss = { showEndDatePicker = false },
         )
     }
-    if (showItemDialog) {
-        val editing = editingItemId?.let { id -> shoppingItems.firstOrNull { it.id == id } }
-        ShoppingItemDialog(
-            existing = editing,
-            onConfirm = { name, quantity, priceCents ->
-                if (editing == null) {
-                    viewModel.addShoppingItem(name, quantity, priceCents)
-                } else {
-                    viewModel.updateShoppingItem(editing, name, quantity, priceCents)
-                }
-                showItemDialog = false
-                editingItemId = null
+    if (showListPicker) {
+        ShoppingListPicker(
+            lists = availableLists,
+            suggestedName = draft.title,
+            onCreate = { name ->
+                viewModel.createShoppingList(name)
+                showListPicker = false
             },
-            onDismiss = {
-                showItemDialog = false
-                editingItemId = null
+            onPick = { listId ->
+                viewModel.attachShoppingList(listId)
+                showListPicker = false
             },
+            onDismiss = { showListPicker = false },
         )
     }
     if (showExerciseDialog) {
@@ -646,176 +618,6 @@ private fun EditorContent(
             },
         )
     }
-}
-
-@Composable
-private fun ShoppingItemRow(
-    item: ShoppingItem,
-    index: Int,
-    count: Int,
-    onTogglePicked: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    val pickedDescription = stringResource(R.string.shopping_item_picked)
-    Surface(
-        shape = groupedItemShape(index, count),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 2.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 4.dp, end = 4.dp),
-        ) {
-            Checkbox(
-                checked = item.picked,
-                onCheckedChange = { onTogglePicked() },
-                modifier = Modifier.semantics { contentDescription = pickedDescription },
-            )
-            val qtyBadge = stringResource(R.string.shopping_item_quantity_badge, item.quantity)
-            val subtitle = item.priceCents?.let { "$qtyBadge · ${MoneyFormat.formatCents(it)}" } ?: qtyBadge
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textDecoration = if (item.picked) TextDecoration.LineThrough else null,
-                    color = if (item.picked) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // Subtotal da linha (quantity*priceCents); só quando há preço.
-            item.priceCents?.let { price ->
-                Text(
-                    text = MoneyFormat.formatCents(price * item.quantity),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.shopping_item_edit))
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.shopping_item_delete))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ShoppingTotalRow(totalCents: Long) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.shopping_total),
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = MoneyFormat.formatCents(totalCents),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
-
-@Composable
-private fun ShoppingItemDialog(
-    existing: ShoppingItem?,
-    onConfirm: (name: String, quantity: Int, priceCents: Long?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var quantityText by rememberSaveable(existing?.id) {
-        mutableStateOf(existing?.quantity?.toString() ?: "1")
-    }
-    var priceText by rememberSaveable(existing?.id) {
-        mutableStateOf(existing?.priceCents?.let { MoneyFormat.centsToInput(it) } ?: "")
-    }
-    val quantity = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    // Preço só é inválido quando tem texto sem nenhum dígito (ex.: só um separador). Vazio é válido
-    // (= sem preço, remoção explícita). Bloquear o inválido impede zerar o preço por engano na edição.
-    val priceInvalid = priceText.isNotBlank() && priceText.none { it.isDigit() }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (existing == null) R.string.shopping_add_title else R.string.shopping_edit_title))
-        },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.shopping_item_name_label)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
-                    value = quantityText,
-                    onValueChange = { new -> quantityText = new.filter { it.isDigit() }.take(4) },
-                    label = { Text(stringResource(R.string.shopping_item_quantity_label)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
-                    // Filtra: dígitos + no máximo um separador decimal. Entrada inválida não chega ao parse.
-                    value = priceText,
-                    onValueChange = { new ->
-                        val filtered = MoneyFormat.filterPriceInput(new)
-                        // Limita a MÁX. MAX_PRICE_DIGITS dígitos: um preço absurdo estouraria o Long do
-                        // total (quantity * priceCents). Só barra a entrada; o parser fica intocado.
-                        if (filtered.count { it.isDigit() } <= MAX_PRICE_DIGITS) priceText = filtered
-                    },
-                    label = { Text(stringResource(R.string.shopping_item_price_label)) },
-                    singleLine = true,
-                    isError = priceInvalid,
-                    supportingText = if (priceInvalid) {
-                        { Text(stringResource(R.string.shopping_price_invalid)) }
-                    } else {
-                        null
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    // Vazio → sem preço (null, explícito). Com dígitos → parse garantido não-nulo. O
-                    // caso inválido nunca chega aqui (Save desabilitado), então nunca zera à toa.
-                    val priceCents = if (priceText.isBlank()) null else MoneyFormat.parseReaisToCents(priceText)
-                    onConfirm(name.trim(), quantity, priceCents)
-                },
-                enabled = name.isNotBlank() && !priceInvalid,
-            ) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
 }
 
 @Composable
@@ -1186,10 +988,8 @@ private fun RoutineDatePicker(initialEpochDay: Long?, onConfirm: (Long) -> Unit,
 
 private const val MILLIS_PER_DAY = 86_400_000L
 
-// Tetos de entrada (B2): a carga é texto livre e o preço só limita dígitos — ambos evitam campos
-// gigantes (o preço, em especial, impede estourar o Long de ShoppingTotals.totalCents).
+// Teto de entrada (B2): a carga é texto livre, limitada para evitar campos gigantes.
 private const val MAX_LOAD_CHARS = 24
-private const val MAX_PRICE_DIGITS = 12
 private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
 
 private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFormatter)
