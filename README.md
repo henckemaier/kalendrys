@@ -33,6 +33,7 @@ app/src/main/java/com/kalendrys/app/
 │   │   ├── TaskRepository.kt    # tarefas: banco + alarmes de lembrete sempre em sincronia
 │   │   ├── RoutineRepository.kt # rotinas: banco + alarme do próximo início + notificações
 │   │   ├── ShoppingRepository.kt # listas: itens, progresso, donos e reinício reversível
+│   │   ├── BackupManager.kt  # backup/restauro em JSON (schemaVersion 6, lê os antigos)
 │   │   ├── TodayRepository.kt   # retrato do dia (tarefas + rotinas) para o resumo e os widgets
 │   │   └── Clock.kt             # data de hoje que vira sozinha à meia-noite
 │   └── settings/            # AppSettings + SettingsRepository (DataStore)
@@ -98,7 +99,9 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
 - **Lista de compras**: qualquer rotina pode anexar uma lista (nova ou existente) pelo cartão do
   editor; os itens se editam na tela da lista. Concluir o bloco de **hoje** zera as marcações
   (pela tela, pelo widget ou pela notificação) e o "Desfazer" as devolve. Marcar um dia passado
-  não mexe na lista. Arquivar a rotina não apaga a lista.
+  não mexe na lista. Arquivar a rotina não apaga a lista. O "Descartar" do editor de rotina
+  desfaz só os campos da rotina e o vínculo com a lista; as edições de itens, salvas na hora na
+  tela da lista, não são revertidas.
 - Aparecem também no **calendário** (seção "Rotinas" do dia), no **resumo das 8h** e nos
   **widgets**.
 
@@ -108,12 +111,14 @@ A 4ª aba, **Listas**, reúne as listas de compras, com progresso (3/8), total e
 usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
 
 - **Tela da lista**: marcar, adicionar, editar e remover itens (com "Desfazer"), total calculado
-  na leitura, "Desmarcar todos" e renomear. Tudo é salvo na hora.
+  na leitura, "Desmarcar todos" (com "Desfazer") e renomear. Tudo é salvo na hora.
 - **Compartilhada**: uma lista pode ter mais de um dono; marcar vale para todos, e o reinício
   disparado por um dono zera a lista para todos.
 - **Excluir** uma lista apaga os itens e desfaz o vínculo dos donos (o diálogo cita quem perde).
 - As listas antigas, presas a rotinas do tipo Compras, viram listas independentes na atualização
   (Room v10) e no restauro de backups antigos, pela mesma regra (`LegacyShoppingLists`).
+- **Backup**: o formato passa a ser o v6 (com as listas e os vínculos). A v1.5.0 lê os backups
+  antigos (v1 a v5); um backup v6 não abre na v1.4.1 ou anterior (é recusado como incompatível).
 
 ## Resumo diário e widgets
 
