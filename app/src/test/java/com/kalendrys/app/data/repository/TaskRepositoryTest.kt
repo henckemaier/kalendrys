@@ -159,4 +159,84 @@ class TaskRepositoryTest {
 
         assertEquals(listOf(task.id), scheduler.cancelled)
     }
+
+    // --- Lista de compras na tarefa (ADR-0001, v1.6.0) ---
+
+    private suspend fun listWithPickedItems(): Long {
+        val shopping = ShoppingRepository(db)
+        val listId = shopping.createList("Mercado")
+        shopping.add(listId, "Arroz", 1, null)
+        shopping.add(listId, "Feijão", 1, null)
+        db.shoppingItemDao().byList(listId).forEach { shopping.setPicked(it, true) }
+        return listId
+    }
+
+    private suspend fun picked(listId: Long) = db.shoppingItemDao().byList(listId).map { it.picked }
+
+    @Test
+    fun `concluir tarefa repetida zera a lista e desfazer restaura`() = runTest {
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Feira", timing = todayTiming(ReminderRepeat.DAILY))
+        repository.updateTask(task.copy(shoppingListId = listId))
+
+        val logId = repository.logCompletion(task.id)
+        assertEquals(listOf(false, false), picked(listId))
+
+        repository.undoCompletion(logId)
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
+    fun `concluir tarefa unica nao mexe na lista`() = runTest {
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Compra do mês", timing = todayTiming())
+        repository.updateTask(task.copy(shoppingListId = listId))
+
+        repository.logCompletion(task.id)
+        assertEquals(listOf(true, true), picked(listId))
+    }
+
+    @Test
+    fun `excluir tarefa e restaurar mantem o vinculo e a lista`() = runTest {
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Feira", timing = todayTiming())
+        val linked = task.copy(shoppingListId = listId)
+        repository.updateTask(linked)
+
+        repository.deleteTask(linked)
+        assertNotNull("excluir a tarefa não exclui a lista", db.shoppingListDao().byId(listId))
+        repository.restoreTask(linked)
+        assertEquals(listId, db.taskDao().byId(task.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `vinculo orfao conclui e desfaz sem falhar`() = runTest {
+        val task = repository.addTask("Órfã", timing = todayTiming(ReminderRepeat.DAILY))
+        repository.updateTask(task.copy(shoppingListId = 999))
+
+        val logId = repository.logCompletion(task.id)
+        repository.undoCompletion(logId)
+        assertTrue(db.completionLogDao().all().isEmpty())
+    }
+
+    @Test
+    fun `tarefas vinculadas trazem o estado pendente`() = runTest {
+        val listId = listWithPickedItems()
+        val pending = repository.addTask("Pendente", timing = todayTiming())
+        val done = repository.addTask("Feita", timing = todayTiming())
+        val other = repository.addTask("Outra lista", timing = todayTiming())
+        repository.updateTask(pending.copy(shoppingListId = listId))
+        repository.updateTask(done.copy(shoppingListId = listId))
+        repository.updateTask(other.copy(shoppingListId = listId + 1))
+        repository.logCompletion(done.id)
+
+        val linked = repository.linkedTasks(listId)
+        assertEquals(
+            listOf(
+                com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(pending.id, pending = true),
+                com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(done.id, pending = false),
+            ),
+            linked,
+        )
+    }
 }
