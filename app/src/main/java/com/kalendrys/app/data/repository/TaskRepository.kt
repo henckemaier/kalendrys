@@ -196,7 +196,7 @@ class TaskRepository(
                 doneEver = TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), zone),
                 doneToday = completionLogDao.isCompletedBetween(task.id, start, end),
             )
-            ShoppingCompletionOffer.LinkedTask(task.id, pending = status in ShoppingCompletionOffer.PENDING_STATUSES)
+            ShoppingCompletionOffer.LinkedTask(task.id, pending = ShoppingCompletionOffer.isPending(status, task.repeat))
         }
     }
 

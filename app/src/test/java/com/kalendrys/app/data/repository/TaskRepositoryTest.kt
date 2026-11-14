@@ -301,4 +301,29 @@ class TaskRepositoryTest {
         // Scheduler REAL: cancelar uma notificação que não existe é no-op.
         ReminderScheduler(ApplicationProvider.getApplicationContext()).dismissNotification(9_999)
     }
+
+    @Test
+    fun `tarefa unica de amanha conta como pendente e repetida concluida hoje nao`() = runTest {
+        val listId = listWithPickedItems()
+        val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
+        val daily = repository.addTask("Diária", timing = todayTiming(ReminderRepeat.DAILY))
+        repository.updateTask(db.taskDao().byId(tomorrow.id)!!.copy(shoppingListId = listId))
+        repository.updateTask(db.taskDao().byId(daily.id)!!.copy(shoppingListId = listId))
+        repository.logCompletion(daily.id)
+
+        assertEquals(
+            mapOf(tomorrow.id to true, daily.id to false),
+            repository.linkedTasks(listId).associate { it.taskId to it.pending },
+        )
+    }
+
+    @Test
+    fun `tarefa unica de amanha ja concluida nao conta como pendente`() = runTest {
+        val listId = listWithPickedItems()
+        val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
+        repository.updateTask(db.taskDao().byId(tomorrow.id)!!.copy(shoppingListId = listId))
+        repository.logCompletion(tomorrow.id)
+
+        assertEquals(listOf(false), repository.linkedTasks(listId).map { it.pending })
+    }
 }

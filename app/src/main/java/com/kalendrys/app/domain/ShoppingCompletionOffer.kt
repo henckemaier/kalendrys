@@ -10,8 +10,10 @@ package com.kalendrys.app.domain
  *   vinculada à lista e pendente.
  * - Senão, a ÚNICA tarefa pendente vinculada à lista. Zero ou mais de uma: sem oferta.
  *
- * "Pendente" é o mesmo critério do retrato do dia: atrasada, de hoje ou sem data, ainda não
- * concluída (ver [TaskSchedule.Status]). Rotinas não recebem oferta.
+ * "Pendente" ([isPending]): atrasada, de hoje ou sem data, ainda não concluída, e TAMBÉM a tarefa
+ * ÚNICA com data futura (decisão do usuário, NB-2 da v1.6.0: a compra pode ser feita antes do dia).
+ * Tarefa repetida já concluída hoje, ou cuja próxima ocorrência é futura, fica de fora. Rotinas não
+ * recebem oferta.
  */
 object ShoppingCompletionOffer {
 
@@ -25,7 +27,10 @@ object ShoppingCompletionOffer {
         return pending.singleOrNull()
     }
 
-    /** Estados que contam como pendente para a oferta (os mesmos das pendentes de hoje). */
-    val PENDING_STATUSES: Set<TaskSchedule.Status> =
-        setOf(TaskSchedule.Status.OVERDUE, TaskSchedule.Status.TODAY, TaskSchedule.Status.NO_DATE)
+    /** A tarefa conta como pendente para a oferta? Ver a regra no KDoc do objeto. */
+    fun isPending(status: TaskSchedule.Status, repeat: ReminderRepeat): Boolean = when (status) {
+        TaskSchedule.Status.OVERDUE, TaskSchedule.Status.TODAY, TaskSchedule.Status.NO_DATE -> true
+        TaskSchedule.Status.UPCOMING -> repeat == ReminderRepeat.NONE
+        else -> false
+    }
 }
