@@ -121,10 +121,21 @@ class TaskDetailViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
+    /** Tarefa salva de onde o rascunho nasceu (ou o último rebase/salvar); base do [TaskDraft.rebase]. */
+    private var base: Task? = null
+
     init {
+        // A primeira emissão cria o rascunho; as seguintes, se a tarefa mudou por fora (conclusão,
+        // lista excluída), fazem o rebase: campos não editados assumem o banco, edições ficam.
         viewModelScope.launch {
-            val task = repository.observeTask(taskId).filterNotNull().first()
-            if (draft.value == null) draft.value = TaskDraft.from(task, zone)
+            repository.observeTask(taskId).filterNotNull().collect { task ->
+                val previous = base
+                when {
+                    previous == null -> if (draft.value == null) draft.value = TaskDraft.from(task, zone)
+                    task != previous -> draft.update { it?.rebase(previous, task, zone) }
+                }
+                base = task
+            }
         }
     }
 
@@ -163,6 +174,8 @@ class TaskDetailViewModel(
         viewModelScope.launch {
             val updated = current.applyTo(task, zone)
             repository.updateTask(updated)
+            // A base passa a ser o que foi salvo: a emissão do banco com essa tarefa não é "mudança por fora".
+            base = updated
             draft.value = TaskDraft.from(updated, zone)
             eventChannel.send(Event.Saved)
         }

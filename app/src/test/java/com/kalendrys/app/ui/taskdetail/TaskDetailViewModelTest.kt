@@ -180,4 +180,77 @@ class TaskDetailViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // --- Rebase do rascunho quando a tarefa muda por fora (v1.6.0, achado 6) ---
+
+    private suspend fun tomorrowTask(listId: Long? = null): Long =
+        taskRepository.addTask(
+            "Compra",
+            timing = com.kalendrys.app.domain.TaskTiming(
+                date = java.time.LocalDate.now().plusDays(1),
+                time = java.time.LocalTime.of(9, 0),
+            ),
+        ).also { if (listId != null) taskRepository.updateTask(stored(it.id).copy(shoppingListId = listId)) }.id
+
+    @Test
+    fun `concluir tarefa unica de amanha pelo detalhe nao deixa alteracoes pendentes`() = runTest {
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.draft != null && it.task != null }
+            vm.complete()
+            val after = awaitState { it.task?.reminderAt == null && it.draft?.timing?.time == null }
+            assertFalse(after.hasChanges)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `concluir pela oferta da lista com o detalhe aberto nao deixa alteracoes pendentes`() = runTest {
+        val listId = shoppingRepository.createList("Feira")
+        val id = tomorrowTask(listId)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.draft != null && it.task?.shoppingListId == listId }
+            // A oferta da tela da lista chama o mesmo logCompletion, por fora do detalhe.
+            taskRepository.logCompletion(id)
+            val after = awaitState { it.task?.reminderAt == null && it.draft?.timing?.time == null }
+            assertFalse(after.hasChanges)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `salvar depois de editar so o titulo nao regrava a data antiga`() = runTest {
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.draft != null }
+            taskRepository.logCompletion(id) // muda data e lembrete por fora
+            awaitState { it.task?.reminderAt == null && it.draft?.timing?.time == null }
+            vm.updateTitle("Compra do mês")
+            awaitState { it.canSave }
+            vm.save()
+            awaitState { it.task?.title == "Compra do mês" }
+            cancelAndIgnoreRemainingEvents()
+        }
+        val saved = stored(id)
+        assertEquals("Compra do mês", saved.title)
+        assertEquals(java.time.LocalDate.now().toEpochDay(), saved.dueDate)
+        assertNull(saved.reminderAt)
+    }
+
+    @Test
+    fun `lista excluida por fora zera o vinculo do rascunho sem alteracao pendente`() = runTest {
+        val listId = shoppingRepository.createList("Feira")
+        val id = tomorrowTask(listId)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.draft?.shoppingListId == listId }
+            shoppingRepository.deleteList(listId)
+            val after = awaitState { it.task?.shoppingListId == null && it.draft?.shoppingListId == null }
+            assertFalse(after.hasChanges)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
