@@ -70,11 +70,12 @@ sealed interface NewTaskList {
 
 /**
  * Id da lista a gravar na nova tarefa: a existente escolhida, ou a nova criada AGORA (no salvar).
- * Regra única para Tarefas e Calendário. Nome em branco não cria lista.
+ * Regra única para Tarefas e Calendário. Nome em branco não cria lista. Lista existente que foi
+ * excluída antes de salvar vira "sem lista" (a tarefa não nasce com vínculo órfão).
  */
 suspend fun NewTaskList?.resolveListId(shoppingRepository: ShoppingRepository): Long? = when (this) {
     null -> null
-    is NewTaskList.Existing -> listId
+    is NewTaskList.Existing -> shoppingRepository.list(listId)?.id
     is NewTaskList.New -> name.takeIf { it.isNotBlank() }?.let { shoppingRepository.createList(it) }
 }
 
@@ -109,6 +110,18 @@ internal fun NewTaskSheet(
     var listId by rememberSaveable { mutableStateOf<Long?>(null) }
     var newListName by rememberSaveable { mutableStateOf<String?>(null) }
     var showListPicker by rememberSaveable { mutableStateOf(false) }
+    // Lista escolhida excluída com o painel aberto: limpa a escolha, para a tarefa não nascer com
+    // vínculo órfão. Só depois de a lista ter aparecido nesta composição: logo após a recriação do
+    // processo, [lists] chega vazia antes de carregar e não pode apagar uma escolha válida.
+    var chosenListSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(lists, listId) {
+        val chosen = listId ?: return@LaunchedEffect
+        val present = lists.orEmpty().any { it.id == chosen }
+        if (present) chosenListSeen = true else if (chosenListSeen) {
+            listId = null
+            chosenListSeen = false
+        }
+    }
     val listChoice: NewTaskList? = when {
         listId != null -> NewTaskList.Existing(listId!!)
         newListName != null -> NewTaskList.New(newListName!!)
