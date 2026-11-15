@@ -106,6 +106,22 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `falha no gancho beforeReminderChange nao impede gravar a tarefa`() = runTest {
+        // A notificação do catch-up falhou: perder a gravação seria pior (parecer do Esquadro, NB-2).
+        val failing = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+            throw IllegalStateException("notificação falhou")
+        }
+        val task = failing.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+        failing.updateTask(task.copy(title = "Treino forte"))
+        val logId = failing.logCompletion(task.id)
+        failing.undoCompletion(logId)
+        failing.deleteTask(task.copy(title = "Treino forte"))
+        failing.restoreTask(task.copy(title = "Treino forte"))
+        assertEquals(listOf("Treino forte"), db.taskDao().all().map { it.title })
+        assertEquals(0, db.completionLogDao().count())
+    }
+
+    @Test
     fun `gancho beforeReminderChange roda antes de gravar em add update e restore`() = runTest {
         // O gancho vê o banco ANTES da escrita: é o que fecha a janela do catch-up (ADR-0003).
         val seen = mutableListOf<List<String>>()

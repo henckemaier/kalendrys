@@ -1,5 +1,6 @@
 package com.kalendrys.app.data.repository
 
+import android.util.Log
 import com.kalendrys.app.data.local.dao.CompletionLogDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
@@ -15,6 +16,7 @@ import com.kalendrys.app.reminder.ReminderScheduler
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -70,7 +72,7 @@ class TaskRepository(
         /** Lista de compras anexada já na criação (ADR-0001, P2), ou null. */
         shoppingListId: Long? = null,
     ): Task {
-        beforeReminderChange()
+        closeReminderWindow()
         val task = timing.applyTo(
             Task(title = title.trim(), notes = notes.trim(), location = location.trim(), shoppingListId = shoppingListId),
             ZoneId.systemDefault(),
@@ -100,7 +102,7 @@ class TaskRepository(
 
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
     suspend fun updateTask(task: Task) {
-        beforeReminderChange()
+        closeReminderWindow()
         taskDao.update(task)
         scheduler.cancel(task.id)
         if (!isFinished(task)) scheduler.schedule(task)
@@ -119,7 +121,7 @@ class TaskRepository(
      * tarefa nunca apagou a lista.
      */
     suspend fun restoreTask(task: Task) {
-        beforeReminderChange()
+        closeReminderWindow()
         taskDao.insert(task)
         if (!isFinished(task)) scheduler.schedule(task)
     }
@@ -176,7 +178,7 @@ class TaskRepository(
     suspend fun undoCompletion(logId: Long) {
         // Fecha a janela do catch-up antes de reabrir a tarefa (ADR-0003): o lembrete que venceu
         // enquanto ela estava concluída não vira atrasado nem perdido.
-        beforeReminderChange()
+        closeReminderWindow()
         val log = completionLogDao.byId(logId) ?: return
         completionLogDao.deleteById(logId)
         shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
@@ -269,11 +271,26 @@ class TaskRepository(
         )
     }
 
+    /**
+     * Fecha a janela do catch-up antes de uma alteração ([beforeReminderChange]). Uma falha nele é
+     * registrada e a alteração segue: perder a gravação da tarefa por causa de uma notificação seria
+     * pior. No catch-up dos pontos de entrada a falha continua propagando.
+     */
+    private suspend fun closeReminderWindow() {
+        try {
+            beforeReminderChange()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Log.w(TAG, "Catch-up de lembretes falhou antes da alteração; a alteração segue", error)
+        }
+    }
+
     /** Sem repetição e já concluída (no dia dela ou depois): não lembra mais. */
     private suspend fun isFinished(task: Task): Boolean =
         TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), ZoneId.systemDefault())
 
     private companion object {
+        const val TAG = "TaskRepository"
         const val MAX_EARLY_COMPLETIONS = 20
     }
 }
