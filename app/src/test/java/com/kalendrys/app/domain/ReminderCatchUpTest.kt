@@ -217,6 +217,22 @@ class ReminderCatchUpTest {
         assertEquals(ReminderCatchUp.Plan(emptyList(), missedCount = 2), result)
     }
 
+    @Test
+    fun `personalizada a cada 2 semanas pula a semana do meio`() {
+        val custom = task(1, wed, repeat = ReminderRepeat.CUSTOM, every = 2, unit = RecurrenceUnit.WEEKS)
+        // Ocorre qua 28/10 e qua 11/11; qua 4/11 não. Janela: qua 28 10:00 até qua 11/11 09:05.
+        val result = plan(listOf(custom), millis(wed, LocalTime.of(10, 0)), millis(wed.plusDays(14), LocalTime.of(9, 5)))
+        assertEquals(ReminderCatchUp.Plan(late(1L to millis(wed.plusDays(14))), missedCount = 0), result)
+    }
+
+    @Test
+    fun `dias uteis com a janela passando pelo fim de semana nao contam sabado e domingo`() {
+        val weekdays = task(1, wed, repeat = ReminderRepeat.WEEKDAYS)
+        // Janela sex 30 10:00 até seg 2/11 09:05: só a de segunda, atrasada; sab e dom não existem.
+        val result = plan(listOf(weekdays), millis(wed.plusDays(2), LocalTime.of(10, 0)), millis(wed.plusDays(5), LocalTime.of(9, 5)))
+        assertEquals(ReminderCatchUp.Plan(late(1L to millis(wed.plusDays(5))), missedCount = 0), result)
+    }
+
     // --- Virada de dia e horário de verão ---
 
     @Test

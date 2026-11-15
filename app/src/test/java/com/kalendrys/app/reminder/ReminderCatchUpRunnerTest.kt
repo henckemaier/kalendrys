@@ -358,4 +358,42 @@ class ReminderCatchUpRunnerTest {
         assertEquals(emptyList<Long>(), notifier.shown)
         assertEquals(emptyList<Int>(), notifier.missed)
     }
+
+    @Test
+    fun `desfazer conclusao de tarefa repetida depois do horario nao gera atrasado nem perdido`() = runTest {
+        val task = insertTask(9, repeat = ReminderRepeat.DAILY)
+        seenAt(at(8))
+        clock = at(8, 50)
+        val logId = repository.logCompletion(task.id, completedAt = at(8, 50))
+        // Alarme das 9:00 atrasado; o "Desfazer" às 9:10 fecha a janela com a tarefa ainda concluída hoje.
+        clock = at(9, 10)
+        repository.undoCompletion(logId)
+        runner.run(at(9, 15))
+        assertEquals(emptyList<Long>(), notifier.shown)
+        assertEquals(emptyList<Int>(), notifier.missed)
+        assertTrue("a próxima ocorrência continua agendada", log.contains("reschedule:${task.id}"))
+    }
+
+    @Test
+    fun `alarme atrasado de tarefa ja excluida nao mostra nada e avanca a marca`() = runTest {
+        val task = insertTask(9)
+        seenAt(at(8))
+        clock = at(8, 30)
+        repository.deleteTask(task)
+        runner.run(at(9, 2)) // o alarme atrasado acorda o app depois da exclusão
+        assertEquals(emptyList<Long>(), notifier.shown)
+        assertEquals(emptyList<Int>(), notifier.missed)
+        assertEquals(at(9, 2), settings.lastSeenAt())
+    }
+
+    @Test
+    fun `perdida fora da tolerancia nao e recontada na reabertura seguinte`() = runTest {
+        // Aparelho desligado das 8:00 às 11:00: a das 9:00 vira uma perdida; reabrir às 11:05 não reconta.
+        insertTask(9, repeat = ReminderRepeat.DAILY)
+        seenAt(at(8))
+        runner.run(at(11))
+        runner.run(at(11, 5))
+        assertEquals(emptyList<Long>(), notifier.shown)
+        assertEquals(listOf(1), notifier.missed)
+    }
 }
