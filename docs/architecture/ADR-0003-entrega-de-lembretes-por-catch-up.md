@@ -197,9 +197,13 @@ do backup), porque os três catch-ups rodam em momentos diferentes:
   problemas da chave "data do último resumo": trocar o horário nas Configurações não entrega um
   resumo "atrasado" na hora, e trocar para um horário mais tarde no mesmo dia continua
   funcionando.
-- **Plano puro em `domain/`:** a ocorrência do resumo é o horário configurado de hoje (ou de
-  ontem, se a janela cruza a meia-noite). É entregue se o resumo está ligado, a ocorrência está
-  em `(marca, agora]` e `agora - ocorrência <= 60 min`.
+- **Plano puro em `domain/`:** a ocorrência do resumo é **só** o horário configurado de
+  **hoje** (o dia de `agora`, no fuso do aparelho). É entregue se o resumo está ligado, a
+  ocorrência está em `(marca, agora]` e `agora - ocorrência <= 60 min`.
+- **A ocorrência de ontem é descartada depois da meia-noite** (decisão do usuário,
+  2026-11-14), mesmo dentro dos 60 minutos. O resumo mostra o retrato do dia corrente; um
+  resumo das 23:50 entregue às 0:10 mostraria o dia novo com o rótulo de um resumo de ontem.
+  Vale só para o resumo: o aviso de bloco continua avaliando ontem e hoje (4.3.1).
 - **Catch-up em `summary/`** (junto do `DailyScheduler`), sob Mutex próprio: plano, mostra
   (`DailySummaryNotifier`), agenda (`scheduleAll`), grava a marca.
 - **Quem chama o catch-up:** `DailyReceiver` (ação do resumo), início de processo, boot e volta
@@ -238,7 +242,8 @@ do backup), porque os três catch-ups rodam em momentos diferentes:
 - Resumo: abrir o app 3 minutos depois do horário mostra o resumo uma vez e agenda o de amanhã;
   o alarme atrasado chegando depois não duplica; trocar o horário para um já passado não mostra
   nada; trocar para mais tarde no mesmo dia mostra de novo; resumo desligado não mostra; mais
-  de 60 minutos de atraso descarta.
+  de 60 minutos de atraso descarta; resumo das 23:50 com catch-up às 0:10 não mostra nada e
+  agenda o das 23:50 do dia novo.
 - Restauro: nenhuma das três entregas dispara.
 - Emulador, sem a permissão de alarme exato: bloco para daqui a 2 minutos e resumo para daqui a
   2 minutos, repetindo os cenários da seção 6 (app fechado, abrir a frio na janela, editar
@@ -319,7 +324,8 @@ aviso de bloco e resumo diário) com a mesma regra.
   sempre que o app tiver qualquer chance de rodar.
 - Diferenças entre domínios, por decisão de produto: só lembrete de tarefa gera o aviso agregado
   de perdidos; aviso de bloco e resumo fora da tolerância são descartados; bloco com duração já
-  terminado não é avisado.
+  terminado não é avisado; o resumo só considera a ocorrência de hoje (a de ontem é descartada
+  depois da meia-noite).
 - Na primeira execução depois de atualizar da v1.6.0, as marcas novas ainda não existem: um
   aviso de bloco ou resumo que esteja atrasado exatamente nesse momento não é recuperado. Aceito.
 - A v1.6.1 mexe nos três caminhos de alarme de uma vez. Commits separados por domínio e teste de
