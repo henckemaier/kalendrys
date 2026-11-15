@@ -1,8 +1,8 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.baselineprofile)
@@ -44,7 +44,7 @@ val appVersionCode = appVersionName.split(".").let { parts ->
 
 android {
     namespace = "com.kalendrys.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.kalendrys.app"
@@ -89,10 +89,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true // versão exibida em Configurações > Sobre
@@ -102,7 +98,7 @@ android {
     // os assets mesclados do debug (android_merged_assets), então o MigrationTestHelper encontra
     // os JSONs de cada versão no `:app:testDebugUnitTest` — e o APK de release não os carrega.
     sourceSets {
-        getByName("debug").assets.srcDirs(files("$projectDir/schemas"))
+        getByName("debug").assets.directories.add("$projectDir/schemas")
     }
 
     testOptions {
@@ -113,10 +109,17 @@ android {
     }
 }
 
+// AGP 9: Kotlin embutido no AGP (sem o plugin kotlin-android); substitui android.kotlinOptions.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
+}
+
 // Relatórios de estabilidade/skipping do Compose, sob demanda:
 // ./gradlew :app:compileReleaseKotlin -PcomposeReports=true  →  app/build/compose_compiler/
 composeCompiler {
-    stabilityConfigurationFile = layout.projectDirectory.file("compose_stability.conf")
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose_stability.conf"))
     if (project.findProperty("composeReports") == "true") {
         reportsDestination = layout.buildDirectory.dir("compose_compiler")
         metricsDestination = layout.buildDirectory.dir("compose_compiler")

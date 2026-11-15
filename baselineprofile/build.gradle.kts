@@ -1,6 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.test)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.baselineprofile)
 }
 
@@ -10,7 +11,7 @@ plugins {
 //   ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
 android {
     namespace = "com.kalendrys.baselineprofile"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 28
@@ -26,9 +27,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions {
-        jvmTarget = "17"
+// AGP 9: Kotlin embutido no AGP (sem o plugin kotlin-android); substitui android.kotlinOptions.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
