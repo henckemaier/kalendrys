@@ -26,6 +26,19 @@ via GitHub Actions (`.github/workflows/release.yml`).
 3. Confere, via `aapt`, que o APK gerado tem o `versionName`/`versionCode` esperados.
 4. Cria o **GitHub Release** da tag e **anexa o APK assinado** (com release notes geradas).
 
+## Subindo o Gradle (wrapper)
+
+O CI builda com o wrapper (`./gradlew`), que confere o `distributionSha256Sum` de
+`gradle/wrapper/gradle-wrapper.properties` antes de usar a distribuição. Ao subir o Gradle:
+
+1. Regere o wrapper **duas vezes** (a segunda já roda na versão nova e atualiza jar e scripts):
+   `./gradlew wrapper --gradle-version <X.Y.Z> --distribution-type bin`.
+2. Atualize `distributionSha256Sum` com o SHA-256 oficial de
+   `https://services.gradle.org/distributions/gradle-<X.Y.Z>-bin.zip.sha256`.
+3. Confira o `gradle/wrapper/gradle-wrapper.jar` contra
+   `https://services.gradle.org/distributions/gradle-<X.Y.Z>-wrapper.jar.sha256`
+   (ou https://gradle.org/release-checksums/). Se não bater, não commite.
+
 ## Secrets necessários
 
 Configurar em **Settings → Secrets and variables → Actions**:
