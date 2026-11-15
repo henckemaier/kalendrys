@@ -3,6 +3,8 @@
 Complementa `docs/VERSIONING.md` (a regra de versionamento) com o fluxo operacional de release
 via GitHub Actions (`.github/workflows/release.yml`).
 
+O **build-check** (`.github/workflows/build-check.yml`) roda em todo PR para a `main` e precisa estar verde antes do merge e da tag; os dois workflows mantêm o mesmo preparo, JDK e actions (mesmos SHAs).
+
 ## Passo a passo
 
 1. **Bump da versão** — edite **somente** `appVersionName` em `app/build.gradle.kts`
@@ -25,6 +27,53 @@ via GitHub Actions (`.github/workflows/release.yml`).
    lendo a keystore e as senhas dos **GitHub Secrets** (decodificados só em runtime do CI).
 3. Confere, via `aapt`, que o APK gerado tem o `versionName`/`versionCode` esperados.
 4. Cria o **GitHub Release** da tag e **anexa o APK assinado** (com release notes geradas).
+
+## Subindo o Gradle (wrapper)
+
+O CI builda com o wrapper (`./gradlew`), que confere o `distributionSha256Sum` de
+`gradle/wrapper/gradle-wrapper.properties` antes de usar a distribuição. Ao subir o Gradle:
+
+1. Regere o wrapper **duas vezes** (a segunda já roda na versão nova e atualiza jar e scripts):
+   `./gradlew wrapper --gradle-version <X.Y.Z> --distribution-type bin`.
+2. Atualize `distributionSha256Sum` com o SHA-256 oficial de
+   `https://services.gradle.org/distributions/gradle-<X.Y.Z>-bin.zip.sha256`.
+3. Confira o `gradle/wrapper/gradle-wrapper.jar` contra
+   `https://services.gradle.org/distributions/gradle-<X.Y.Z>-wrapper.jar.sha256`
+   (ou https://gradle.org/release-checksums/). Se não bater, não commite.
+
+## Construtores mantidos pelas regras keep (R8)
+
+Desde o AGP 9 o R8 aplica o modo estrito das regras keep: `-keep class X` sem membros mantém só
+a classe, não o construtor sem argumentos. Classe instanciada por reflexão sem ele quebra só no
+release (v1.6.2: `InstantiationException` no `OverwritingInputMerger` do WorkManager e widgets
+carregando para sempre). Depois de `./gradlew :app:assembleRelease`, rode:
+
+```
+bash scripts/check-r8-keep-constructors.sh
+```
+
+Ele cruza `usage.txt` (o que o R8 removeu) com `seeds.txt` (o que as regras mantêm) em
+`app/build/outputs/mapping/release` e falha citando a classe. Correção: acrescentar
+`{ public <init>(); }` à regra em `app/proguard-rules.pro`; ou, se a classe nunca é instanciada por
+reflexão, registrá-la com o motivo em `app/r8-keep-ctor-exceptions.txt`. O build-check roda o
+mesmo comando em todo PR. Não use `android.r8.strictFullModeForKeepRules=false` (vetado).
+
+## Regerando o Baseline Profile
+
+Com um emulador ou aparelho Android 13+ conectado: `./gradlew --no-daemon
+:app:generateReleaseBaselineProfile -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`
+(sem essa propriedade o teste conectado desinstala o app no fim e apaga os dados e widgets).
+
+1. Gere com o app **sem dados** (num aparelho compartilhado: copie os dados com `run-as`, esvazie,
+   gere e restaure). As jornadas criam itens "Perfil:" e, com muitas rotinas, não acham o bloco
+   fora da tela.
+2. **Passo manual** com o plugin `baselineprofile` 1.5.0 e o AGP 9.5.1: a geração apaga os perfis
+   versionados em `app/src/release/generated/baselineProfiles/` e não traz o novo do aparelho.
+   Copie-o de `additional_test_output`:
+   `adb pull /sdcard/Android/media/com.kalendrys.baselineprofile/additional_test_output/BaselineProfileGenerator_generate-startup-prof.txt`
+   e grave o arquivo como `baseline-prof.txt` e como `startup-prof.txt` (idênticos).
+3. Confira: arquivos não vazios, com classes `com/kalendrys/app`, e `assets/dexopt/baseline.prof`
+   dentro do APK de release.
 
 ## Secrets necessários
 

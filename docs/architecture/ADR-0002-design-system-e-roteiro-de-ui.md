@@ -418,3 +418,131 @@ E3 voltar preditivo; E4 Baseline Profile e `StartupBenchmark`.
   seletores de data em pt-BR; deslizar para excluir; voltar preditivo nos dois editores com
   alteração pendente; lembrete com ações, aviso de bloco, resumo diário; widgets Hoje e
   Calendário; backup e restauro; verificador de atualização.
+
+### 11.8 Fechamento da v1.6.2 (2026-11-15)
+
+Registro do que de fato entrou (PR #41) e das decisões tomadas durante a execução. Onde este
+item diverge dos anteriores da seção 11, vale este.
+
+#### 11.8.1 Matriz final de versões
+
+A Trilha 1 fechou sem recorrer à alternativa.
+
+| Item | v1.6.1 | v1.6.2 |
+|------|--------|--------|
+| Gradle (wrapper) | 8.10.2 | 9.6.1, com `distributionSha256Sum` |
+| AGP | 8.7.3 | 9.5.1 |
+| Kotlin e plugin compose | 2.0.21 | 2.4.21 |
+| KSP | 2.0.21-1.0.28 | 2.3.14 |
+| compileSdk (app e `:baselineprofile`) | 35 | 37 |
+| Compose BOM | 2024.12.01 | 2026.09.00 |
+| Room | 2.6.1 | 2.8.5 (banco continua na versão 10) |
+| benchmark e plugin `baselineprofile` | 1.4.1 | 1.5.0 |
+| core-ktx | 1.15.0 | 1.16.0 |
+| lifecycle | 2.8.7 | 2.9.4 |
+| targetSdk / minSdk | 35 / 26 | 35 / 26 |
+| JDK | 21 local, 17 no CI | 21 local, 17 no CI |
+
+Sem mudança: activity-compose 1.9.3, navigation-compose 2.8.5, glance 1.1.1, datastore 1.1.1,
+profileinstaller 1.4.1 e as bibliotecas de teste.
+
+Notas:
+- core-ktx e lifecycle subiram só para o catálogo declarar a versão que o release já resolvia
+  por transitividade. Regra daqui em diante: o catálogo declara o que vai no APK.
+- O KSP passou a ter numeração própria, desacoplada do Kotlin.
+- No AGP 9 o Kotlin é embutido: os módulos não aplicam mais o plugin `kotlin-android`, e o
+  `jvmTarget` fica no bloco `kotlin { compilerOptions }`.
+- Ao subir o Gradle, atualizar o checksum da distribuição e conferir o do `gradle-wrapper.jar`
+  (procedimento em `docs/RELEASING.md`).
+- Teste de migração do Room no Windows: `AbsolutePathOpenHelperFactory`, só em código de teste.
+- Avisos de API obsoleta listados e não corrigidos (`largeTopAppBarColors`,
+  `SwipeToDismissBoxState`): as duas telas são reescritas na v1.7.0.
+
+#### 11.8.2 Desvios de execução do E4
+
+1. **`appops RUN_ANY_IN_BACKGROUND=ignore` durante o benchmark.** O WorkManager dos widgets
+   religava o app e abortava a partida a frio. Aplicado igual no antes e no depois, e restaurado
+   no fim. É condição de medição, não muda o app.
+2. **Perfil gerado com os dados do app vazios**, com a cópia dos dados restaurada depois. A
+   jornada de rotinas falha quando há muitas rotinas na tela; as jornadas não foram alteradas
+   (11.4) e a robustez delas ficou para o Backlog da v1.7.0. As jornadas criam os próprios dados
+   de exemplo, então os caminhos percorridos são os mesmos.
+3. **`startup-prof` copiado à mão de `additional_test_output`.** O plugin `baselineprofile`
+   1.5.0 com o AGP 9.5.1 apaga os perfis versionados e não traz os novos do aparelho. O passo
+   manual está em `docs/RELEASING.md`. `baseline-prof.txt` e `startup-prof.txt` são idênticos
+   entre si, como já eram na v1.6.1. Acompanhar a correção do plugin.
+
+#### 11.8.3 Critério 6: como medir e o que foi decidido
+
+**Protocolo.** O critério 6 (11.6) é comparado **por pares medidos em sequência**, antes e
+depois, no mesmo aparelho e nas mesmas condições. Números de sessões diferentes não se comparam,
+e não se usa valor absoluto de uma sessão como limite para outra. Para um par valer:
+
+- memória livre do host acima de 4 GB no início e no fim de cada medição, e nada pesado rodando
+  em paralelo;
+- p90 até 20% acima da mediana em cada medição;
+- de preferência ordem intercalada (antes, depois, depois, antes), com os dois "antes" diferindo
+  em até 10%; se o mesmo build varia mais que o limite, a sessão não mede nada;
+- compara-se a mediana **com perfil**; o número sem compilação é informativo.
+
+**O que aconteceu.** O mesmo build da v1.6.1 deu 1051, 1394 e 1647 ms de mediana em três
+sessões no emulador, num PC dividido com os outros agentes e com a memória livre chegando a
+menos de 1 GB. Só um par foi medido em condições equivalentes: 1393,8 ms antes e 1395,3 ms
+depois (+0,1%). O par de ordem invertida deu +17,6%, com a memória caindo de 5,2 para 1,5 GB
+durante a medição. Além disso, todas as medições do "depois" foram feitas antes da correção
+das regras keep (11.8.4), com os workers dos widgets falhando.
+
+**Decisão do usuário (2026-11-15).** Critério 6 **aceito pelo par de +0,1%**, sem nova rodada,
+porque este host não tem precisão para medir um limite de 10%. A abertura a frio será
+**reavaliada na v1.7.0**, com aparelho físico ou com o host livre, seguindo o protocolo acima.
+
+Fica registrado como sinal a acompanhar: sem compilação, o build novo foi mais lento nas duas
+rodadas em que houve par (+12% e +26%). Não é o uso real, porque o perfil vai no APK, mas
+indica que o código novo pesa mais a frio e que o perfil compensa.
+
+#### 11.8.4 Risco concretizado: regras keep do R8 no AGP 9
+
+O risco "R8 e build de release com padrões novos" da 11.5 aconteceu. No AGP 9 as regras keep
+passam a valer em modo estrito: `-keep class X` sem membros mantém só a classe, não o
+construtor sem argumentos. A regra do `work-runtime` 2.7.1 (trazido pelo Glance) para
+`InputMerger` é desse tipo; no APK de release o construtor foi removido, nenhum worker rodava e
+os widgets ficavam carregando para sempre. O defeito só aparecia no release, e quem o encontrou
+foi o teste manual no APK de release. A v1.6.1 publicada não tem o defeito.
+
+Decisões:
+- **Correção por regra local** em `app/proguard-rules.pro`, com `{ public <init>(); }`
+  explícito, para `GlanceAppWidget`, `ActionCallback` e `InputMerger`.
+- **A opção global `android.r8.strictFullModeForKeepRules=false` é vetada.** É opção de
+  transição e esconderia o próximo caso.
+- **Regra para o futuro:** toda classe criada por nome (reflexão) declara o construtor na regra
+  keep. Classes do manifesto já recebem a regra do próprio build.
+- **Verificação no CI:** o build-check cruza `usage.txt` e `seeds.txt` do R8 e falha se uma
+  classe mantida por regra perdeu o construtor sem argumentos
+  (`scripts/check-r8-keep-constructors.sh`; exceções justificadas em
+  `app/r8-keep-ctor-exceptions.txt`). É rede de segurança, não substitui o teste abaixo.
+- **Toda versão que muda toolchain ou regras do R8 é testada no APK de release**, incluindo
+  widgets, ações dos widgets, receivers depois de reiniciar o aparelho, backup e restauro, e
+  busca no log por `InstantiationException`, `NoSuchMethodException` e `ClassNotFoundException`.
+- Quando o Glance subir, reavaliar a regra do `InputMerger` e removê-la se a biblioteca passar
+  a trazê-la correta.
+
+#### 11.8.5 build-check (condição C5)
+
+O `release.yml` só dispara por tag, então uma quebra de toolchain só apareceria na hora de
+publicar. Foi criado `.github/workflows/build-check.yml`:
+
+- roda em todo PR para a `main` e por disparo manual;
+- permissão só de leitura e **nenhum secret**; sem a keystore, o build de release é assinado
+  com a chave de debug e o APK não é publicado;
+- repete o preparo do `release.yml` (mesmo runner, mesmos actions fixados por SHA, JDK 17, mesmo
+  comando de build) e a conferência de `versionName` e `versionCode` pelo `aapt`, mais a
+  verificação das regras keep (11.8.4).
+
+Decisões:
+- **O `release.yml` não recebe gatilho de PR.** Ele tem permissão de escrita e a chave de
+  assinatura; código de PR ainda não revisado não roda com a chave.
+- Os dois workflows mantêm o mesmo preparo: mudou JDK ou action em um, muda no outro no mesmo
+  commit.
+- O build-check não prova a assinatura com a chave real nem a criação do Release. Risco aceito:
+  se a tag falhar, nenhum Release é criado e a tag é refeita.
+- Testes unitários e lint no CI ficam para o Backlog da v1.7.0.

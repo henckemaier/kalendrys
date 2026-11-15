@@ -13,6 +13,7 @@ import com.kalendrys.app.data.repository.legacyBackup
 import com.kalendrys.app.data.repository.legacyItem
 import com.kalendrys.app.data.repository.legacyRoutine
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.testutil.AbsolutePathOpenHelperFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -41,6 +42,7 @@ class AppDatabaseMigrationTest {
         InstrumentationRegistry.getInstrumentation(),
         AppDatabase::class.java,
         listOf(AppDatabase.TaskDatesSpec()),
+        AbsolutePathOpenHelperFactory(), // separador '\' no Windows (ver o KDoc)
     )
 
     @Test
@@ -379,6 +381,23 @@ class AppDatabaseMigrationTest {
             assertTrue("tabela routines ausente após 3→4", hasTable(v4, "routines"))
             assertTrue("tabela routine_completion ausente após 3→4", hasTable(v4, "routine_completion"))
         }
+    }
+
+    @Test
+    fun `com o openFactory de caminho absoluto o helper ainda reprova migracao que nao gera o schema`() {
+        // Prova que o AbsolutePathOpenHelperFactory não mascara a validação: o banco é um arquivo
+        // real no disco e uma 9→10 que não faz nada tem de falhar contra o 10.json.
+        val name = "kalendrys-migration-v9-v10-noop"
+        helper.createDatabase(name, 9).close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertTrue("o banco v9 deveria existir em disco", context.getDatabasePath(name).exists())
+
+        val noop = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+        val error = runCatching { helper.runMigrationsAndValidate(name, 10, true, noop).close() }.exceptionOrNull()
+
+        assertTrue("esperava IllegalStateException da validação, veio $error", error is IllegalStateException)
     }
 
     private fun hasTable(db: SupportSQLiteDatabase, table: String): Boolean =
