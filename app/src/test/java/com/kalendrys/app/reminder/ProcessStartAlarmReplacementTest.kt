@@ -10,7 +10,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
@@ -18,6 +17,7 @@ import com.kalendrys.app.summary.DailyReceiver
 import com.kalendrys.app.summary.DailyScheduler
 import com.kalendrys.app.summary.DailySummaryCatchUp
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime

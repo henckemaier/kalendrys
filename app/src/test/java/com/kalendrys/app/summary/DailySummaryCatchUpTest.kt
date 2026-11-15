@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
@@ -143,5 +145,14 @@ class DailySummaryCatchUpTest {
     @Test
     fun `configuracao padrao e resumo ligado as 8`() = runTest {
         assertEquals(AppSettings(), settings.settings.first())
+    }
+
+    @Test
+    fun `so mudancas do resumo chegam ao keepDailyAlarmsInSync`() = runTest {
+        val eight = AppSettings(summaryEnabled = true, summaryTime = LocalTime.of(8, 0))
+        val nine = eight.copy(summaryTime = LocalTime.of(9, 0))
+        val off = nine.copy(summaryEnabled = false)
+        val emitted = flowOf(eight, eight.copy(), nine, nine, off).summaryChanges().toList()
+        assertEquals(listOf(eight, nine, off), emitted)
     }
 }

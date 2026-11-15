@@ -11,6 +11,7 @@ import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.tasks.NewTaskList
 import java.time.LocalDate
@@ -55,6 +56,7 @@ class CalendarViewModelTest {
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
+            InMemoryRoutineCatchUpMark(),
         )
         shoppingRepository = ShoppingRepository(db)
     }

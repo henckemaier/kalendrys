@@ -17,6 +17,7 @@ import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
@@ -69,6 +70,7 @@ class RoutineEditorViewModelTest {
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
+            InMemoryRoutineCatchUpMark(),
         )
         categoryRepository = RoutineCategoryRepository(db)
         shoppingRepository = ShoppingRepository(db)

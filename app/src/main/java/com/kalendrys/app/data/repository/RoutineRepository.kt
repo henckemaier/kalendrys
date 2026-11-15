@@ -1,5 +1,6 @@
 package com.kalendrys.app.data.repository
 
+import android.util.Log
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
@@ -17,6 +18,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -27,21 +29,12 @@ import kotlinx.coroutines.withContext
 /**
  * Marca do catch-up dos avisos de bloco (ADR-0003, 4.3.1): até aqui os inícios de bloco foram
  * avisados ou descartados. No app é a `routine_last_seen_at` do
- * [com.kalendrys.app.data.settings.SettingsRepository]; nos testes, [InMemoryRoutineCatchUpMark].
+ * [com.kalendrys.app.data.settings.SettingsRepository]; nos testes, uma marca em memória.
  */
 interface RoutineCatchUpMark {
     suspend fun get(): Long?
 
     suspend fun set(millis: Long)
-}
-
-/** Marca em memória (padrão do repositório, para os testes). Começa ausente, como logo após atualizar. */
-class InMemoryRoutineCatchUpMark(private var value: Long? = null) : RoutineCatchUpMark {
-    override suspend fun get(): Long? = value
-
-    override suspend fun set(millis: Long) {
-        value = millis
-    }
 }
 
 /**
@@ -63,8 +56,9 @@ class RoutineRepository(
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
     private val shoppingItemDao: ShoppingItemDao,
+    /** Obrigatória: uma marca esquecida em memória faria o app reavisar a cada início de processo. */
+    private val mark: RoutineCatchUpMark,
     private val deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
-    private val mark: RoutineCatchUpMark = InMemoryRoutineCatchUpMark(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
@@ -242,13 +236,20 @@ class RoutineRepository(
     /**
      * Alteração de rotina: catch-up com a configuração antiga, a gravação e, depois, o agendamento
      * com a nova, tudo sob o mesmo Mutex e com o mesmo "agora".
+     *
+     * Tudo em NonCancellable: o "Salvar" do editor seguido de voltar na hora cancela o escopo do
+     * ViewModel, e cortado entre gravar e agendar o alarme antigo ficaria valendo. Uma falha na
+     * ENTREGA do catch-up é registrada e não impede a gravação: perder o salvar da rotina por causa
+     * de uma notificação seria pior. No [catchUp] dos pontos de entrada a falha continua propagando.
      */
     private suspend fun <T> change(write: suspend () -> T): T = mutex.withLock {
         val now = clock()
-        catchUpLocked(now, schedule = false)
-        val result = write()
-        scheduleLocked(now)
-        result
+        withContext(NonCancellable) {
+            catchUpLocked(now, schedule = false, tolerateDeliveryFailure = true)
+            val result = write()
+            scheduleLocked(now)
+            result
+        }
     }
 
     /**
@@ -257,13 +258,20 @@ class RoutineRepository(
      * sobe antes, mas o alarme pendente continua o antigo até lá. Marca ausente (primeira execução):
      * não entrega nada, só estabelece a marca.
      */
-    private suspend fun catchUpLocked(now: Long, schedule: Boolean) {
+    private suspend fun catchUpLocked(now: Long, schedule: Boolean, tolerateDeliveryFailure: Boolean = false) {
         val lastSeen = mark.get()
         val due = if (lastSeen == null) emptyList() else plan(lastSeen, now)
         // Da entrega até gravar a marca, sem cancelamento: cortado no meio, o aviso já mostrado seria
         // reexibido na próxima execução.
         withContext(NonCancellable) {
-            due.forEach { deliverDueBlocks(it.routines, it.date) }
+            due.forEach { block ->
+                try {
+                    deliverDueBlocks(block.routines, block.date)
+                } catch (error: Exception) {
+                    if (error is CancellationException || !tolerateDeliveryFailure) throw error
+                    Log.w(TAG, "Aviso de bloco não entregue; a alteração segue", error)
+                }
+            }
             if (schedule) scheduleLocked(now)
             mark.set(now)
         }
@@ -286,4 +294,8 @@ class RoutineRepository(
     /** Exceções agrupadas por rotina, para o [RoutineSchedule] honrar skip/remarcação. */
     private suspend fun overridesByRoutine(): Map<Long, List<RoutineOverride>> =
         overrideDao.all().groupBy { it.routineId }
+
+    private companion object {
+        const val TAG = "RoutineRepository"
+    }
 }
