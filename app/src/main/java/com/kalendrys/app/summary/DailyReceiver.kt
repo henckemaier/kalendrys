@@ -7,9 +7,13 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.widget.KalendrysWidgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+/**
+ * Alarmes diários: o do resumo e o da virada do dia só ACORDAM o app. Os dois passam pelo
+ * catch-up do resumo (ADR-0003, 4.3.2), que decide se o resumo sai e só depois reagenda; um alarme
+ * atrasado que chegue depois de o resumo ter saído encontra a janela vazia.
+ */
 class DailyReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -17,14 +21,9 @@ class DailyReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val settings = app.settingsRepository.settings.first()
-                // Confere de novo: o resumo pode ter sido desligado depois de o alarme ser agendado.
-                if (intent.action == ACTION_SUMMARY && settings.summaryEnabled) {
-                    DailySummaryNotifier.show(context, app.todayRepository.current())
-                }
+                app.summaryCatchUp.run()
                 // Na virada do dia, "concluídas hoje" zera e os widgets precisam refletir isso.
                 KalendrysWidgets.updateAll(context)
-                app.dailyScheduler.scheduleAll(settings)
             } finally {
                 pendingResult.finish()
             }

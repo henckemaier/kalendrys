@@ -27,10 +27,11 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Catch-up (ADR-0003): entrega o que venceu com o aparelho desligado e só depois
-                // refaz os alarmes das tarefas, com o mesmo "agora".
+                // Catch-ups (ADR-0003): cada um entrega o que venceu com o aparelho desligado e só
+                // depois refaz os seus alarmes, lendo o próprio "agora" dentro do seu Mutex.
                 app.reminderCatchUp.run()
-                app.routineRepository.scheduleNextAlarm()
+                app.summaryCatchUp.run()
+                app.routineRepository.catchUp()
                 KalendrysWidgets.updateAll(context)
             } finally {
                 pendingResult.finish()

@@ -7,18 +7,55 @@ import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.domain.RoutineCatchUp
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
-/** Fonte única das rotinas: banco, alarme do próximo início e notificações sempre em sincronia. */
+/**
+ * Marca do catch-up dos avisos de bloco (ADR-0003, 4.3.1): até aqui os inícios de bloco foram
+ * avisados ou descartados. No app é a `routine_last_seen_at` do
+ * [com.kalendrys.app.data.settings.SettingsRepository]; nos testes, [InMemoryRoutineCatchUpMark].
+ */
+interface RoutineCatchUpMark {
+    suspend fun get(): Long?
+
+    suspend fun set(millis: Long)
+}
+
+/** Marca em memória (padrão do repositório, para os testes). Começa ausente, como logo após atualizar. */
+class InMemoryRoutineCatchUpMark(private var value: Long? = null) : RoutineCatchUpMark {
+    override suspend fun get(): Long? = value
+
+    override suspend fun set(millis: Long) {
+        value = millis
+    }
+}
+
+/**
+ * Fonte única das rotinas: banco, alarme do próximo início e notificações sempre em sincronia.
+ *
+ * O aviso de início de bloco é entregue pelo [catchUp] (ADR-0003, 4.3.1); o alarme só acorda o app.
+ * Toda alteração de rotina roda o catch-up ANTES de gravar (fecha a janela com a configuração
+ * antiga) e só agenda depois, tudo sob o mesmo [mutex]. Assim nenhum `alarms.scheduleNext` substitui
+ * um aviso pendente ainda não entregue, e criar ou mover um bloco para um horário já passado não o
+ * avisa como atrasado.
+ *
+ * [deliverDueBlocks] mostra os avisos (no app, [RoutineNotifications.show] com exceções e progresso
+ * da lista): o repositório não monta notificação. [mark] guarda a marca do catch-up.
+ */
 class RoutineRepository(
     private val routineDao: RoutineDao,
     private val completionDao: RoutineCompletionDao,
@@ -26,7 +63,14 @@ class RoutineRepository(
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
     private val shoppingItemDao: ShoppingItemDao,
+    private val deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
+    private val mark: RoutineCatchUpMark = InMemoryRoutineCatchUpMark(),
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
+
+    /** Uma execução por vez: catch-up, alteração + agendamento e todo `alarms.scheduleNext`. Não é reentrante. */
+    private val mutex = Mutex()
 
     /** Todas as rotinas, inclusive as excluídas; quem decide o que aparece em cada dia é o [RoutineSchedule]. */
     val routines: Flow<List<Routine>> = routineDao.observeAll()
@@ -50,22 +94,18 @@ class RoutineRepository(
     fun observeCompletionsBetween(start: LocalDate, endExclusive: LocalDate): Flow<List<RoutineCompletion>> =
         completionDao.observeBetween(start.toEpochDay(), endExclusive.toEpochDay())
 
-    suspend fun add(routine: Routine): Routine {
-        val saved = routine.copy(id = routineDao.insert(routine))
-        scheduleNextAlarm()
-        return saved
+    suspend fun add(routine: Routine): Routine = change {
+        routine.copy(id = routineDao.insert(routine))
     }
 
-    suspend fun update(routine: Routine) {
+    suspend fun update(routine: Routine): Unit = change {
         routineDao.update(routine)
-        scheduleNextAlarm()
     }
 
     /** "Excluir": some de hoje em diante, mas os dias passados mantêm o bloco e a conclusão. */
-    suspend fun archive(routine: Routine, now: Long = System.currentTimeMillis()) {
+    suspend fun archive(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
         routineDao.update(routine.copy(archivedAt = now))
         notifications.cancel(routine.id)
-        scheduleNextAlarm()
     }
 
     /**
@@ -73,16 +113,14 @@ class RoutineRepository(
      * intactos. Distinta de arquivar (excluir): dá pra retomar depois. Reagenda sem ela e tira
      * da tela qualquer aviso já mostrado.
      */
-    suspend fun pause(routine: Routine, now: Long = System.currentTimeMillis()) {
+    suspend fun pause(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
         routineDao.update(routine.copy(pausedAt = now))
         notifications.cancel(routine.id)
-        scheduleNextAlarm()
     }
 
     /** "Retomar": a rotina volta a agendar/avisar com a configuração e o histórico preservados. */
-    suspend fun resume(routine: Routine) {
+    suspend fun resume(routine: Routine): Unit = change {
         routineDao.update(routine.copy(pausedAt = null))
-        scheduleNextAlarm()
     }
 
     /**
@@ -94,8 +132,8 @@ class RoutineRepository(
      * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
      * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
      */
-    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()) {
-        val routine = routineDao.byId(routineId) ?: return
+    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Unit = change {
+        val routine = routineDao.byId(routineId) ?: return@change
         val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
         if (date == today) notifications.cancel(routineId)
         val listId = routine.shoppingListId
@@ -104,8 +142,11 @@ class RoutineRepository(
         }
     }
 
-    /** Desfaz a conclusão e devolve as marcações que ela tinha zerado (se ainda for o último reinício). */
-    suspend fun uncomplete(routineId: Long, date: LocalDate) {
+    /**
+     * Desfaz a conclusão e devolve as marcações que ela tinha zerado (se ainda for o último reinício).
+     * O catch-up antes de gravar impede que desfazer às 9:20 a conclusão do bloco das 9:00 o avise.
+     */
+    suspend fun uncomplete(routineId: Long, date: LocalDate): Unit = change {
         completionDao.delete(routineId, date.toEpochDay())
         shoppingItemDao.restoreReset(ShoppingReset.routineKey(routineId, date.toEpochDay()))
     }
@@ -145,14 +186,13 @@ class RoutineRepository(
         overrideDao.all().firstOrNull { it.routineId == routineId && it.epochDay == epochDay }
 
     /** Pular a ocorrência daquele dia: a rotina não acontece ali, mas continua ativa. */
-    suspend fun skipOccurrence(routineId: Long, epochDay: Long) {
+    suspend fun skipOccurrence(routineId: Long, epochDay: Long): Unit = change {
         overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP))
         if (epochDay == LocalDate.now().toEpochDay()) notifications.cancel(routineId)
-        scheduleNextAlarm()
     }
 
     /** Remarcar a ocorrência daquele dia para outro minuto e/ou outro dia. */
-    suspend fun rescheduleOccurrence(routineId: Long, epochDay: Long, newStartMinute: Int?, newEpochDay: Long?) {
+    suspend fun rescheduleOccurrence(routineId: Long, epochDay: Long, newStartMinute: Int?, newEpochDay: Long?): Unit = change {
         overrideDao.insert(
             RoutineOverride(
                 routineId = routineId,
@@ -162,54 +202,88 @@ class RoutineRepository(
                 newEpochDay = newEpochDay,
             ),
         )
-        scheduleNextAlarm()
     }
 
     /** Remover a exceção daquele dia: a ocorrência volta ao horário normal da rotina. */
-    suspend fun clearOccurrenceException(routineId: Long, epochDay: Long) {
-        val existing = occurrenceOverride(routineId, epochDay) ?: return
+    suspend fun clearOccurrenceException(routineId: Long, epochDay: Long): Unit = change {
+        val existing = occurrenceOverride(routineId, epochDay) ?: return@change
         overrideDao.delete(existing)
-        scheduleNextAlarm()
     }
 
-    /** Refaz o alarme do próximo início (mudança nas rotinas, reinício, mudança de fuso ou relógio). */
-    suspend fun scheduleNextAlarm(now: LocalDateTime = LocalDateTime.now()) {
-        alarms.scheduleNext(routineDao.active(), now, overridesByRoutine())
+    // --- Catch-up do aviso de bloco (ADR-0003, 4.3.1) -------------------------------------------
+
+    /**
+     * Entrega os avisos de bloco vencidos e ainda não processados, agenda o próximo início
+     * estritamente depois de agora e só então grava a marca. Chamado pelo alarme
+     * ([com.kalendrys.app.reminder.RoutineAlarmReceiver]) e pelos pontos de entrada do app (início de
+     * processo, boot, volta ao primeiro plano). Quem chega primeiro entrega; quem chega depois
+     * encontra a janela vazia.
+     *
+     * [nowOverride] só para quem já tem o "agora" (testes, ponto de entrada com um único `now`). Sem
+     * ele, o relógio é lido DENTRO do Mutex: lido antes, duas chamadas quase simultâneas podiam entrar
+     * em ordem trocada e a segunda gravar a marca para trás.
+     */
+    suspend fun catchUp(nowOverride: Long? = null) = mutex.withLock {
+        catchUpLocked(nowOverride ?: clock(), schedule = true)
     }
 
     /**
-     * Chamado quando o alarme toca: devolve os blocos daquele dia que começaram entre o horário
-     * agendado e agora (o alarme pode atrasar), com aviso ligado e ainda não feitos. Já deixa
-     * agendado o próximo início. Honra as exceções: um `SKIP`/remarcação para outro dia some da
-     * lista, e uma remarcação de minuto usa o horário efetivo.
+     * Depois de restaurar um backup: a marca passa a ser agora e o próximo início é agendado, sem
+     * avisar nada do passado do backup.
      */
-    suspend fun onAlarm(epochDay: Long, scheduledMinute: Int, now: LocalDateTime = LocalDateTime.now()): List<Routine> {
-        val zone = ZoneId.systemDefault()
-        val date = LocalDate.ofEpochDay(epochDay)
-        val untilMinute = if (now.toLocalDate() == date) now.hour * 60 + now.minute else MINUTES_PER_DAY
-        val active = routineDao.active()
-        val overrides = overridesByRoutine()
-        val done = completionDao.doneOn(epochDay).toSet()
-        val due = active.filter { routine ->
-            val ov = overrides[routine.id].orEmpty()
-            if (!routine.remind || routine.id in done || !RoutineSchedule.occursOn(routine, date, zone, ov)) {
-                return@filter false
-            }
-            val start = RoutineSchedule.startOn(routine, date, ov)
-            val minute = start.hour * 60 + start.minute
-            minute in scheduledMinute..untilMinute
+    suspend fun establishBaseline(nowOverride: Long? = null) = mutex.withLock {
+        val now = nowOverride ?: clock()
+        withContext(NonCancellable) {
+            scheduleLocked(now)
+            mark.set(now)
         }
-        // Estritamente depois do horário que tocou (ou de agora, se atrasou): não repete o mesmo início.
-        val scheduledAt = date.atStartOfDay().plusMinutes(scheduledMinute.toLong())
-        alarms.scheduleNext(active, maxOf(now, scheduledAt), overrides)
-        return due
+    }
+
+    /**
+     * Alteração de rotina: catch-up com a configuração antiga, a gravação e, depois, o agendamento
+     * com a nova, tudo sob o mesmo Mutex e com o mesmo "agora".
+     */
+    private suspend fun <T> change(write: suspend () -> T): T = mutex.withLock {
+        val now = clock()
+        catchUpLocked(now, schedule = false)
+        val result = write()
+        scheduleLocked(now)
+        result
+    }
+
+    /**
+     * Plano → entrega → agenda (se [schedule]) → grava a marca. Substituir o alarme só depois de
+     * entregar é o que impede o pulo. No [change] o agendamento fica para depois da gravação: a marca
+     * sobe antes, mas o alarme pendente continua o antigo até lá. Marca ausente (primeira execução):
+     * não entrega nada, só estabelece a marca.
+     */
+    private suspend fun catchUpLocked(now: Long, schedule: Boolean) {
+        val lastSeen = mark.get()
+        val due = if (lastSeen == null) emptyList() else plan(lastSeen, now)
+        // Da entrega até gravar a marca, sem cancelamento: cortado no meio, o aviso já mostrado seria
+        // reexibido na próxima execução.
+        withContext(NonCancellable) {
+            due.forEach { deliverDueBlocks(it.routines, it.date) }
+            if (schedule) scheduleLocked(now)
+            mark.set(now)
+        }
+    }
+
+    private suspend fun plan(lastSeen: Long, now: Long): List<RoutineCatchUp.Due> {
+        val zone = zone()
+        val days = RoutineCatchUp.days(lastSeen, now, zone)
+        if (days.isEmpty()) return emptyList()
+        val doneByDay = days.associateWith { completionDao.doneOn(it.toEpochDay()).toSet() }
+        return RoutineCatchUp.plan(routineDao.active(), overridesByRoutine(), doneByDay, lastSeen, now, zone)
+    }
+
+    /** Agenda o próximo início estritamente depois de [now], com os dados lidos agora (dentro do Mutex). */
+    private suspend fun scheduleLocked(now: Long) {
+        val after = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone())
+        alarms.scheduleNext(routineDao.active(), after, overridesByRoutine())
     }
 
     /** Exceções agrupadas por rotina, para o [RoutineSchedule] honrar skip/remarcação. */
     private suspend fun overridesByRoutine(): Map<Long, List<RoutineOverride>> =
         overrideDao.all().groupBy { it.routineId }
-
-    private companion object {
-        const val MINUTES_PER_DAY = 24 * 60
-    }
 }
