@@ -8,6 +8,7 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
+import com.kalendrys.app.data.repository.RoutineCatchUpMark
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -70,6 +71,22 @@ class KalendrysApp : Application() {
             RoutineAlarms(this),
             routineNotifications,
             database.shoppingItemDao(),
+            // Entrega do catch-up do aviso de bloco (ADR-0003, 4.3.1): o repositório decide, aqui mostra.
+            deliverDueBlocks = { due, date ->
+                due.forEach { routine ->
+                    routineNotifications.show(
+                        routine,
+                        date,
+                        routineRepository.overridesFor(routine.id),
+                        shoppingRepository.progressOf(routine.shoppingListId),
+                    )
+                }
+            },
+            mark = object : RoutineCatchUpMark {
+                override suspend fun get(): Long? = settingsRepository.routineLastSeenAt()
+
+                override suspend fun set(millis: Long) = settingsRepository.setRoutineLastSeen(millis)
+            },
         )
     }
 
