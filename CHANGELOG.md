@@ -3,6 +3,30 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.6.2 — Toolchain atualizada (versionCode 10602)
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 11).
+Sem mudança de tela, de banco (Room versão 10), de backup ou de permissões.
+
+### Novidades
+
+- **Voltar preditivo**: o gesto de voltar do Android mostra a prévia da tela anterior.
+
+### Correções
+
+- **Widgets no APK de release**: corrigidas as regras de proteção do R8, que no AGP 9 deixaram de
+  manter o construtor sem argumentos de classes criadas por reflexão; sem isso os widgets ficavam
+  "carregando" para sempre.
+
+### Interno
+
+- **Toolchain**: Gradle 9.6.1, Android Gradle Plugin 9.5.1, Kotlin 2.4.21, KSP 2.3.14,
+  compileSdk 37 (targetSdk 35 e minSdk 26 inalterados), Compose BOM 2026.09.00, Room 2.8.5 e
+  `benchmark`/`baselineprofile` 1.5.0.
+- **Baseline Profile** regerado com a toolchain nova.
+- **CI**: o build-check roda em todo PR para a `main` (build de release, `aapt` e
+  conferência dos construtores mantidos pelas regras do R8).
+
 ## v1.6.1 — Lembretes que não se perdem (versionCode 10601)
 
 Decisão de arquitetura: `docs/architecture/ADR-0003-entrega-de-lembretes-por-catch-up.md`.
