@@ -383,6 +383,23 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `com o openFactory de caminho absoluto o helper ainda reprova migracao que nao gera o schema`() {
+        // Prova que o AbsolutePathOpenHelperFactory não mascara a validação: o banco é um arquivo
+        // real no disco e uma 9→10 que não faz nada tem de falhar contra o 10.json.
+        val name = "kalendrys-migration-v9-v10-noop"
+        helper.createDatabase(name, 9).close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertTrue("o banco v9 deveria existir em disco", context.getDatabasePath(name).exists())
+
+        val noop = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+        val error = runCatching { helper.runMigrationsAndValidate(name, 10, true, noop).close() }.exceptionOrNull()
+
+        assertTrue("esperava IllegalStateException da validação, veio $error", error is IllegalStateException)
+    }
+
     private fun hasTable(db: SupportSQLiteDatabase, table: String): Boolean =
         db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf<Any>(table))
             .use { it.moveToFirst() }
