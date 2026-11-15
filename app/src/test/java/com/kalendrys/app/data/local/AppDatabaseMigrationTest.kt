@@ -13,6 +13,7 @@ import com.kalendrys.app.data.repository.legacyBackup
 import com.kalendrys.app.data.repository.legacyItem
 import com.kalendrys.app.data.repository.legacyRoutine
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.testutil.AbsolutePathOpenHelperFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -41,6 +42,7 @@ class AppDatabaseMigrationTest {
         InstrumentationRegistry.getInstrumentation(),
         AppDatabase::class.java,
         listOf(AppDatabase.TaskDatesSpec()),
+        AbsolutePathOpenHelperFactory(), // separador '\' no Windows (ver o KDoc)
     )
 
     @Test
