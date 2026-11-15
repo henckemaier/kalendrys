@@ -29,21 +29,12 @@ import kotlinx.coroutines.withContext
 /**
  * Marca do catch-up dos avisos de bloco (ADR-0003, 4.3.1): até aqui os inícios de bloco foram
  * avisados ou descartados. No app é a `routine_last_seen_at` do
- * [com.kalendrys.app.data.settings.SettingsRepository]; nos testes, [InMemoryRoutineCatchUpMark].
+ * [com.kalendrys.app.data.settings.SettingsRepository]; nos testes, uma marca em memória.
  */
 interface RoutineCatchUpMark {
     suspend fun get(): Long?
 
     suspend fun set(millis: Long)
-}
-
-/** Marca em memória (padrão do repositório, para os testes). Começa ausente, como logo após atualizar. */
-class InMemoryRoutineCatchUpMark(private var value: Long? = null) : RoutineCatchUpMark {
-    override suspend fun get(): Long? = value
-
-    override suspend fun set(millis: Long) {
-        value = millis
-    }
 }
 
 /**
@@ -65,8 +56,9 @@ class RoutineRepository(
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
     private val shoppingItemDao: ShoppingItemDao,
+    /** Obrigatória: uma marca esquecida em memória faria o app reavisar a cada início de processo. */
+    private val mark: RoutineCatchUpMark,
     private val deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
-    private val mark: RoutineCatchUpMark = InMemoryRoutineCatchUpMark(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {

@@ -16,6 +16,7 @@ import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.DayOfWeek
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,7 @@ class RoutinesViewModelTest {
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
+            InMemoryRoutineCatchUpMark(),
         )
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
