@@ -42,11 +42,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     /**
-     * Último instante (epoch millis) em que o app processou os lembretes — avança quando um alarme
-     * dispara e quando o app vem ao foreground. `null` até a primeira vez. Base da recuperação de
-     * alarmes perdidos ([com.kalendrys.app.reminder.MissedReminderRecovery]). Fica fora de
-     * [AppSettings] de propósito: é bookkeeping interno, não preferência, e não deve reemitir o
-     * fluxo de configurações (que reagenda o resumo diário) a cada atualização.
+     * Último instante (epoch millis) até o qual os lembretes de tarefa foram entregues ou contados.
+     * Só o catch-up ([com.kalendrys.app.reminder.ReminderCatchUpRunner], ADR-0003) a grava. `null` até
+     * a primeira vez. Fica fora de [AppSettings] de propósito: é bookkeeping interno, não preferência,
+     * e não deve reemitir o fluxo de configurações (que reagenda o resumo diário) a cada atualização.
      */
     suspend fun lastSeenAt(): Long? = dataStore.data.first()[LAST_SEEN]
 
@@ -54,9 +53,31 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[LAST_SEEN] = nowMillis }
     }
 
+    /**
+     * Marca do catch-up dos avisos de bloco de rotina (ADR-0003, 4.3.1): até aqui os inícios de
+     * bloco foram avisados ou descartados. Só o catch-up de rotinas a grava. Fora do backup.
+     */
+    suspend fun routineLastSeenAt(): Long? = dataStore.data.first()[ROUTINE_LAST_SEEN]
+
+    suspend fun setRoutineLastSeen(nowMillis: Long) {
+        dataStore.edit { it[ROUTINE_LAST_SEEN] = nowMillis }
+    }
+
+    /**
+     * Marca do catch-up do resumo diário (ADR-0003, 4.3.2): até aqui o resumo foi entregue ou
+     * descartado. Só o catch-up do resumo a grava. Fora do backup.
+     */
+    suspend fun summaryLastSeenAt(): Long? = dataStore.data.first()[SUMMARY_LAST_SEEN]
+
+    suspend fun setSummaryLastSeen(nowMillis: Long) {
+        dataStore.edit { it[SUMMARY_LAST_SEEN] = nowMillis }
+    }
+
     private companion object {
         val SUMMARY_ENABLED = booleanPreferencesKey("summary_enabled")
         val SUMMARY_MINUTE = intPreferencesKey("summary_minute_of_day")
         val LAST_SEEN = longPreferencesKey("last_seen_at")
+        val ROUTINE_LAST_SEEN = longPreferencesKey("routine_last_seen_at")
+        val SUMMARY_LAST_SEEN = longPreferencesKey("summary_last_seen_at")
     }
 }

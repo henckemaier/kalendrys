@@ -106,14 +106,33 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun `onReminderFired agenda a proxima ocorrencia quando a tarefa se repete`() = runTest {
-        val task = repository.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
-        scheduler.reset()
+    fun `falha no gancho beforeReminderChange nao impede gravar a tarefa`() = runTest {
+        // A notificação do catch-up falhou: perder a gravação seria pior (parecer do Esquadro, NB-2).
+        val failing = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+            throw IllegalStateException("notificação falhou")
+        }
+        val task = failing.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+        failing.updateTask(task.copy(title = "Treino forte"))
+        val logId = failing.logCompletion(task.id)
+        failing.undoCompletion(logId)
+        failing.deleteTask(task.copy(title = "Treino forte"))
+        failing.restoreTask(task.copy(title = "Treino forte"))
+        assertEquals(listOf("Treino forte"), db.taskDao().all().map { it.title })
+        assertEquals(0, db.completionLogDao().count())
+    }
 
-        val fired = repository.onReminderFired(task.id, now = System.currentTimeMillis())
-
-        assertNotNull("a notificação de hoje ainda deve aparecer", fired)
-        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+    @Test
+    fun `gancho beforeReminderChange roda antes de gravar em add update e restore`() = runTest {
+        // O gancho vê o banco ANTES da escrita: é o que fecha a janela do catch-up (ADR-0003).
+        val seen = mutableListOf<List<String>>()
+        val hooked = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+            seen += db.taskDao().all().map { it.title }
+        }
+        val task = hooked.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+        hooked.updateTask(task.copy(title = "Treino forte"))
+        hooked.deleteTask(task.copy(title = "Treino forte"))
+        hooked.restoreTask(task.copy(title = "Treino forte"))
+        assertEquals(listOf(emptyList(), listOf("Treino"), emptyList<String>()), seen)
     }
 
     @Test

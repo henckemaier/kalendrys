@@ -16,7 +16,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import com.kalendrys.app.domain.AppLocale
-import com.kalendrys.app.reminder.MissedReminderRecovery
 import com.kalendrys.app.ui.navigation.KalendrysNavHost
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.Dispatchers
@@ -71,11 +70,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Voltou ao primeiro plano: recupera lembretes que o aparelho perdeu (desligado/Doze) numa
-        // única notificação agregada e avança o last-seen. Idempotente, então rodar a cada foreground
-        // não gera spam nem duplica o que já foi entregue.
+        // Voltou ao primeiro plano: os três catch-ups (ADR-0003): tarefas, avisos de bloco e resumo.
+        // Cada um entrega o que venceu e reagenda; quem chegar depois acha a janela vazia.
         lifecycleScope.launch(Dispatchers.IO) {
-            MissedReminderRecovery.run(this@MainActivity)
+            val app = application as KalendrysApp
+            app.reminderCatchUp.run()
+            app.routineRepository.catchUp()
+            app.summaryCatchUp.run()
         }
     }
 

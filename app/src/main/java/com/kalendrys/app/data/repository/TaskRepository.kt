@@ -1,10 +1,12 @@
 package com.kalendrys.app.data.repository
 
+import android.util.Log
 import com.kalendrys.app.data.local.dao.CompletionLogDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.ReminderCatchUp
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingReset
@@ -14,6 +16,7 @@ import com.kalendrys.app.reminder.ReminderScheduler
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -27,6 +30,13 @@ class TaskRepository(
     private val completionLogDao: CompletionLogDao,
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
+    /**
+     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask],
+     * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
+     * passado não virar atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
+     * BackupManager), sem dependência circular com o runner. Vazio nos testes de repositório.
+     */
+    private val beforeReminderChange: suspend () -> Unit = {},
 ) {
 
     val tasks: Flow<List<Task>> = taskDao.observeAll()
@@ -62,6 +72,7 @@ class TaskRepository(
         /** Lista de compras anexada já na criação (ADR-0001, P2), ou null. */
         shoppingListId: Long? = null,
     ): Task {
+        closeReminderWindow()
         val task = timing.applyTo(
             Task(title = title.trim(), notes = notes.trim(), location = location.trim(), shoppingListId = shoppingListId),
             ZoneId.systemDefault(),
@@ -69,27 +80,6 @@ class TaskRepository(
         val saved = task.copy(id = taskDao.insert(task))
         scheduler.schedule(saved)
         return saved
-    }
-
-    /**
-     * Chamado quando um alarme toca: devolve a tarefa se a notificação deve aparecer e, se ela se
-     * repete, já agenda a próxima ocorrência. `null` se foi excluída ou já está feita (a de hoje).
-     */
-    suspend fun onReminderFired(taskId: Long, now: Long = System.currentTimeMillis()): Task? {
-        val task = taskDao.byId(taskId) ?: return null
-        if (task.repeat != ReminderRepeat.NONE) {
-            // A margem evita reagendar a mesma ocorrência que acabou de tocar.
-            scheduler.schedule(task, after = now + FIRED_OCCURRENCE_MARGIN_MS)
-            val zone = ZoneId.systemDefault()
-            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-            val doneToday = completionLogDao.isCompletedBetween(
-                taskId = taskId,
-                start = today.atStartOfDay(zone).toInstant().toEpochMilli(),
-                end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
-            )
-            return task.takeUnless { doneToday }
-        }
-        return task.takeUnless { isFinished(task) }
     }
 
     /**
@@ -112,6 +102,7 @@ class TaskRepository(
 
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
     suspend fun updateTask(task: Task) {
+        closeReminderWindow()
         taskDao.update(task)
         scheduler.cancel(task.id)
         if (!isFinished(task)) scheduler.schedule(task)
@@ -130,6 +121,7 @@ class TaskRepository(
      * tarefa nunca apagou a lista.
      */
     suspend fun restoreTask(task: Task) {
+        closeReminderWindow()
         taskDao.insert(task)
         if (!isFinished(task)) scheduler.schedule(task)
     }
@@ -184,6 +176,9 @@ class TaskRepository(
      * como antes. A solução definitiva (colunas no CompletionLog) vem na v1.8.0.
      */
     suspend fun undoCompletion(logId: Long) {
+        // Fecha a janela do catch-up antes de reabrir a tarefa (ADR-0003): o lembrete que venceu
+        // enquanto ela estava concluída não vira atrasado nem perdido.
+        closeReminderWindow()
         val log = completionLogDao.byId(logId) ?: return
         completionLogDao.deleteById(logId)
         shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
@@ -239,7 +234,35 @@ class TaskRepository(
         }
     }
 
-    /** Refaz todos os alarmes (reinício, atualização do app, mudança de fuso); chamado pelo BootReceiver. */
+    /**
+     * Plano do catch-up de lembretes em `(lastSeen, now]` ([ReminderCatchUp.plan]), com as tarefas
+     * de cada ocorrência atrasada. Só lê o banco; quem mostra, reagenda e grava a marca é o runner.
+     */
+    suspend fun reminderCatchUpPlan(lastSeen: Long, now: Long, zone: ZoneId): Pair<ReminderCatchUp.Plan, Map<Long, Task>> {
+        if (now <= lastSeen) return ReminderCatchUp.Plan.EMPTY to emptyMap()
+        val tasks = taskDao.all().filter { it.reminderAt != null }
+        val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
+        val firstDay = Instant.ofEpochMilli(lastSeen).atZone(zone).toLocalDate()
+        val lastDay = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val completionDays = completionLogDao.between(
+            start = firstDay.atStartOfDay(zone).toInstant().toEpochMilli(),
+            end = lastDay.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+        ).groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
+            .mapValues { (_, days) -> days.toSet() }
+        val plan = ReminderCatchUp.plan(tasks, last, completionDays, lastSeen, now, zone)
+        val byId = tasks.associateBy { it.id }
+        return plan to plan.late.mapNotNull { byId[it.taskId] }.associateBy { it.id }
+    }
+
+    /** Cancela o alarme pendente da tarefa, sem mexer na notificação já exibida (higiene do catch-up). */
+    fun cancelReminderAlarm(taskId: Long) {
+        scheduler.cancel(taskId)
+    }
+
+    /**
+     * Agenda a próxima ocorrência de cada tarefa estritamente depois de [now]. Chamado só pelo
+     * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
+     */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
         val zone = ZoneId.systemDefault()
         val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
@@ -248,12 +271,26 @@ class TaskRepository(
         )
     }
 
+    /**
+     * Fecha a janela do catch-up antes de uma alteração ([beforeReminderChange]). Uma falha nele é
+     * registrada e a alteração segue: perder a gravação da tarefa por causa de uma notificação seria
+     * pior. No catch-up dos pontos de entrada a falha continua propagando.
+     */
+    private suspend fun closeReminderWindow() {
+        try {
+            beforeReminderChange()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Log.w(TAG, "Catch-up de lembretes falhou antes da alteração; a alteração segue", error)
+        }
+    }
+
     /** Sem repetição e já concluída (no dia dela ou depois): não lembra mais. */
     private suspend fun isFinished(task: Task): Boolean =
         TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), ZoneId.systemDefault())
 
     private companion object {
-        const val FIRED_OCCURRENCE_MARGIN_MS = 60_000L
+        const val TAG = "TaskRepository"
         const val MAX_EARLY_COMPLETIONS = 20
     }
 }

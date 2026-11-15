@@ -27,15 +27,11 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Um ÚNICO "agora" para reagendar e recuperar: a partição no instante now fica exata
-                // (recovery trata as ocorrências <= now; reschedule agenda as > now), sem o sliver
-                // teórico que dois System.currentTimeMillis() a alguns ms de distância deixariam.
-                val now = System.currentTimeMillis()
-                app.repository.rescheduleReminders(now)
-                app.routineRepository.scheduleNextAlarm()
-                // Reagendar cuida das ocorrências futuras; recuperar avisa das que o aparelho
-                // perdeu enquanto esteve desligado. Uma não dispara a outra (janelas distintas).
-                MissedReminderRecovery.run(context, now)
+                // Catch-ups (ADR-0003): cada um entrega o que venceu com o aparelho desligado e só
+                // depois refaz os seus alarmes, lendo o próprio "agora" dentro do seu Mutex.
+                app.reminderCatchUp.run()
+                app.summaryCatchUp.run()
+                app.routineRepository.catchUp()
                 KalendrysWidgets.updateAll(context)
             } finally {
                 pendingResult.finish()

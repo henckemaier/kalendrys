@@ -201,6 +201,9 @@ Os códigos (A1..F6) são os do parecer de UI de 2026-11-14.
 
 ### v1.6.1 — PATCH (infraestrutura)
 
+> **Renumerada pela seção 11:** a v1.6.1 passou a ser a correção de lembretes (ADR-0003) e esta
+> entrega de infraestrutura passou a ser a **v1.6.2**. O escopo detalhado está na seção 11.
+
 - A2: toolchain e Compose BOM estável.
 - F5: opt-in do voltar preditivo no manifesto.
 - Baseline Profile regerado. Sem mudança visível.
@@ -307,3 +310,111 @@ futura fora; única futura somada a outra pendente sem origem não gera oferta.
   repositórios sem rajada de reagendamento.
 - **v1.9.0:** janela compacta, média e expandida; target 36 (edge-to-edge, voltar preditivo,
   orientação livre em tela grande).
+
+## 11. Emenda de 2026-11-14 — renumeração e escopo da toolchain
+
+Aprovada pelo usuário em 2026-11-14, depois do release da v1.6.0.
+
+### 11.1 Renumeração
+
+| Versão | Antes | Agora |
+|--------|-------|-------|
+| v1.6.1 | toolchain, voltar preditivo, Baseline Profile | correção da entrega de lembretes (ADR-0003) |
+| v1.6.2 | não existia | toolchain, voltar preditivo (F5), Baseline Profile |
+
+Releases separadas, nesta ordem. Motivos: o lembrete é defeito na função central e a correção é
+pequena; e, se um lembrete falhar depois do release, é preciso saber se foi a correção ou o
+compilador novo. Onde este documento diz "v1.6.1" para a infraestrutura (seções 3, 7, 9 e 10),
+leia-se **v1.6.2**. As versões v1.7.0 em diante não mudam.
+
+### 11.2 Situação de partida e o que mudou no mercado
+
+Repositório na v1.6.0: Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21, KSP 2.0.21-1.0.28,
+compileSdk e targetSdk 35, minSdk 26, Compose BOM 2024.12.01 (`material3` 1.3.1), Room 2.6.1,
+`benchmark` e plugin `baselineprofile` 1.4.1.
+
+O Baseline Profile **já existe**: módulo `:baselineprofile` (gerador, `Journeys`,
+`StartupBenchmark`) e `profileinstaller` no app, tudo no catálogo de versões. Regerar não é
+dependência nova. Os perfis versionados são da v1.5.0.
+
+Páginas oficiais consultadas em 2026-11-14: Compose BOM estável 2026.09.00 (Compose 1.12.1,
+`material3` 1.4.0); a partir do Compose 1.12 são exigidos compileSdk 37 e AGP 9 (mínimo 9.2.0);
+AGP estável 9.5.1 (Gradle 9.6.0, JDK 17 ou mais); Kotlin estável 2.4.21; `benchmark` 1.5.0;
+Room 2.8.5 (KSP2 a partir do Room 2.7). O BOM mais novo obriga, portanto, o salto de versão
+maior do AGP e do Gradle. Isso responde a pendência "não foi verificada" da seção 3, item 2.
+
+### 11.3 Trilhas
+
+- **Trilha 1 (alvo):** Gradle 9.6.x, AGP 9.5.1, Kotlin 2.4.21 (plugin compose na mesma versão),
+  KSP compatível, compileSdk 37 (app e `:baselineprofile`), Compose BOM 2026.09.00,
+  `benchmark` 1.5.0, Room 2.8.x. O AGP 9 é inevitável antes da v1.9.0; fazê-lo numa PATCH sem
+  mudança de tela é o propósito desta versão.
+- **Trilha 2 (recuo):** último AGP 8.x, compileSdk 36 e o último BOM com Compose anterior ao
+  1.12 (que já traz `material3` 1.4.0). Os números exatos **não foram verificados**. O salto
+  para o AGP 9 ficaria para antes da v1.9.0.
+- **Ensaio E0** (Forja, 1 dia, branch só de arquivos de build): sobe para a Trilha 1 e anota a
+  matriz que fechou e o que quebrou. Se ao fim do prazo não compila, não passa nos testes ou
+  exige biblioteca nova, recua para a Trilha 2. O resultado passa por parecer do arquiteto antes
+  de seguir.
+
+### 11.4 Escopo
+
+**Entra:**
+- Gradle wrapper, AGP, Kotlin, plugin compose, KSP, compileSdk, Compose BOM, `benchmark` e
+  plugin `baselineprofile`.
+- Room, só porque o KSP novo exige (**não verificado**); sem mexer em entidades, banco na
+  versão 10.
+- Bibliotecas já existentes (core-ktx, lifecycle, activity, navigation, glance, datastore,
+  robolectric, coroutines-test, turbine): só o mínimo exigido para resolver e passar, com a
+  justificativa de cada subida no PR.
+- Ajustes de sintaxe de build que o AGP 9 obrigar.
+- F5: `android:enableOnBackInvokedCallback` no manifesto.
+- Baseline Profile regerado, por último.
+
+**Não entra:**
+- targetSdk (continua 35; o 36 é o F6 da v1.9.0) e minSdk (continua 26).
+- Qualquer versão alpha, beta ou rc; `material3` 1.5 e Expressive.
+- Entrada nova nas seções de bibliotecas ou plugins do catálogo.
+- Refatoração para APIs novas além do necessário para compilar; avisos de API obsoleta são
+  listados no PR, não corrigidos.
+- Mudança nas jornadas do perfil.
+
+**Etapas**, um commit cada: E1 build (Gradle, AGP, Kotlin, KSP, compileSdk); E2 bibliotecas;
+E3 voltar preditivo; E4 Baseline Profile e `StartupBenchmark`.
+
+### 11.5 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Mudança visual não intencional (Compose 1.7 para 1.12, `material3` 1.3.1 para 1.4.0) | Capturas antes e depois; matriz manual |
+| R8 e build de release com padrões novos; o release sai por tag | Testar sempre o APK de release, não só o debug |
+| Código gerado do Room muda com o KSP novo | Schema exportado idêntico |
+| Robolectric com SDK e AGP novos | Nenhum teste ignorado para passar |
+| CI com JDK ou Gradle incompatível | Conferir o workflow no ensaio |
+| Diálogo de descartar dos editores com o voltar preditivo | Teste manual nos dois editores |
+| Geração de perfil ocupa o emulador | Avisar os testers |
+
+### 11.6 Critérios de aceite
+
+1. Diff do catálogo: só linhas de versão; nenhuma biblioteca ou plugin novo; nenhuma versão
+   não estável.
+2. Com JDK 21: testes unitários, lint e build de release passam. Número de testes igual ou
+   maior que o da v1.6.1, nenhum removido ou ignorado; lint sem erros e sem supressão nova.
+3. Schema do Room (versão 10) byte a byte igual; versões do banco e do backup inalteradas.
+4. targetSdk 35, minSdk 26, assinatura e permissões iguais; no manifesto final a única
+   diferença é o atributo do voltar preditivo.
+5. Baseline Profile regerado, não vazio, com classes `com.kalendrys.app`, e perfil de
+   inicialização presente.
+6. `StartupBenchmark` antes e depois no mesmo emulador: sem piora acima de 10% na mediana.
+7. Tamanho do APK de release antes e depois informado no PR.
+8. APK novo instalado por cima da versão anterior: dados, alarmes e widgets preservados.
+9. Capturas antes e depois das telas principais sem diferença relevante.
+
+### 11.7 Plano de teste
+
+- **Lince:** suíte, lint, comparação de schema, manifesto e catálogo; build de release.
+- **Coruja, no APK de release:** as 4 abas, detalhe e nova tarefa (painel com teclado), editor
+  de rotina, tela da lista, Configurações; claro e escuro; fonte 1.0 e 2.0; rotação; os 3
+  seletores de data em pt-BR; deslizar para excluir; voltar preditivo nos dois editores com
+  alteração pendente; lembrete com ações, aviso de bloco, resumo diário; widgets Hoje e
+  Calendário; backup e restauro; verificador de atualização.

@@ -30,6 +30,10 @@ interface CompletionLogDao {
     @Query("SELECT * FROM completion_log WHERE completedAt >= :start AND completedAt < :end ORDER BY completedAt ASC")
     fun observeBetween(start: Long, end: Long): Flow<List<CompletionLog>>
 
+    /** Leitura única de [observeBetween], sem montar um Flow (catch-up de lembretes). */
+    @Query("SELECT * FROM completion_log WHERE completedAt >= :start AND completedAt < :end ORDER BY completedAt ASC")
+    suspend fun between(start: Long, end: Long): List<CompletionLog>
+
     @Query("SELECT * FROM completion_log WHERE taskId = :taskId ORDER BY completedAt DESC")
     fun observeForTask(taskId: Long): Flow<List<CompletionLog>>
 

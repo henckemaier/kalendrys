@@ -33,18 +33,9 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 when (action) {
-                    ACTION_START -> {
-                        val minute = intent.getIntExtra(EXTRA_MINUTE, 0)
-                        val date = LocalDate.ofEpochDay(epochDay)
-                        app.routineRepository.onAlarm(epochDay, minute).forEach { routine ->
-                            app.routineNotifications.show(
-                                routine,
-                                date,
-                                app.routineRepository.overridesFor(routine.id),
-                                app.shoppingRepository.progressOf(routine.shoppingListId),
-                            )
-                        }
-                    }
+                    // O alarme só acorda o app (ADR-0003, 4.3.1): quem decide e entrega os avisos é o
+                    // catch-up. Os extras de dia/minuto seguem no intent só por compatibilidade.
+                    ACTION_START -> app.routineRepository.catchUp()
                     ACTION_COMPLETE -> {
                         app.routineRepository.complete(routineId, LocalDate.ofEpochDay(epochDay))
                         app.routineNotifications.cancel(routineId)
