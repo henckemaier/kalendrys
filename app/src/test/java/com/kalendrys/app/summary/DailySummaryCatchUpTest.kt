@@ -155,4 +155,23 @@ class DailySummaryCatchUpTest {
         val emitted = flowOf(eight, eight.copy(), nine, nine, off).summaryChanges().toList()
         assertEquals(listOf(eight, nine, off), emitted)
     }
+
+    @Test
+    fun `resumo das 23h50 com catch-up as 0h10 nao mostra e agenda o das 23h50 do dia novo`() = runTest {
+        settings.setSummaryTime(LocalTime.of(23, 50))
+        seenAt(at(23, 40, day.minusDays(1)))
+        catchUp.run(at(0, 10))
+        assertEquals(listOf("schedule"), log)
+        // Agendado a partir de 0:10: o próximo 23:50 é o do dia novo (DailyScheduler.nextDailyAt).
+        assertEquals(LocalDateTime.of(day, LocalTime.of(0, 10)), scheduledAt.single())
+        assertEquals(at(0, 10), settings.summaryLastSeenAt())
+    }
+
+    @Test
+    fun `resumo das 23h40 com catch-up as 23h55 mostra`() = runTest {
+        settings.setSummaryTime(LocalTime.of(23, 40))
+        seenAt(at(23, 30))
+        catchUp.run(at(23, 55))
+        assertEquals(listOf("show", "schedule"), log)
+    }
 }
