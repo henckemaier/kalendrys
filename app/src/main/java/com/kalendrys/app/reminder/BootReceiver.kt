@@ -31,7 +31,7 @@ class BootReceiver : BroadcastReceiver() {
                 // depois refaz os seus alarmes, lendo o próprio "agora" dentro do seu Mutex.
                 app.reminderCatchUp.run()
                 app.summaryCatchUp.run()
-                app.routineRepository.scheduleNextAlarm()
+                app.routineRepository.catchUp()
                 KalendrysWidgets.updateAll(context)
             } finally {
                 pendingResult.finish()

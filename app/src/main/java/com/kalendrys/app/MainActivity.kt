@@ -70,11 +70,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Voltou ao primeiro plano: catch-up de lembretes (ADR-0003). Entrega o que venceu (atrasado
-        // como lembrete normal, perdido no agregado) e reagenda; quem chegar depois acha a janela vazia.
+        // Voltou ao primeiro plano: os três catch-ups (ADR-0003): tarefas, avisos de bloco e resumo.
+        // Cada um entrega o que venceu e reagenda; quem chegar depois acha a janela vazia.
         lifecycleScope.launch(Dispatchers.IO) {
             val app = application as KalendrysApp
             app.reminderCatchUp.run()
+            app.routineRepository.catchUp()
             app.summaryCatchUp.run()
         }
     }

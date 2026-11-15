@@ -240,14 +240,6 @@ class RoutineRepository(
     }
 
     /**
-     * Só refaz o alarme do próximo início, sem entregar nada. Os pontos de entrada devem usar o
-     * [catchUp] (que também agenda); isto fica para quem ainda não foi ligado a ele.
-     */
-    suspend fun scheduleNextAlarm(now: LocalDateTime = LocalDateTime.now()) = mutex.withLock {
-        alarms.scheduleNext(routineDao.active(), now, overridesByRoutine())
-    }
-
-    /**
      * Alteração de rotina: catch-up com a configuração antiga, a gravação e, depois, o agendamento
      * com a nova, tudo sob o mesmo Mutex e com o mesmo "agora".
      */

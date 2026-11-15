@@ -125,7 +125,7 @@ class KalendrysApp : Application() {
             afterRestore = {
                 // Marca = agora e só agenda: o passado do backup não vira atrasado nem perdido (ADR-0003, 4.2).
                 reminderCatchUp.establishBaseline()
-                routineRepository.scheduleNextAlarm()
+                routineRepository.establishBaseline()
                 summaryCatchUp.establishBaseline()
                 KalendrysWidgets.updateAll(this)
             },
@@ -157,11 +157,12 @@ class KalendrysApp : Application() {
         keepDailyAlarmsInSync()
         keepWidgetsInSync()
         // "Forçar parada" (inclusive por otimizadores de bateria de fabricantes) apaga os alarmes do app,
-        // e antes do Android 15 nada avisa quando ele volta a abrir. O catch-up entrega o que venceu e
-        // SÓ ENTÃO reagenda (ADR-0003): reagendar direto substituía o alarme atrasado de hoje.
+        // e antes do Android 15 nada avisa quando ele volta a abrir. Os catch-ups entregam o que venceu e
+        // SÓ ENTÃO reagendam (ADR-0003): reagendar direto substituía o alarme atrasado de hoje. O do
+        // resumo roda na primeira emissão do [keepDailyAlarmsInSync].
         appScope.launch {
             reminderCatchUp.run()
-            routineRepository.scheduleNextAlarm()
+            routineRepository.catchUp()
         }
     }
 
