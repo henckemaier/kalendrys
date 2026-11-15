@@ -1,0 +1,5 @@
+# Exceções do scripts/check-r8-keep-constructors.sh: classes mantidas por uma regra keep cujo
+# construtor sem argumentos o R8 pode remover sem quebrar nada. Uma classe por linha, com o motivo
+# depois do "#". Só entra aqui o que nunca é instanciado por reflexão.
+
+androidx.graphics.path.ConicConverter # regra da própria biblioteca (androidx.graphics.path) só para os métodos nativos; criada por código Kotlin com argumentos, nunca por reflexão. Já não tinha o construtor na v1.6.1 (AGP 8).

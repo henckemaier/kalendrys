@@ -67,3 +67,9 @@ jobs:
             echo "::error::versionCode/versionName do APK ($NAME/$CODE) nao batem com a formula ($VERSION_NAME/$EXPECTED_CODE)"
             exit 1
           fi
+
+      # Só no build-check (não espelha o release.yml): classe mantida por regra keep cujo construtor
+      # sem argumentos o R8 removeu (modo estrito do AGP 9; bloqueante da v1.6.2). Cruza o usage.txt
+      # e o seeds.txt que o R8 já gerou no passo de build; exceções em app/r8-keep-ctor-exceptions.txt.
+      - name: Conferir construtores mantidos pelas regras keep (R8)
+        run: bash scripts/check-r8-keep-constructors.sh

@@ -41,6 +41,23 @@ O CI builda com o wrapper (`./gradlew`), que confere o `distributionSha256Sum` d
    `https://services.gradle.org/distributions/gradle-<X.Y.Z>-wrapper.jar.sha256`
    (ou https://gradle.org/release-checksums/). Se não bater, não commite.
 
+## Construtores mantidos pelas regras keep (R8)
+
+Desde o AGP 9 o R8 aplica o modo estrito das regras keep: `-keep class X` sem membros mantém só
+a classe, não o construtor sem argumentos. Classe instanciada por reflexão sem ele quebra só no
+release (v1.6.2: `InstantiationException` no `OverwritingInputMerger` do WorkManager e widgets
+carregando para sempre). Depois de `./gradlew :app:assembleRelease`, rode:
+
+```
+bash scripts/check-r8-keep-constructors.sh
+```
+
+Ele cruza `usage.txt` (o que o R8 removeu) com `seeds.txt` (o que as regras mantêm) em
+`app/build/outputs/mapping/release` e falha citando a classe. Correção: acrescentar
+`{ public <init>(); }` à regra em `app/proguard-rules.pro`; ou, se a classe nunca é instanciada por
+reflexão, registrá-la com o motivo em `app/r8-keep-ctor-exceptions.txt`. O build-check roda o
+mesmo comando em todo PR. Não use `android.r8.strictFullModeForKeepRules=false` (vetado).
+
 ## Regerando o Baseline Profile
 
 Com um emulador ou aparelho Android 13+ conectado: `./gradlew --no-daemon
