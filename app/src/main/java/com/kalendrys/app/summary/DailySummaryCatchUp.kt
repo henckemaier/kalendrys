@@ -7,6 +7,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,3 +65,11 @@ class DailySummaryCatchUp(
     private fun localDateTime(millis: Long): LocalDateTime =
         LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), zone())
 }
+
+/**
+ * Só as mudanças que importam ao resumo (ligado e horário). O `keepDailyAlarmsInSync` do KalendrysApp faz
+ * linha de base a cada emissão depois da primeira; quando outras preferências entrarem em [AppSettings]
+ * (tema, cor), mudá-las não pode zerar a janela de um resumo atrasado.
+ */
+fun Flow<AppSettings>.summaryChanges(): Flow<AppSettings> =
+    distinctUntilChangedBy { it.summaryEnabled to it.summaryTime }

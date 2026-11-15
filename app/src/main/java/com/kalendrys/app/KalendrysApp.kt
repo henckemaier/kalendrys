@@ -24,6 +24,7 @@ import com.kalendrys.app.reminder.RoutineNotifications
 import com.kalendrys.app.summary.DailySummaryCatchUp
 import com.kalendrys.app.summary.DailyScheduler
 import com.kalendrys.app.summary.DailySummaryNotifier
+import com.kalendrys.app.summary.summaryChanges
 import com.kalendrys.app.update.UpdateChecker
 import com.kalendrys.app.update.UpdateInstaller
 import com.kalendrys.app.widget.KalendrysWidgets
@@ -174,7 +175,7 @@ class KalendrysApp : Application() {
      */
     private fun keepDailyAlarmsInSync() {
         appScope.launch {
-            settingsRepository.settings.withIndex().collect { (index, settings) ->
+            settingsRepository.settings.summaryChanges().withIndex().collect { (index, settings) ->
                 if (index == 0) summaryCatchUp.run() else summaryCatchUp.establishBaseline(settings)
             }
         }
