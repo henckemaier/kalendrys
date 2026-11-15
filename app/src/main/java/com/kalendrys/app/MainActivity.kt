@@ -73,7 +73,9 @@ class MainActivity : ComponentActivity() {
         // Voltou ao primeiro plano: catch-up de lembretes (ADR-0003). Entrega o que venceu (atrasado
         // como lembrete normal, perdido no agregado) e reagenda; quem chegar depois acha a janela vazia.
         lifecycleScope.launch(Dispatchers.IO) {
-            (application as KalendrysApp).reminderCatchUp.run()
+            val app = application as KalendrysApp
+            app.reminderCatchUp.run()
+            app.summaryCatchUp.run()
         }
     }
 
