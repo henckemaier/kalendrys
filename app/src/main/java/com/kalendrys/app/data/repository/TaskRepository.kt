@@ -30,9 +30,9 @@ class TaskRepository(
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
     /**
-     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask] e
-     * [restoreTask]: fecha a janela no instante da mudança, para um horário já passado não virar
-     * atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
+     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask],
+     * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
+     * passado não virar atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
      * BackupManager), sem dependência circular com o runner. Vazio nos testes de repositório.
      */
     private val beforeReminderChange: suspend () -> Unit = {},
@@ -175,6 +175,9 @@ class TaskRepository(
      * como antes. A solução definitiva (colunas no CompletionLog) vem na v1.8.0.
      */
     suspend fun undoCompletion(logId: Long) {
+        // Fecha a janela do catch-up antes de reabrir a tarefa (ADR-0003): o lembrete que venceu
+        // enquanto ela estava concluída não vira atrasado nem perdido.
+        beforeReminderChange()
         val log = completionLogDao.byId(logId) ?: return
         completionLogDao.deleteById(logId)
         shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))

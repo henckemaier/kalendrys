@@ -345,4 +345,17 @@ class ReminderCatchUpRunnerTest {
         assertEquals(listOf(task.id), notifier.shown)
     }
 
+    @Test
+    fun `desfazer conclusao de tarefa unica depois do horario nao gera atrasado nem perdido`() = runTest {
+        val task = insertTask(9)
+        seenAt(at(8))
+        clock = at(8, 50)
+        val logId = repository.logCompletion(task.id, completedAt = at(8, 50))
+        // O alarme das 9:00 atrasou e ainda não chegou: nenhum catch-up entre 9:00 e o desfazer.
+        clock = at(9, 10)
+        repository.undoCompletion(logId) // "Desfazer" às 9:10
+        runner.run(at(9, 15))
+        assertEquals(emptyList<Long>(), notifier.shown)
+        assertEquals(emptyList<Int>(), notifier.missed)
+    }
 }
