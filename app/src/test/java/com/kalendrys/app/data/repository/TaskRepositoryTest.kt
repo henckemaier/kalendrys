@@ -106,14 +106,17 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun `onReminderFired agenda a proxima ocorrencia quando a tarefa se repete`() = runTest {
-        val task = repository.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
-        scheduler.reset()
-
-        val fired = repository.onReminderFired(task.id, now = System.currentTimeMillis())
-
-        assertNotNull("a notificação de hoje ainda deve aparecer", fired)
-        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+    fun `gancho beforeReminderChange roda antes de gravar em add update e restore`() = runTest {
+        // O gancho vê o banco ANTES da escrita: é o que fecha a janela do catch-up (ADR-0003).
+        val seen = mutableListOf<List<String>>()
+        val hooked = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+            seen += db.taskDao().all().map { it.title }
+        }
+        val task = hooked.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
+        hooked.updateTask(task.copy(title = "Treino forte"))
+        hooked.deleteTask(task.copy(title = "Treino forte"))
+        hooked.restoreTask(task.copy(title = "Treino forte"))
+        assertEquals(listOf(emptyList(), listOf("Treino"), emptyList<String>()), seen)
     }
 
     @Test

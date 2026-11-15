@@ -15,6 +15,8 @@ import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.settingsDataStore
+import com.kalendrys.app.reminder.AndroidCatchUpNotifier
+import com.kalendrys.app.reminder.ReminderCatchUpRunner
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
@@ -41,7 +43,19 @@ class KalendrysApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.create(this) }
 
     val repository: TaskRepository by lazy {
-        TaskRepository(database.taskDao(), database.completionLogDao(), ReminderScheduler(this), database.shoppingItemDao())
+        TaskRepository(
+            database.taskDao(),
+            database.completionLogDao(),
+            ReminderScheduler(this),
+            database.shoppingItemDao(),
+            // Fecha a janela do catch-up antes de gravar (ADR-0003): horário já passado não vira atrasado.
+            beforeReminderChange = { reminderCatchUp.run() },
+        )
+    }
+
+    /** Caminho único de entrega de lembretes de tarefa (ADR-0003). */
+    val reminderCatchUp: ReminderCatchUpRunner by lazy {
+        ReminderCatchUpRunner(repository, settingsRepository, AndroidCatchUpNotifier(this, shoppingRepository))
     }
 
     val routineNotifications: RoutineNotifications by lazy { RoutineNotifications(this) }
@@ -90,7 +104,8 @@ class KalendrysApp : Application() {
             contentResolver = contentResolver,
             settings = settingsRepository,
             afterRestore = {
-                repository.rescheduleReminders()
+                // Marca = agora e só agenda: o passado do backup não vira atrasado nem perdido (ADR-0003, 4.2).
+                reminderCatchUp.establishBaseline()
                 routineRepository.scheduleNextAlarm()
                 dailyScheduler.scheduleAll(settingsRepository.settings.first())
                 KalendrysWidgets.updateAll(this)
@@ -114,9 +129,10 @@ class KalendrysApp : Application() {
         keepDailyAlarmsInSync()
         keepWidgetsInSync()
         // "Forçar parada" (inclusive por otimizadores de bateria de fabricantes) apaga os alarmes do app,
-        // e antes do Android 15 nada avisa quando ele volta a abrir. Reagendar é idempotente.
+        // e antes do Android 15 nada avisa quando ele volta a abrir. O catch-up entrega o que venceu e
+        // SÓ ENTÃO reagenda (ADR-0003): reagendar direto substituía o alarme atrasado de hoje.
         appScope.launch {
-            repository.rescheduleReminders()
+            reminderCatchUp.run()
             routineRepository.scheduleNextAlarm()
         }
     }
