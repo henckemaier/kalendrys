@@ -3,6 +3,8 @@
 Complementa `docs/VERSIONING.md` (a regra de versionamento) com o fluxo operacional de release
 via GitHub Actions (`.github/workflows/release.yml`).
 
+O **build-check** (`.github/workflows/build-check.yml`) roda em todo PR para a `main` e precisa estar verde antes do merge e da tag; os dois workflows mantêm o mesmo preparo, JDK e actions (mesmos SHAs).
+
 ## Passo a passo
 
 1. **Bump da versão** — edite **somente** `appVersionName` em `app/build.gradle.kts`
