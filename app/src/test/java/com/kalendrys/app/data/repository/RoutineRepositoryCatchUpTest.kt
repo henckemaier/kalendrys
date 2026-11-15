@@ -322,6 +322,36 @@ class RoutineRepositoryCatchUpTest {
         assertTrue(delivered.isEmpty())
     }
 
+    @Test
+    fun `concluir as 9h02 o bloco das 9h com alarme atrasado avisa uma vez antes de gravar e nao repete`() = runTest {
+        // Comportamento documentado: o catch-up antes de gravar entrega o aviso atrasado (com a
+        // configuração antiga) e o complete o cancela logo em seguida; o alarme que chegar depois
+        // encontra a janela vazia e o bloco concluído.
+        val saved = addAt(block("Bloco 9h", 9), 8, 0)
+        repository.catchUp(nowOverride = at(8, 50))
+        clockMillis = at(9, 2)
+
+        repository.complete(saved.id, day, today = day)
+
+        assertEquals(listOf(day to saved.id), delivered)
+        assertEquals(at(9, 2), mark.get())
+        assertEquals(listOf(saved.id), db.routineCompletionDao().doneOn(day.toEpochDay()))
+        repository.catchUp(nowOverride = at(9, 5)) // o alarme atrasado chega depois
+        assertEquals(listOf(day to saved.id), delivered)
+    }
+
+    @Test
+    fun `arquivar na janela de atraso nao reavisa o bloco depois`() = runTest {
+        val saved = addAt(block("Bloco 9h", 9), 8, 0)
+        repository.catchUp(nowOverride = at(8, 50))
+        clockMillis = at(9, 2)
+
+        repository.archive(saved, now = at(9, 2))
+        repository.catchUp(nowOverride = at(9, 10))
+
+        assertEquals("só o catch-up antes de arquivar entrega", listOf(day to saved.id), delivered)
+    }
+
     // --- Robustez das alterações (parecer do Esquadro, NB-1 e NB-2 do 4.3) ------------------------
 
     @Test

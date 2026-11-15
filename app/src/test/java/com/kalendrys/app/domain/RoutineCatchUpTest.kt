@@ -144,6 +144,19 @@ class RoutineCatchUpTest {
     }
 
     @Test
+    fun `bloco com duracao cruzando a meia-noite avisa no dia de inicio ate terminar`() {
+        val late = block(1, 23 * 60 + 30, durationMinutes = 60) // 23:30 de ontem até 00:30 de hoje
+        val tomorrow = day.plusDays(1)
+
+        assertEquals(
+            "às 00:10 ainda está em andamento: avisa no dia de início",
+            listOf(RoutineCatchUp.Due(day, listOf(late))),
+            plan(listOf(late), lastSeen = at(day, 23, 0), now = at(tomorrow, 0, 10)),
+        )
+        assertTrue("às 00:30 já terminou", plan(listOf(late), lastSeen = at(day, 23, 0), now = at(tomorrow, 0, 30)).isEmpty())
+    }
+
+    @Test
     fun `dias da janela respeitam a tolerancia, nao a marca antiga`() {
         // Marca de três dias atrás: só interessa a última hora.
         assertEquals(listOf(day), RoutineCatchUp.days(at(day.minusDays(3), 9, 0), at(day, 9, 3), zone))
