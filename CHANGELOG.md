@@ -3,6 +3,34 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.6.1 — Lembretes que não se perdem (versionCode 10601)
+
+Decisão de arquitetura: `docs/architecture/ADR-0003-entrega-de-lembretes-por-catch-up.md`.
+
+### Correções
+
+- **Entrega de lembretes por catch-up**: o alarme passa a ser só o despertar. Lembretes de
+  tarefa, avisos de bloco de rotina e o resumo diário são entregues por uma rotina única, chamada
+  pelo alarme, ao abrir o app, ao voltar para ele e depois do reinício do aparelho. Antes, sem a
+  permissão de alarme exato, um alarme atrasado podia ser substituído pelo de amanhã e o aviso de
+  hoje sumia.
+- **Tolerância de 60 minutos**: o que atrasou até 60 minutos é entregue como lembrete normal
+  (Concluir, Adiar, Abrir lista). Lembretes de tarefa com mais atraso viram um aviso único
+  "N lembretes perdidos"; avisos de bloco e o resumo com mais atraso são descartados.
+- **Reinício, Doze e app parado**: nenhum lembrete pulado nem duplicado; um alarme atrasado que
+  chega depois da entrega não mostra nada de novo.
+- **Bloco de rotina já terminado não é avisado**: um aviso de início atrasado não sai se o bloco
+  (com duração) já acabou.
+- **Resumo diário de ontem não sai depois da meia-noite**: o resumo mostra só o dia corrente.
+- **Repetição personalizada** (a cada N dias/semanas, dias da semana) contada certo na recuperação
+  de lembretes.
+- **Widget Resumo do dia**: o "A seguir" não fica mais parado num item que já começou (F-1).
+
+### Mudanças de comportamento
+
+- Criar ou editar uma tarefa ou rotina com horário já passado no dia não gera lembrete atrasado
+  nem perdido. Restaurar um backup não entrega lembretes do passado.
+
 ## v1.6.0 — Lista de compras na tarefa (versionCode 10600)
 
 Decisões de arquitetura: `docs/architecture/ADR-0001-listas-de-compras-independentes.md` (v1.6.0)

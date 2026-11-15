@@ -47,6 +47,7 @@ app/src/main/java/com/kalendrys/app/
 ├── domain/
 │   ├── CalendarCalculator.kt # grade do mês, início da semana, agrupamento por dia local
 │   ├── ReminderRecurrence.kt # ocorrências dos lembretes recorrentes (diário, dias úteis, semanal, mensal)
+│   ├── ReminderCatchUp.kt, RoutineCatchUp.kt, SummaryCatchUp.kt # planos puros do catch-up (ADR-0003)
 │   ├── RoutineSchedule.kt    # em que dias e horários cada rotina acontece (relógio local)
 │   ├── DayTimeline.kt        # linha do tempo do dia: blocos, ligações e tempo livre
 │   ├── RoutineDays/Icon/Color.kt, DurationFormat.kt
@@ -66,11 +67,12 @@ app/src/main/java/com/kalendrys/app/
 │   └── settings/            # Configurações: resumo diário (liga/desliga, horário), notificações, sobre
 ├── reminder/
 │   ├── ReminderScheduler.kt # AlarmManager (setAlarmClock), só a próxima ocorrência
-│   ├── ReminderReceiver.kt  # Mostra a notificação (abre a tarefa) e agenda a ocorrência seguinte
+│   ├── ReminderReceiver.kt  # Alarme de lembrete: só acorda o catch-up
+│   ├── ReminderCatchUpRunner.kt + AndroidCatchUpNotifier.kt # entrega atrasados, "N perdidos", reagenda
 │   ├── RoutineAlarms.kt     # Um único alarme: o próximo início de bloco de rotina
 │   ├── RoutineAlarmReceiver.kt + RoutineNotifications.kt # aviso de início e "Concluir"
-│   └── BootReceiver.kt      # Reagenda após reiniciar, atualizar o app ou mudar relógio/fuso
-├── summary/                 # Resumo diário (alarme exato, horário das configurações) + virada do dia
+│   └── BootReceiver.kt      # Catch-up e reagenda após reiniciar, atualizar o app ou mudar relógio/fuso
+├── summary/                 # Resumo diário (alarme, horário das configurações, catch-up) + virada do dia
 └── widget/                  # Widgets Glance: "Hoje" e "Resumo do dia"
 
 baselineprofile/             # Gera o Baseline Profile e mede a abertura (Macrobenchmark)
@@ -179,11 +181,20 @@ restrições", e os de despertador não. Por isso aparece o ícone de despertado
 e o "próximo alarme" na tela de bloqueio. Conferir no aparelho com
 `adb shell dumpsys alarm | grep -A2 com.kalendrys.app` (o certo é `window=0`).
 
+**Entrega por catch-up** (v1.6.1, ADR-0003). Sem a permissão de alarme exato o sistema pode
+atrasar o alarme, então o alarme é só o despertar. A entrega é feita por um catch-up por domínio
+(tarefas, rotinas, resumo), chamado pelo alarme, pelo início do processo, pelo boot e pela volta
+do app ao primeiro plano: entrega o que venceu desde a última marca (DataStore, fora do backup),
+agenda o próximo e grava a marca, sob Mutex. Até 60 minutos de atraso sai como aviso normal;
+lembretes de tarefa mais antigos viram um único "N lembretes perdidos", e avisos de bloco e o
+resumo mais antigos são descartados. Bloco com duração já terminado não é avisado, e o resumo
+de ontem não sai depois da meia-noite.
+
 ## Lembretes recorrentes
 
 A tarefa guarda só a primeira ocorrência (`reminderAt`) e a regra (`reminderRepeat`); as
 próximas são calculadas por `ReminderRecurrence`, e o `AlarmManager` só conhece a próxima.
-Quando ela toca, o `ReminderReceiver` agenda a seguinte. O lembrete mensal do dia 31 cai no
+Quando ela toca, o catch-up entrega e agenda a seguinte. O lembrete mensal do dia 31 cai no
 último dia dos meses mais curtos e volta ao 31 depois. Em outro fuso, o lembrete mantém o
 mesmo instante (18:05 de Brasília toca às 17:05 em Manaus).
 
