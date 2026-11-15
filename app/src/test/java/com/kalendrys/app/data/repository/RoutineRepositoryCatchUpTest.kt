@@ -13,13 +13,19 @@ import com.kalendrys.app.testutil.FakeRoutineNotifications
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +46,13 @@ class RoutineRepositoryCatchUpTest {
 
     /** Avisos entregues: (dia, id da rotina), na ordem. */
     private val delivered = mutableListOf<Pair<LocalDate, Long>>()
+
+    /** Se definido, a entrega espera por ele (segura o Mutex no meio do catch-up). */
+    private var deliveryGate: CompletableDeferred<Unit>? = null
+    private val deliveryEntered = CompletableDeferred<Unit>()
+
+    /** Faz a entrega lançar exceção (notificação que falha). */
+    private var failDelivery = false
 
     /** Relógio das alterações (add, update…); o catch-up direto recebe o "agora" explícito. */
     private var clockMillis: Long = 0L
@@ -63,7 +76,12 @@ class RoutineRepositoryCatchUpTest {
             alarms,
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
-            deliverDueBlocks = { routines, date -> routines.forEach { delivered += date to it.id } },
+            deliverDueBlocks = { routines, date ->
+                deliveryEntered.complete(Unit)
+                deliveryGate?.await()
+                if (failDelivery) throw IllegalStateException("notificação falhou")
+                routines.forEach { delivered += date to it.id }
+            },
             mark = mark,
             zone = { zone },
             clock = { clockMillis },
@@ -301,5 +319,56 @@ class RoutineRepositoryCatchUpTest {
         repository.catchUp(nowOverride = at(10, 30))
 
         assertTrue(delivered.isEmpty())
+    }
+
+    // --- Robustez das alterações (parecer do Esquadro, NB-1 e NB-2 do 4.3) ------------------------
+
+    @Test
+    fun `cancelar no meio do salvar ainda grava e agenda a nova configuracao`() = runTest {
+        addAt(block("Bloco 9h", 9), 8, 0)
+        val other = addAt(block("Outro", 11), 8, 0)
+        repository.catchUp(nowOverride = at(8, 30))
+        deliveryGate = CompletableDeferred()
+        clockMillis = at(9, 3) // o bloco das 9:00 está na janela: a entrega segura o salvar
+        alarms.reset()
+        withContext(Dispatchers.Default) {
+            val save = launch { repository.update(other.copy(startMinute = 12 * 60)) }
+            deliveryEntered.await()
+            val leave = launch { save.cancelAndJoin() } // "Salvar" e voltar na hora
+            deliveryGate!!.complete(Unit)
+            leave.join()
+        }
+        assertEquals(12 * 60, db.routineDao().byId(other.id)?.startMinute)
+        assertEquals(1, alarms.calls.size)
+        assertEquals(12 * 60, alarms.calls.single().routines.single { it.id == other.id }.startMinute)
+    }
+
+    @Test
+    fun `falha na entrega nao impede salvar a rotina`() = runTest {
+        addAt(block("Bloco 9h", 9), 8, 0)
+        val other = addAt(block("Outro", 11), 8, 0)
+        repository.catchUp(nowOverride = at(8, 30))
+        failDelivery = true
+        clockMillis = at(9, 3)
+        alarms.reset()
+
+        repository.update(other.copy(title = "Outro editado"))
+
+        assertEquals("Outro editado", db.routineDao().byId(other.id)?.title)
+        assertEquals(1, alarms.calls.size)
+        assertEquals(at(9, 3), mark.get())
+    }
+
+    @Test
+    fun `falha na entrega propaga no catchUp dos pontos de entrada`() = runTest {
+        addAt(block("Bloco 9h", 9), 8, 0)
+        repository.catchUp(nowOverride = at(8, 30))
+        failDelivery = true
+        try {
+            repository.catchUp(nowOverride = at(9, 3))
+            fail("esperava a falha")
+        } catch (expected: IllegalStateException) {
+        }
+        assertEquals(at(8, 30), mark.get())
     }
 }
