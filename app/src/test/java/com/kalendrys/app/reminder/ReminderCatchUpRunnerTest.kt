@@ -16,7 +16,11 @@ import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
@@ -82,7 +86,13 @@ class ReminderCatchUpRunnerTest {
         val shown = mutableListOf<Long>()
         val missed = mutableListOf<Int>()
 
+        /** Se definido, a entrega espera por ele (segura o Mutex no meio da execução). */
+        var gate: CompletableDeferred<Unit>? = null
+        val entered = CompletableDeferred<Unit>()
+
         override suspend fun showReminder(task: Task) {
+            entered.complete(Unit)
+            gate?.await()
             shown += task.id
             log += "show:${task.id}"
         }
@@ -292,4 +302,47 @@ class ReminderCatchUpRunnerTest {
         assertEquals(listOf(once.id), notifier.shown)
         assertEquals(listOf(once.id), scheduler.cancelled)
     }
+
+    @Test
+    fun `agora e lido dentro do Mutex e chamadas em ordem trocada nao gravam a marca para tras`() = runTest {
+        val task = insertTask(9, repeat = ReminderRepeat.DAILY)
+        seenAt(at(8))
+        notifier.gate = CompletableDeferred()
+        withContext(Dispatchers.Default) {
+            // A entra primeiro com 9:05 e segura o Mutex na entrega.
+            val first = launch { runner.run(at(9, 5)) }
+            notifier.entered.await()
+            // B é chamado enquanto o relógio marca 9:04 (antes de A gravar a marca)...
+            clock = at(9, 4)
+            // UNDISPATCHED: B roda na hora até suspender no Mutex (o que leria o relógio antes, lê agora).
+            val second = launch(start = CoroutineStart.UNDISPATCHED) { runner.run() }
+            // ...mas só entra depois de A, quando o relógio já marca 9:06.
+            clock = at(9, 6)
+            notifier.gate!!.complete(Unit)
+            first.join()
+            second.join()
+        }
+        assertEquals(at(9, 6), settings.lastSeenAt())
+        assertEquals(listOf(task.id), notifier.shown)
+    }
+
+    @Test
+    fun `cancelar no meio da entrega ainda reagenda e grava a marca sem reexibir`() = runTest {
+        val task = insertTask(9, repeat = ReminderRepeat.DAILY)
+        seenAt(at(8))
+        notifier.gate = CompletableDeferred()
+        withContext(Dispatchers.Default) {
+            val job = launch { runner.run(at(9, 3)) } // ex.: lifecycleScope da MainActivity
+            notifier.entered.await()
+            val cancel = launch { job.cancelAndJoin() } // a tela fecha no meio da entrega
+            notifier.gate!!.complete(Unit)
+            cancel.join()
+        }
+        assertEquals(at(9, 3), settings.lastSeenAt())
+        assertEquals(listOf("show:${task.id}", "reschedule:${task.id}"), log)
+        notifier.gate = null
+        runner.run(at(9, 4))
+        assertEquals(listOf(task.id), notifier.shown)
+    }
+
 }

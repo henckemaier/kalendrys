@@ -5,8 +5,10 @@ import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import java.time.ZoneId
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Caminho ÚNICO de entrega de lembretes (ADR-0003). O alarme só acorda o app; quem entrega é esta
@@ -48,7 +50,13 @@ class ReminderCatchUpRunner(
 
     private val mutex = Mutex()
 
-    suspend fun run(now: Long = clock()) = mutex.withLock {
+    /**
+     * [nowOverride] só para quem já tem o "agora" (testes). Sem ele, o relógio é lido DENTRO do Mutex:
+     * lido antes, duas chamadas quase simultâneas podiam entrar em ordem trocada e a segunda cair em
+     * "relógio voltou", gravando a marca para trás e reentregando uma ocorrência.
+     */
+    suspend fun run(nowOverride: Long? = null) = mutex.withLock {
+        val now = nowOverride ?: clock()
         val lastSeen = settings.lastSeenAt()
         if (lastSeen == null) {
             // Primeira execução de sempre: estabelece a linha de base, sem "recuperar" o passado todo.
@@ -57,24 +65,29 @@ class ReminderCatchUpRunner(
             return@withLock
         }
         val (plan, lateTasks) = repository.reminderCatchUpPlan(lastSeen, now, zone())
-        for (occurrence in plan.late) {
-            val task = lateTasks[occurrence.taskId] ?: continue
-            notifier.showReminder(task)
-            // Higiene: o alarme da tarefa única que sobrar pendente tocaria numa janela vazia.
-            if (task.repeat == ReminderRepeat.NONE) repository.cancelReminderAlarm(task.id)
+        // Da entrega até gravar a marca, sem cancelamento (tela que fecha, ViewModel que morre): cortado
+        // no meio, o lembrete já mostrado seria reexibido na próxima execução.
+        withContext(NonCancellable) {
+            for (occurrence in plan.late) {
+                val task = lateTasks[occurrence.taskId] ?: continue
+                notifier.showReminder(task)
+                // Higiene: o alarme da tarefa única que sobrar pendente tocaria numa janela vazia.
+                if (task.repeat == ReminderRepeat.NONE) repository.cancelReminderAlarm(task.id)
+            }
+            if (plan.missedCount > 0) notifier.showMissed(plan.missedCount)
+            // Reagendar só DEPOIS de entregar: substituir um alarme pendente não perde a ocorrência.
+            repository.rescheduleReminders(now)
+            settings.setLastSeen(now)
+            if (!plan.isEmpty) notifier.remindersChanged()
         }
-        if (plan.missedCount > 0) notifier.showMissed(plan.missedCount)
-        // Reagendar só DEPOIS de entregar: substituir um alarme pendente não perde a ocorrência.
-        repository.rescheduleReminders(now)
-        settings.setLastSeen(now)
-        if (!plan.isEmpty) notifier.remindersChanged()
     }
 
     /**
      * Depois de restaurar um backup (ADR-0003, 4.2): a marca passa a ser `now` e os alarmes são
      * refeitos, sem entregar nada do passado do backup.
      */
-    suspend fun establishBaseline(now: Long = clock()) = mutex.withLock {
+    suspend fun establishBaseline(nowOverride: Long? = null) = mutex.withLock {
+        val now = nowOverride ?: clock()
         settings.setLastSeen(now)
         repository.rescheduleReminders(now)
     }
