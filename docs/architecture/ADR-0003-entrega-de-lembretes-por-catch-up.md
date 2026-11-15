@@ -212,8 +212,14 @@ do backup), porque os três catch-ups rodam em momentos diferentes:
 #### 4.3.3 Pontos comuns
 
 - **Entrada única da aplicação:** início de processo, `BootReceiver` e `MainActivity.onStart`
-  chamam os três catch-ups com o mesmo `agora`. Cada receiver de alarme chama só o do seu
-  domínio.
+  chamam os três catch-ups. Cada receiver de alarme chama só o do seu domínio.
+- **Cada catch-up lê o próprio `agora`, dentro do seu Mutex** (ratificado na revisão da
+  entrega, 2026-11-14; o texto original pedia um `agora` comum aos três). As marcas são
+  independentes, então um instante comum não traz nenhuma garantia a mais. E um `agora` lido
+  fora do Mutex reabre a troca de ordem da seção 3: uma chamada com instante anterior ao da
+  marca já gravada cairia em "relógio voltou" e reentregaria. O mesmo `agora` continua
+  obrigatório **dentro** de um domínio: catch-up, gravação e agendamento de uma mesma alteração
+  de rotina usam um único instante.
 - **Restauro de backup:** grava as três marcas `= agora` e só agenda. Nada do passado do backup
   é entregue.
 - **Relógio voltou** (`agora <= marca`): janela vazia; a marca passa a ser `agora`.
