@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.repository.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.summary.DailyReceiver
@@ -39,8 +40,12 @@ import org.robolectric.shadows.ShadowAlarmManager
  * horário, e o processo sobe nesse momento ([com.kalendrys.app.KalendrysApp.onCreate] chama
  * `routineRepository.scheduleNextAlarm()`; `keepDailyAlarmsInSync` chama `dailyScheduler.scheduleAll`).
  *
- * Os testes PASSAM documentando o comportamento ATUAL (defeito confirmado): o reagendamento troca o
- * alarme pendente pelo seguinte e o aviso atrasado nunca sai. Quando a correção entrar, inverter.
+ * (a) Aviso de bloco: CORRIGIDO (4.3.1). O início do processo passa pelo
+ * [RoutineRepository.catchUp], que entrega o bloco atrasado antes de substituir o alarme pendente.
+ *
+ * (b) Resumo: os testes ainda PASSAM documentando o comportamento ATUAL (defeito confirmado): o
+ * reagendamento troca o alarme pendente pelo de amanhã e o resumo de hoje nunca sai. Inverter
+ * quando a correção do resumo (4.3.2) entrar.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -51,6 +56,9 @@ class ProcessStartAlarmReplacementTest {
     private lateinit var db: AppDatabase
     private lateinit var routineRepository: RoutineRepository
     private val zone: ZoneId = ZoneId.systemDefault()
+
+    /** Títulos dos blocos avisados pelo catch-up, na ordem. */
+    private val delivered = mutableListOf<String>()
 
     // Segunda-feira no futuro: nada depende do relógio real do teste.
     private val day: LocalDate = LocalDate.of(2030, 1, 7)
@@ -70,6 +78,10 @@ class ProcessStartAlarmReplacementTest {
             RoutineAlarms(context),
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
+            deliverDueBlocks = { routines, _ -> delivered += routines.map { it.title } },
+            mark = InMemoryRoutineCatchUpMark(),
+            zone = { zone },
+            clock = { millis(day.atTime(8, 0)) },
         )
     }
 
@@ -82,46 +94,47 @@ class ProcessStartAlarmReplacementTest {
     // --- (a) Aviso de bloco de rotina -----------------------------------------------------------
 
     @Test
-    fun `hoje o scheduleNextAlarm do inicio do processo substitui o aviso de bloco pendente`() = runTest {
+    fun `o catchUp do inicio do processo entrega o bloco das 9h antes de substituir o alarme pendente`() = runTest {
         insertBlocks()
-        routineRepository.scheduleNextAlarm(now = day.atTime(8, 50))
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 50)))
         val before = pendingRoutineAlarm()
         assertEquals(millis(day.atTime(9, 0)), before.triggerAtMs)
         assertEquals(9 * 60, before.minute)
 
         // Processo sobe às 9:03 com o alarme das 9:00 ainda não entregue.
-        routineRepository.scheduleNextAlarm(now = day.atTime(9, 3))
+        routineRepository.catchUp(nowOverride = millis(day.atTime(9, 3)))
 
+        assertEquals("o bloco das 9:00 é avisado na hora", listOf("Bloco 9h"), delivered)
+        // Só depois da entrega o alarme é trocado pelo próximo início: substituir já não perde nada.
         val after = pendingRoutineAlarm()
         assertEquals("um único alarme de rotina (mesmo PendingIntent)", 1, routineAlarms().size)
-        assertEquals("o alarme das 9:00 foi trocado pelo das 10:00", millis(day.atTime(10, 0)), after.triggerAtMs)
+        assertEquals(millis(day.atTime(10, 0)), after.triggerAtMs)
         assertEquals(10 * 60, after.minute)
         assertEquals(day.toEpochDay(), after.epochDay)
     }
 
     @Test
-    fun `hoje o alarme que substituiu nao entrega o bloco das 9h, que se perde`() = runTest {
+    fun `o alarme que substituiu entrega o bloco das 10h sem repetir o das 9h`() = runTest {
         insertBlocks()
-        routineRepository.scheduleNextAlarm(now = day.atTime(8, 50))
-        routineRepository.scheduleNextAlarm(now = day.atTime(9, 3))
-        val replacement = pendingRoutineAlarm()
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 50)))
+        routineRepository.catchUp(nowOverride = millis(day.atTime(9, 3)))
 
-        // O alarme que sobrou (10:00) toca na hora: onAlarm só olha [10:00, agora].
-        val due = routineRepository.onAlarm(replacement.epochDay, replacement.minute, now = day.atTime(10, 0))
+        // O alarme que sobrou (10:00) toca na hora.
+        routineRepository.catchUp(nowOverride = millis(day.atTime(10, 0)))
 
-        assertEquals(listOf("Bloco 10h"), due.map { it.title })
+        assertEquals(listOf("Bloco 9h", "Bloco 10h"), delivered)
     }
 
     @Test
-    fun `controle - sem reagendamento, o alarme das 9h atrasado ainda entrega o bloco`() = runTest {
+    fun `o alarme das 9h atrasado entrega o bloco uma vez, e o inicio do processo depois nao repete`() = runTest {
         insertBlocks()
-        routineRepository.scheduleNextAlarm(now = day.atTime(8, 50))
-        val original = pendingRoutineAlarm()
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 50)))
 
-        // Mesmo alarme, entregue com 3 minutos de atraso: a tolerância do onAlarm cobre.
-        val due = routineRepository.onAlarm(original.epochDay, original.minute, now = day.atTime(9, 3))
+        // Mesmo alarme, entregue com 3 minutos de atraso; logo depois o processo "sobe" de novo.
+        routineRepository.catchUp(nowOverride = millis(day.atTime(9, 3)))
+        routineRepository.catchUp(nowOverride = millis(day.atTime(9, 4)))
 
-        assertEquals(listOf("Bloco 9h"), due.map { it.title })
+        assertEquals(listOf("Bloco 9h"), delivered)
     }
 
     // --- (b) Resumo diário -----------------------------------------------------------------------
