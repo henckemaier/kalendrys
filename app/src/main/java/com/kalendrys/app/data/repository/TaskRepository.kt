@@ -17,7 +17,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -243,10 +242,10 @@ class TaskRepository(
         val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
         val firstDay = Instant.ofEpochMilli(lastSeen).atZone(zone).toLocalDate()
         val lastDay = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        val completionDays = completionLogDao.observeBetween(
+        val completionDays = completionLogDao.between(
             start = firstDay.atStartOfDay(zone).toInstant().toEpochMilli(),
             end = lastDay.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
-        ).first().groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
+        ).groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
             .mapValues { (_, days) -> days.toSet() }
         val plan = ReminderCatchUp.plan(tasks, last, completionDays, lastSeen, now, zone)
         val byId = tasks.associateBy { it.id }
