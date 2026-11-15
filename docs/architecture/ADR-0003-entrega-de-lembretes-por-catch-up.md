@@ -86,6 +86,16 @@ cima. `lastSeen` é a marca já existente em `SettingsRepository` (DataStore, fo
 gera atrasado nem perdido. Para isso a janela é fechada no instante da mudança: o
 `TaskRepository` roda o catch-up **antes** de gravar em `addTask`, `updateTask` e `restoreTask`.
 
+**Desfazer conclusão também fecha a janela** (emenda de 2026-11-14, revisão do núcleo): o
+`undoCompletion` passa pelo mesmo gancho. Sem isso, uma tarefa única com lembrete às 9:00,
+concluída às 8:50 e desfeita às 9:10, geraria depois um atrasado ou um "perdido" indevido.
+
+**Duas garantias de execução** (mesma emenda):
+- O `agora` é lido **dentro** do Mutex quando o chamador não o informa. Lido fora, duas chamadas
+  quase simultâneas podem entrar em ordem trocada e a marca andaria para trás.
+- O trecho "mostrar, agendar, gravar a marca" não é cancelável. O catch-up é chamado de escopos
+  que podem ser cancelados (Activity, ViewModel); cancelar no meio reexibiria o lembrete.
+
 ## 4. Desenho
 
 Sem migração do Room, sem dependência nova, sem mudança no backup, sem canal de notificação novo.
@@ -106,8 +116,8 @@ Sem migração do Room, sem dependência nova, sem mudança no backup, sem canal
 - **`data/repository/TaskRepository`**: `onReminderFired` sai. Ganha o gancho
   `beforeReminderChange: suspend () -> Unit`, passado pelo `KalendrysApp` (mesmo padrão do
   `afterRestore` do `BackupManager`, para não criar dependência circular entre repositório e
-  orquestrador), chamado no início de `addTask`, `updateTask` e `restoreTask`. Valor padrão
-  vazio, para os testes de repositório existentes.
+  orquestrador), chamado no início de `addTask`, `updateTask`, `restoreTask` e
+  `undoCompletion`. Valor padrão vazio, para os testes de repositório existentes.
 
 ### 4.2 Pontos de entrada
 
@@ -125,17 +135,108 @@ inofensivo (janela vazia), mas o runner o cancela por higiene.
 
 ### 4.3 Avisos de rotina e resumo diário
 
-Pela leitura, o início do processo também chama `routineRepository.scheduleNextAlarm()`, que
-agenda o próximo início depois de agora e pode substituir um aviso de bloco atrasado. O
-`onAlarm` tolera atraso quando o alarme chega, mas não quando ele é substituído. **Não foi
-verificado.** Regra para a v1.6.1:
+> **Emenda de 2026-11-14.** O pulo foi **confirmado por teste**
+> (`ProcessStartAlarmReplacementTest`, commit afcd8f1 em `dev/brasa`), para o aviso de bloco e
+> para o resumo diário. Esta seção substitui o texto original, que só pedia a verificação.
+>
+> **Decisão do usuário (2026-11-14):** as duas correções **entram na v1.6.1**, com o desenho
+> abaixo; bloco de rotina com duração já terminado **não é avisado**; o efeito da primeira
+> execução depois de atualizar (4.3.3) está **aceito**.
 
-1. Primeiro um teste que confirme ou descarte o pulo, para o aviso de bloco e para o resumo
-   diário.
-2. Se confirmar e a correção for pequena, entra na v1.6.1 com marca própria
-   (`lastSeen` de rotinas, separada da de tarefas). Aviso de bloco fora da tolerância não gera
-   agregado: é só descartado.
-3. Se não for pequena, vira demanda separada, registrada como emenda a este ADR.
+**O que foi confirmado.** Sem alarme exato:
+- Aviso de bloco: qualquer `scheduleNextAlarm` (início de processo, criar, editar, arquivar,
+  pausar, concluir ou pular rotina, remover exceção, boot, restauro) substitui o alarme pendente
+  atrasado, e o aviso some. O `onAlarm` tolera atraso, mas não a substituição.
+- Resumo diário: `DailyScheduler.scheduleAll` rodando depois do horário (início de processo ou
+  emissão das configurações) deixa só o de amanhã, e o de hoje some.
+
+**Princípio.** O mesmo das tarefas: o alarme é só o despertar; a entrega é decidida por uma
+janela `(marca, agora]`; a ordem é entregar, agendar, gravar a marca; só o catch-up do domínio
+grava a marca dele. Cada domínio tem **marca própria** no `SettingsRepository` (DataStore, fora
+do backup), porque os três catch-ups rodam em momentos diferentes:
+
+| Domínio | Marca | Fora da tolerância |
+|---------|-------|--------------------|
+| Tarefas | `last_seen_at` (já existe) | aviso agregado |
+| Rotinas | `routine_last_seen_at` (nova) | descartado, sem agregado |
+| Resumo diário | `summary_last_seen_at` (nova) | descartado |
+
+#### 4.3.1 Aviso de bloco
+
+- **Plano puro em `domain/`** (`RoutineCatchUp`): recebe rotinas ativas, exceções, conclusões
+  dos dias da janela, marca, `agora`, fuso e tolerância; devolve os blocos a avisar. Um bloco
+  entra quando tem aviso ligado, ocorre no dia (honrando `SKIP` e remarcação), não está
+  concluído naquele dia, o início efetivo está em `(marca, agora]` e `agora - início <= 60 min`.
+  A janela pode cruzar a meia-noite: avaliar ontem e hoje.
+- **Bloco já terminado não é avisado:** se o bloco tem duração e `agora >= fim`, é descartado
+  mesmo dentro dos 60 minutos. É aviso de início; depois do fim não serve. Aprovado pelo
+  usuário. Bloco sem duração segue só a regra dos 60 minutos.
+- **`RoutineRepository.catchUp(agora)`**, sob um Mutex do repositório: lê a marca (ausente:
+  grava `agora`, agenda e sai); monta o plano; entrega; agenda o próximo início estritamente
+  depois de `agora`; grava a marca.
+- **Entrega por gancho:** o repositório não monta notificação. Recebe do `KalendrysApp`
+  `deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit` (mesmo padrão do
+  `afterRestore`), que chama `RoutineNotifications.show` com exceções e progresso da lista.
+  Valor padrão vazio para os testes existentes.
+- **Métodos que alteram rotinas** (criar, editar, arquivar, pausar, remarcar, pular, remover
+  exceção, concluir e desfazer): chamam `catchUp` **antes** de gravar, para fechar a janela com
+  a configuração antiga; depois de gravar, só agendam. Sem isso, às 9:20 criar um bloco das
+  9:00, mover um bloco das 10:00 para as 9:00 ou tirar um `SKIP` de hoje avisaria o bloco das
+  9:00 como atrasado. É o mesmo caso do `beforeReminderChange` das tarefas.
+- **Mutex:** todo `alarms.scheduleNext` acontece dentro do Mutex, com os dados lidos dentro
+  dele. O trecho "catch-up, gravação, agendamento" de uma alteração fica inteiro sob o mesmo
+  Mutex, para um catch-up concorrente não agendar com a lista antiga.
+- **`RoutineAlarmReceiver.ACTION_START`** só chama `catchUp`. O extra do minuto agendado deixa
+  de decidir a entrega (continua no intent por compatibilidade com alarmes já agendados).
+  `onAlarm` sai. Adiar, Concluir e Pular da notificação não mudam.
+- Blocos sem aviso continuam usando o alarme só para redesenhar widgets; o catch-up os ignora.
+
+#### 4.3.2 Resumo diário
+
+- **Mesma regra de janela, não uma chave de data.** A marca `summary_last_seen_at` evita dois
+  problemas da chave "data do último resumo": trocar o horário nas Configurações não entrega um
+  resumo "atrasado" na hora, e trocar para um horário mais tarde no mesmo dia continua
+  funcionando.
+- **Plano puro em `domain/`:** a ocorrência do resumo é o horário configurado de hoje (ou de
+  ontem, se a janela cruza a meia-noite). É entregue se o resumo está ligado, a ocorrência está
+  em `(marca, agora]` e `agora - ocorrência <= 60 min`.
+- **Catch-up em `summary/`** (junto do `DailyScheduler`), sob Mutex próprio: plano, mostra
+  (`DailySummaryNotifier`), agenda (`scheduleAll`), grava a marca.
+- **Quem chama o catch-up:** `DailyReceiver` (ação do resumo), início de processo, boot e volta
+  ao primeiro plano.
+- **Mudança nas Configurações** (ligar, desligar, novo horário): grava a marca `= agora` e só
+  agenda, sem entregar. No `keepDailyAlarmsInSync`, a primeira emissão é o início de processo
+  (catch-up); as seguintes são mudança de configuração (marca e agenda).
+- O alarme da virada do dia (00:01, só widgets) fica como está.
+
+#### 4.3.3 Pontos comuns
+
+- **Entrada única da aplicação:** início de processo, `BootReceiver` e `MainActivity.onStart`
+  chamam os três catch-ups com o mesmo `agora`. Cada receiver de alarme chama só o do seu
+  domínio.
+- **Restauro de backup:** grava as três marcas `= agora` e só agenda. Nada do passado do backup
+  é entregue.
+- **Relógio voltou** (`agora <= marca`): janela vazia; a marca passa a ser `agora`.
+- **Primeira execução** depois de atualizar da v1.6.0: as marcas novas não existem; cada
+  catch-up só estabelece a marca e agenda.
+- A tolerância é a mesma constante de 60 minutos.
+
+#### 4.3.4 Testes adicionais
+
+- `ProcessStartAlarmReplacementTest` passa a verde (os 5 casos que hoje demonstram o defeito).
+- Plano de rotinas: bloco atrasado dentro e fora da tolerância; bloco já terminado; concluído;
+  `SKIP`; remarcado de dia e de minuto; janela cruzando a meia-noite; aviso desligado.
+- Repositório de rotinas: cada método que altera rotinas com horário já passado não avisa
+  (criar às 9:20 um bloco das 9:00; mover das 10:00 para as 9:00; tirar o `SKIP` de hoje);
+  alarme atrasado substituído ainda avisa uma vez; duas execuções simultâneas avisam uma vez.
+- Resumo: abrir o app 3 minutos depois do horário mostra o resumo uma vez e agenda o de amanhã;
+  o alarme atrasado chegando depois não duplica; trocar o horário para um já passado não mostra
+  nada; trocar para mais tarde no mesmo dia mostra de novo; resumo desligado não mostra; mais
+  de 60 minutos de atraso descarta.
+- Restauro: nenhuma das três entregas dispara.
+- Emulador, sem a permissão de alarme exato: bloco para daqui a 2 minutos e resumo para daqui a
+  2 minutos, repetindo os cenários da seção 6 (app fechado, abrir a frio na janela, editar
+  outra rotina na janela, reinício). Com a permissão: aviso e resumo na hora, uma vez só.
 
 ## 5. Riscos
 
@@ -194,12 +295,28 @@ lista funcionando; adiar e concluir antes de o adiamento tocar.
    `MissedRemindersTest` migram para o plano novo).
 3. Schema do Room e versão do backup inalterados.
 4. Roteiro de emulador acima aprovado nas duas condições de permissão.
-5. Item 4.3 resolvido: teste escrito e decisão registrada.
+5. Item 4.3 entregue na v1.6.1: `ProcessStartAlarmReplacementTest` verde e os testes de 4.3.4
+   presentes, para aviso de bloco e resumo diário.
+6. As duas garantias de execução da seção 3 cobertas por teste (relógio lido dentro do Mutex;
+   cancelamento no meio não reexibe).
 
 ## 7. Consequências
 
-- Um caminho só para entregar lembrete, em vez de três com regras diferentes.
-- `lastSeen` passa a significar "tudo até aqui foi entregue ou contado", e só o catch-up a move.
-- O lembrete de quem negou o alarme exato deixa de depender do momento em que o sistema entrega
-  o alarme, sempre que o app tiver qualquer chance de rodar.
-- Fica aberta a decisão sobre avisos de rotina e resumo diário (4.3).
+Decisão fechada em 2026-11-14: a v1.6.1 corrige os três caminhos de alarme (lembrete de tarefa,
+aviso de bloco e resumo diário) com a mesma regra.
+
+- Um caminho só de entrega por domínio, em vez de regras diferentes em cada receiver.
+- Cada domínio tem sua marca (`last_seen_at`, `routine_last_seen_at`, `summary_last_seen_at`),
+  que passa a significar "tudo até aqui foi entregue, contado ou descartado". Só o catch-up do
+  domínio a move, além das mudanças de configuração e do restauro, que a levam para `agora`.
+- Quem negou o alarme exato deixa de depender do momento em que o sistema entrega o alarme,
+  sempre que o app tiver qualquer chance de rodar.
+- Diferenças entre domínios, por decisão de produto: só lembrete de tarefa gera o aviso agregado
+  de perdidos; aviso de bloco e resumo fora da tolerância são descartados; bloco com duração já
+  terminado não é avisado.
+- Na primeira execução depois de atualizar da v1.6.0, as marcas novas ainda não existem: um
+  aviso de bloco ou resumo que esteja atrasado exatamente nesse momento não é recuperado. Aceito.
+- A v1.6.1 mexe nos três caminhos de alarme de uma vez. Commits separados por domínio e teste de
+  emulador com e sem a permissão de alarme exato para os três.
+- Nenhuma migração, nenhuma dependência nova, backup inalterado: as marcas ficam no DataStore,
+  fora do backup.
