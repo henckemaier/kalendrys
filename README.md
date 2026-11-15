@@ -250,7 +250,9 @@ Macrobenchmark (mesmo build): 2.583 ms sem compilação → 2.049 ms com o Basel
   bloco pelo editor), listas (criando uma pela aba), calendário e configurações. Regerar após mudanças grandes de UI, com um emulador ou aparelho Android 13+
   conectado: `./gradlew :app:generateReleaseBaselineProfile`. Medir a abertura:
   `./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest`. Requer benchmark 1.4.1+
-  (a 1.3.x não entende o `pm dump-profiles` do Android 16+).
+  (a 1.3.x não entende o `pm dump-profiles` do Android 16+). Com o plugin 1.5.0 e o AGP 9.5.1
+  há um passo manual (copiar o perfil do aparelho) e o app deve estar sem dados: ver
+  "Regerando o Baseline Profile" em `docs/RELEASING.md`.
 - **Banco**: as telas só carregam as conclusões do período exibido (hoje ou o mês do
   calendário), com índice em `completedAt`; o histórico inteiro nunca é lido de uma vez.
 - **Compose**: `app/compose_stability.conf` declara `java.time`, `Locale` e as coleções do

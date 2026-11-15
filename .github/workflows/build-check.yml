@@ -1,0 +1,69 @@
+# Build-check do Kalendrys: roda em todo PR para a main (e manualmente).
+#
+# Espelha o release.yml (ver docs/RELEASING.md) no que importa para o build: mesmo runner, mesmos
+# actions com os mesmos SHAs, mesmo JDK, mesmo comando de build e a mesma conferencia do
+# versionName/versionCode pela formula via aapt. Assim, verde aqui = o release da tag builda igual.
+# Mantenha os dois workflows comparaveis lado a lado: mudou preparo/JDK/actions em um, mude no outro.
+#
+# Diferencas em relacao ao release.yml:
+#   - sem tag: valida so versionName -> versionCode pela formula (sem comparar com GITHUB_REF);
+#   - SEM secrets/keystore: sem a chave de upload, o build.gradle.kts assina o release com a chave
+#     de debug do runner (signingConfig "debug"); o APK nao e publicado nem anexado;
+#   - permissions so de leitura; sem upload-artifact, sem testes e sem lint.
+
+name: Build check
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Derivar versionCode do versionName (sem tag)
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(grep -E '^val appVersionName = ' app/build.gradle.kts \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+          if [ -z "$VERSION_NAME" ]; then
+            echo "::error::nao consegui extrair appVersionName de app/build.gradle.kts"; exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
+          EXPECTED_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "EXPECTED_CODE=$EXPECTED_CODE" >> "$GITHUB_ENV"
+          echo "OK: versionName=$VERSION_NAME versionCode(esperado)=$EXPECTED_CODE"
+
+      - name: Build assembleRelease (sem secrets; assina com a chave de debug)
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Localizar APK e validar versionCode/versionName vs formula (aapt)
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "::error::APK de release nao encontrado"; exit 1; fi
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          CODE=$("$BT/aapt" dump badging "$APK" | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p")
+          NAME=$("$BT/aapt" dump badging "$APK" | sed -nE "s/.*versionName='([^']+)'.*/\1/p")
+          echo "APK=$APK versionName=$NAME versionCode=$CODE (esperado name=$VERSION_NAME code=$EXPECTED_CODE)"
+          if [ "$CODE" != "$EXPECTED_CODE" ] || [ "$NAME" != "$VERSION_NAME" ]; then
+            echo "::error::versionCode/versionName do APK ($NAME/$CODE) nao batem com a formula ($VERSION_NAME/$EXPECTED_CODE)"
+            exit 1
+          fi

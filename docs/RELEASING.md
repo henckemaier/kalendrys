@@ -3,6 +3,8 @@
 Complementa `docs/VERSIONING.md` (a regra de versionamento) com o fluxo operacional de release
 via GitHub Actions (`.github/workflows/release.yml`).
 
+O **build-check** (`.github/workflows/build-check.yml`) roda em todo PR para a `main` e precisa estar verde antes do merge e da tag; os dois workflows mantêm o mesmo preparo, JDK e actions (mesmos SHAs).
+
 ## Passo a passo
 
 1. **Bump da versão** — edite **somente** `appVersionName` em `app/build.gradle.kts`
@@ -38,6 +40,23 @@ O CI builda com o wrapper (`./gradlew`), que confere o `distributionSha256Sum` d
 3. Confira o `gradle/wrapper/gradle-wrapper.jar` contra
    `https://services.gradle.org/distributions/gradle-<X.Y.Z>-wrapper.jar.sha256`
    (ou https://gradle.org/release-checksums/). Se não bater, não commite.
+
+## Regerando o Baseline Profile
+
+Com um emulador ou aparelho Android 13+ conectado: `./gradlew --no-daemon
+:app:generateReleaseBaselineProfile -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`
+(sem essa propriedade o teste conectado desinstala o app no fim e apaga os dados e widgets).
+
+1. Gere com o app **sem dados** (num aparelho compartilhado: copie os dados com `run-as`, esvazie,
+   gere e restaure). As jornadas criam itens "Perfil:" e, com muitas rotinas, não acham o bloco
+   fora da tela.
+2. **Passo manual** com o plugin `baselineprofile` 1.5.0 e o AGP 9.5.1: a geração apaga os perfis
+   versionados em `app/src/release/generated/baselineProfiles/` e não traz o novo do aparelho.
+   Copie-o de `additional_test_output`:
+   `adb pull /sdcard/Android/media/com.kalendrys.baselineprofile/additional_test_output/BaselineProfileGenerator_generate-startup-prof.txt`
+   e grave o arquivo como `baseline-prof.txt` e como `startup-prof.txt` (idênticos).
+3. Confira: arquivos não vazios, com classes `com/kalendrys/app`, e `assets/dexopt/baseline.prof`
+   dentro do APK de release.
 
 ## Secrets necessários
 
