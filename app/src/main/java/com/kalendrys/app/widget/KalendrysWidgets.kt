@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.glance.appwidget.updateAll
 import androidx.glance.material3.ColorProviders
 import androidx.glance.unit.ColorProvider
+import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.ui.theme.DarkColors
@@ -26,6 +27,9 @@ object KalendrysWidgets {
     val overdue = Color(0xFFFFB4AB)
 
     suspend fun updateAll(context: Context) {
+        // Sessão do widget aberta: update() só recompõe com o que o observe() já tem. O refresh faz o
+        // "a seguir" ser recalculado com o relógio de agora (F-1 da v1.6.1, ver TodayRepository.refresh).
+        (context.applicationContext as? KalendrysApp)?.todayRepository?.refresh()
         TasksWidget().updateAll(context)
         SummaryWidget().updateAll(context)
         CalendarWidget().updateAll(context)
