@@ -72,16 +72,17 @@ fun AppScaffold(
 
 /**
  * Soma as margens da própria tela ao preenchimento do [AppScaffold] (insets, excedente da largura
- * máxima e folga do FAB), para usar como `contentPadding` da lista.
+ * máxima e folga do FAB), para usar como `contentPadding` da lista. [bottom] é o respiro de fim de
+ * lista das telas sem FAB (com FAB, a folga já vem do [AppScaffold]).
  */
 @Composable
-fun PaddingValues.plus(horizontal: Dp = 0.dp, top: Dp = 0.dp): PaddingValues {
+fun PaddingValues.plus(horizontal: Dp = 0.dp, top: Dp = 0.dp, bottom: Dp = 0.dp): PaddingValues {
     val direction = LocalLayoutDirection.current
     return PaddingValues(
         start = calculateStartPadding(direction) + horizontal,
         end = calculateEndPadding(direction) + horizontal,
         top = calculateTopPadding() + top,
-        bottom = calculateBottomPadding(),
+        bottom = calculateBottomPadding() + bottom,
     )
 }
 

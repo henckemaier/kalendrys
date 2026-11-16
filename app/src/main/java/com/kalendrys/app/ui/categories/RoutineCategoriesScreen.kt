@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Delete
@@ -27,16 +25,12 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -59,10 +52,15 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
-import com.kalendrys.app.ui.components.fabListContentPadding
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.plus
+import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.routines.routineTone
+import com.kalendrys.app.ui.theme.Spacing
 
 @Composable
 fun RoutineCategoriesScreen(
@@ -70,40 +68,35 @@ fun RoutineCategoriesScreen(
     viewModel: RoutineCategoriesViewModel = viewModel(factory = RoutineCategoriesViewModel.Factory),
 ) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val listState = rememberLazyListState()
+    val fabExpanded by rememberFabExpanded(listState)
     var editing by remember { mutableStateOf<CategoryDialog?>(null) }
     var deleting by remember { mutableStateOf<RoutineCategory?>(null) }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    AppScaffold(
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.routine_categories_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
+            AppTopBar(title = stringResource(R.string.routine_categories_title), onBack = onBack)
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = CategoryDialog.Create }) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.routine_category_add))
-            }
+            CollapsingFab(
+                text = stringResource(R.string.routine_category_add),
+                expanded = fabExpanded,
+                onClick = { editing = CategoryDialog.Create },
+            )
         },
-    ) { innerPadding ->
+        hasFab = true,
+    ) { padding ->
         if (categories.isEmpty()) {
             EmptyState(
                 icon = Icons.Outlined.Category,
                 title = stringResource(R.string.routine_categories_empty_title),
                 message = stringResource(R.string.routine_categories_empty_message),
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(padding),
             )
         } else {
             LazyColumn(
-                modifier = Modifier.padding(innerPadding),
-                contentPadding = fabListContentPadding(horizontal = 8.dp, top = 4.dp),
+                state = listState,
+                contentPadding = padding.plus(horizontal = Spacing.s, top = Spacing.xs),
             ) {
                 items(categories, key = { it.id }) { category ->
                     CategoryRow(
@@ -169,8 +162,8 @@ private fun CategoryRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            .clip(MaterialTheme.shapes.small)
+            .padding(start = Spacing.l, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
     ) {
         Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 14.dp, filled = true)
         Text(
@@ -180,7 +173,7 @@ private fun CategoryRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 16.dp),
+                .padding(start = Spacing.l),
         )
         IconButton(onClick = onEdit) {
             Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.routine_category_edit, category.name))
@@ -226,14 +219,14 @@ private fun CategoryEditDialog(
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.size(16.dp))
+                Spacer(Modifier.size(Spacing.l))
                 Text(
                     text = stringResource(R.string.routine_category_kind_label),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.size(Spacing.s))
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     CATEGORY_KIND_OPTIONS.forEach { option ->
                         FilterChip(
                             selected = kind == option,
@@ -242,7 +235,7 @@ private fun CategoryEditDialog(
                         )
                     }
                 }
-                Spacer(Modifier.size(16.dp))
+                Spacer(Modifier.size(Spacing.l))
                 ColorRow(selected = color, onSelect = { color = it })
             }
         },
