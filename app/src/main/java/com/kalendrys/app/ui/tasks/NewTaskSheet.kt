@@ -49,91 +49,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.repository.ShoppingListSummary
-import com.kalendrys.app.data.repository.ShoppingRepository
-import com.kalendrys.app.domain.RecurrenceUnit
-import com.kalendrys.app.domain.ReminderRepeat
-import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.domain.NewTaskDraft
+import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
-import java.time.LocalDate
-import java.time.LocalTime
 import kotlinx.coroutines.launch
 
 /**
- * Lista de compras escolhida no painel de nova tarefa (ADR-0001, P2). "Criar nova" só cria a lista
- * ao salvar a tarefa: cancelar o painel não deixa lista avulsa para trás.
- */
-sealed interface NewTaskList {
-    data class Existing(val listId: Long) : NewTaskList
-    data class New(val name: String) : NewTaskList
-}
-
-/**
- * Id da lista a gravar na nova tarefa: a existente escolhida, ou a nova criada AGORA (no salvar).
- * Regra única para Tarefas e Calendário. Nome em branco não cria lista. Lista existente que foi
- * excluída antes de salvar vira "sem lista" (a tarefa não nasce com vínculo órfão).
- */
-suspend fun NewTaskList?.resolveListId(shoppingRepository: ShoppingRepository): Long? = when (this) {
-    null -> null
-    is NewTaskList.Existing -> shoppingRepository.list(listId)?.id
-    is NewTaskList.New -> name.takeIf { it.isNotBlank() }?.let { shoppingRepository.createList(it) }
-}
-
-/**
- * Painel de criação de tarefa, usado pela lista e pelo calendário. A data já vem preenchida
- * com [initialDate] (hoje, ou o dia escolhido no calendário) e pode ser trocada ou removida.
+ * Painel de criação de tarefa, usado pela aba Tarefas e pelo Calendário. SEM estado próprio
+ * (v1.7.1): mostra o [draft] guardado no NewTaskDraftStore e devolve as mudanças por [onChange].
+ *
+ * Fechar pelo voltar, tocando fora ou arrastando para baixo ([onDismiss]) GUARDA o rascunho;
+ * [onCancel] o descarta; [onSave] grava a tarefa e o descarta (quem chama decide, aqui só avisa).
  *
  * [lists] liga a opção de anexar lista de compras ("Criar nova" / "Usar lista existente"); `null`
- * esconde a opção (quem chama não oferece listas) e o `list` do [onSave] vem sempre `null`.
+ * esconde a opção.
  */
 @Composable
 internal fun NewTaskSheet(
-    onSave: (title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList?) -> Unit,
+    draft: NewTaskDraft,
+    onChange: ((NewTaskDraft) -> NewTaskDraft) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
     onDismiss: () -> Unit,
-    initialDate: LocalDate? = LocalDate.now(),
     lists: List<ShoppingListSummary>? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var title by rememberSaveable { mutableStateOf("") }
-    var notes by rememberSaveable { mutableStateOf("") }
-    var location by rememberSaveable { mutableStateOf("") }
-    // Guardados separadamente: tipos simples sobrevivem à rotação sem um Saver próprio.
-    var epochDay by rememberSaveable { mutableStateOf(initialDate?.toEpochDay()) }
-    var minuteOfDay by rememberSaveable { mutableStateOf<Int?>(null) }
-    var repeat by rememberSaveable { mutableStateOf(ReminderRepeat.NONE) }
-    // Config da recorrência personalizada (ver TaskTiming/ReminderRecurrence).
-    var intervalEvery by rememberSaveable { mutableStateOf(1) }
-    var intervalUnit by rememberSaveable { mutableStateOf<RecurrenceUnit?>(null) }
-    var byWeekdays by rememberSaveable { mutableStateOf(0) }
-    // Lista escolhida, em tipos simples para sobreviver à rotação: uma existente OU o nome de uma nova.
-    var listId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var newListName by rememberSaveable { mutableStateOf<String?>(null) }
     var showListPicker by rememberSaveable { mutableStateOf(false) }
-    // Lista escolhida excluída com o painel aberto: limpa a escolha, para a tarefa não nascer com
-    // vínculo órfão. Só depois de a lista ter aparecido nesta composição: logo após a recriação do
-    // processo, [lists] chega vazia antes de carregar e não pode apagar uma escolha válida.
-    var chosenListSeen by remember { mutableStateOf(false) }
-    LaunchedEffect(lists, listId) {
-        val chosen = listId ?: return@LaunchedEffect
-        val present = lists.orEmpty().any { it.id == chosen }
-        if (present) chosenListSeen = true else if (chosenListSeen) {
-            listId = null
-            chosenListSeen = false
-        }
-    }
-    val listChoice: NewTaskList? = when {
-        listId != null -> NewTaskList.Existing(listId!!)
-        newListName != null -> NewTaskList.New(newListName!!)
-        else -> null
-    }
-    val timing = TaskTiming(
-        date = epochDay?.let(LocalDate::ofEpochDay),
-        time = minuteOfDay?.let { LocalTime.of(it / 60, it % 60) },
-        repeat = repeat,
-        intervalEvery = intervalEvery,
-        intervalUnit = intervalUnit,
-        byWeekdays = byWeekdays,
-    )
     val focusRequester = remember { FocusRequester() }
 
     fun hideThen(action: () -> Unit) {
@@ -141,6 +83,16 @@ internal fun NewTaskSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        // Título do painel FORA da área que rola (L29): em paisagem o foco no campo Título rolava a
+        // coluna e o "Nova tarefa" sumia sob a alça de arrastar.
+        Text(
+            stringResource(R.string.new_task),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 16.dp),
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -149,10 +101,9 @@ internal fun NewTaskSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(stringResource(R.string.new_task), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
+                value = draft.title,
+                onValueChange = { value -> onChange { it.copy(title = value) } },
                 label = { Text(stringResource(R.string.task_title_label)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
@@ -164,48 +115,35 @@ internal fun NewTaskSheet(
                     .focusRequester(focusRequester),
             )
             TaskTimingField(
-                timing = timing,
-                onTimingChange = { changed ->
-                    epochDay = changed.date?.toEpochDay()
-                    minuteOfDay = changed.time?.let { it.hour * 60 + it.minute }
-                    repeat = changed.repeat
-                    intervalEvery = changed.intervalEvery
-                    intervalUnit = changed.intervalUnit
-                    byWeekdays = changed.byWeekdays
-                },
+                timing = draft.timing,
+                onTimingChange = { changed -> onChange { it.withTiming(changed) } },
             )
             OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
+                value = draft.notes,
+                onValueChange = { value -> onChange { it.copy(notes = value) } },
                 label = { Text(stringResource(R.string.task_notes_label)) },
                 minLines = 2,
                 maxLines = 4,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
             )
-            LocationField(value = location, onValueChange = { location = it })
+            LocationField(value = draft.location, onValueChange = { value -> onChange { it.copy(location = value) } })
             if (lists != null) {
                 NewTaskListField(
-                    choice = listChoice,
+                    choice = draft.list,
                     lists = lists,
                     onAdd = { showListPicker = true },
-                    onClear = {
-                        listId = null
-                        newListName = null
-                    },
+                    onClear = { onChange { it.copy(list = null) } },
                 )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                TextButton(onClick = { hideThen(onDismiss) }) {
+                TextButton(onClick = { hideThen(onCancel) }) {
                     Text(stringResource(R.string.cancel))
                 }
-                Button(
-                    onClick = { hideThen { onSave(title, notes, timing, location, listChoice) } },
-                    enabled = title.isNotBlank(),
-                ) {
+                Button(onClick = { hideThen(onSave) }, enabled = draft.canSave) {
                     Text(stringResource(R.string.save))
                 }
             }
@@ -216,15 +154,13 @@ internal fun NewTaskSheet(
     if (showListPicker && lists != null) {
         ShoppingListPicker(
             lists = lists,
-            suggestedName = title,
+            suggestedName = draft.title,
             onCreate = { name ->
-                listId = null
-                newListName = name
+                onChange { it.copy(list = NewTaskList.New(name)) }
                 showListPicker = false
             },
             onPick = { id ->
-                newListName = null
-                listId = id
+                onChange { it.copy(list = NewTaskList.Existing(id)) }
                 showListPicker = false
             },
             onDismiss = { showListPicker = false },

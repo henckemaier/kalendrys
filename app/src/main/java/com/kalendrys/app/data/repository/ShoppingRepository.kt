@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.dao.ShoppingListOwnerRow
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
+import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ShoppingProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -53,6 +54,17 @@ class ShoppingRepository(private val database: AppDatabase) {
 
     /** Cria uma lista avulsa e devolve o id. Nome vazio não é aceito (a UI valida antes). */
     suspend fun createList(name: String): Long = listDao.insert(ShoppingList(name = name.trim()))
+
+    /**
+     * Id da lista a gravar na nova tarefa: a existente escolhida, ou a nova criada AGORA (no salvar).
+     * Regra única para Tarefas e Calendário. Nome em branco não cria lista. Lista existente que foi
+     * excluída antes de salvar vira "sem lista" (a tarefa não nasce com vínculo órfão).
+     */
+    suspend fun resolveListId(choice: NewTaskList?): Long? = when (choice) {
+        null -> null
+        is NewTaskList.Existing -> list(choice.listId)?.id
+        is NewTaskList.New -> choice.name.takeIf { it.isNotBlank() }?.let { createList(it) }
+    }
 
     suspend fun renameList(listId: Long, name: String) {
         if (name.isBlank()) return
