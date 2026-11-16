@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
@@ -85,13 +86,17 @@ class MainActivity : ComponentActivity() {
      * aplicada, não só o valor: entre o valor chegar e o Compose recompor ainda caberia um quadro
      * velho. Enquanto segura, fica a janela inicial (no Android 12+ já no tema escolhido, pelo espelho
      * do KalendrysApp). Sem runBlocking: a leitura começou no início do processo.
+     *
+     * Teto de [FIRST_FRAME_TIMEOUT_MS] (parecer do Esquadro): se o DataStore travar, o app abre com
+     * a aparência padrão e troca quando o valor chegar, em vez de ficar parado na janela inicial.
      */
     private fun holdFirstFrameUntil(isReady: () -> Boolean) {
         val content = findViewById<View>(android.R.id.content)
+        val deadline = SystemClock.uptimeMillis() + FIRST_FRAME_TIMEOUT_MS
         content.viewTreeObserver.addOnPreDrawListener(
             object : ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
-                    if (!isReady()) return false
+                    if (!isReady() && SystemClock.uptimeMillis() < deadline) return false
                     content.viewTreeObserver.removeOnPreDrawListener(this)
                     return true
                 }
@@ -122,5 +127,9 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private companion object {
+        const val FIRST_FRAME_TIMEOUT_MS = 1_000L
     }
 }
