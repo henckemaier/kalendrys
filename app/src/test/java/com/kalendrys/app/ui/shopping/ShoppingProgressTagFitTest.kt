@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
@@ -131,7 +132,7 @@ class ShoppingProgressTagFitTest {
     }
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db)))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), NewTaskDraftStore()))
 
     private var fontScale by mutableFloatStateOf(1f)
 
