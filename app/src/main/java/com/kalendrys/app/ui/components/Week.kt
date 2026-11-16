@@ -74,8 +74,8 @@ fun weekdayName(day: DayOfWeek, style: WeekdayName): String =
  * de [WEEKDAY_CIRCLE_SIZE] fica centrado na célula, com o efeito de toque nele. Em fonte normal são
  * sete por linha (1/7 da linha; em 360dp uns 44dp de largura, limite aceito). Com fonte grande o
  * círculo cresce em pílula: a largura da pílula mais larga decide quantos dias cabem por linha e o
- * seletor quebra em mais linhas em vez de cortar o texto. As linhas seguintes mantêm a mesma
- * largura de célula, alinhadas à primeira.
+ * seletor quebra em mais linhas em vez de cortar o texto. As linhas são repartidas por igual
+ * ([weekdayRowSizes]: 4 e 3 em vez de 6 e 1) e as de baixo mantêm a largura de célula da primeira.
  */
 @Composable
 fun WeekdayToggleRow(
@@ -97,9 +97,13 @@ fun WeekdayToggleRow(
 
     BoxWithConstraints(modifier.fillMaxWidth()) {
         // 1dp de folga para o arredondamento em px não deixar a célula 1px menor que a pílula.
-        val perRow = if (constraints.hasBoundedWidth) (maxWidth / (pillWidth + 1.dp)).toInt().coerceIn(1, 7) else 7
+        val fits = if (constraints.hasBoundedWidth) (maxWidth / (pillWidth + 1.dp)).toInt() else 7
+        val sizes = weekdayRowSizes(fits)
+        // Largura de célula pela linha mais cheia: as outras ficam alinhadas a ela.
+        val perRow = sizes.first()
+        var start = 0
         Column {
-            days.chunked(perRow).forEach { rowDays ->
+            sizes.map { size -> days.subList(start, start + size).also { start += size } }.forEach { rowDays ->
                 Row(Modifier.fillMaxWidth()) {
                     rowDays.forEach { day ->
                         key(day) {
@@ -163,6 +167,16 @@ private fun WeekdayCell(
             )
         }
     }
+}
+
+/**
+ * Quantos dias vão em cada linha quando cabem no máximo [fits] por linha: o mínimo de linhas, com
+ * os sete repartidos por igual (as primeiras levam o dia a mais). Ex.: 7 → [7]; 6, 5 ou 4 → [4, 3];
+ * 3 → [3, 2, 2]; 2 → [2, 2, 2, 1].
+ */
+internal fun weekdayRowSizes(fits: Int): List<Int> {
+    val rows = (7 + fits.coerceIn(1, 7) - 1) / fits.coerceIn(1, 7)
+    return List(rows) { i -> 7 / rows + if (i < 7 % rows) 1 else 0 }
 }
 
 /** Altura mínima da célula de toque de cada dia (alvo de 48dp). */
