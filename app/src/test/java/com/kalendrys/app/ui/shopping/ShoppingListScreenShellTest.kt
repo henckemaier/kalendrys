@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsEnabled
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -116,6 +119,11 @@ class ShoppingListScreenShellTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 itemNames().contains(name)
             }
+            // C3: a lista rola até o item novo (o último dos não marcados), que aparece na tela.
+            compose.waitUntil(LOAD_TIMEOUT_MS) {
+                shadowOf(Looper.getMainLooper()).idle()
+                compose.onAllNodesWithText(name).fetchSemanticsNodes().isNotEmpty()
+            }
             // O campo volta vazio e continua focado: o teclado não fecha entre um item e outro.
             field.assertIsFocused()
             field.assert(hasText(""))
@@ -124,6 +132,29 @@ class ShoppingListScreenShellTest {
         assertEquals(listOf("Leite", "Pão", "Ovos", "Queijo", "Manteiga", "Suco"), itemNames())
         // Não há mais FAB nem diálogo de novo item (C1): a inclusão é só pelo campo.
         assertEquals(0, compose.onAllNodesWithText("Novo item").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `cabecalho Marcados e um no so, cabecalho, com a acao de recolher`() {
+        val leite = runBlocking { repository.observeItems(listId).first().single() }
+        runBlocking { repository.setPicked(leite, true) }
+        compose.waitUntil(LOAD_TIMEOUT_MS) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.onAllNodesWithText("Marcados").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        val node = compose.onNodeWithText("Marcados").fetchSemanticsNode()
+        assertTrue(node.config.contains(SemanticsProperties.Heading))
+        assertEquals("Recolher marcados", node.config[SemanticsActions.OnClick].label)
+
+        compose.onNodeWithText("Marcados").performClick()
+        compose.waitForIdle()
+        // Recolhido: o item marcado sai da lista e a ação passa a ser mostrar.
+        assertEquals(0, compose.onAllNodesWithText("Leite").fetchSemanticsNodes().size)
+        assertEquals(
+            "Mostrar marcados",
+            compose.onNodeWithText("Marcados").fetchSemanticsNode().config[SemanticsActions.OnClick].label,
+        )
     }
 
     private fun itemNames(): List<String> = runBlocking { repository.observeItems(listId).first().map { it.name } }

@@ -3,11 +3,8 @@
 package com.kalendrys.app.ui.shopping
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -32,11 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -70,6 +65,21 @@ fun ShoppingListScreen(
     var quickText by rememberSaveable { mutableStateOf("") }
     // Grupo "Marcados (n)": aberto ou recolhido é estado da tela, não vai para o banco (12.4, U6).
     var pickedExpanded by rememberSaveable { mutableStateOf(true) }
+    // C3 (O-1 da Coruja): depois de uma adição rápida, a lista rola até o item novo, que é o último
+    // dos não marcados. Só quando a inclusão veio do campo (não ao abrir a tela nem ao desmarcar).
+    var scrollToNewItem by remember { mutableStateOf(false) }
+    LaunchedEffect(state.toPick.size) {
+        if (scrollToNewItem && state.toPick.isNotEmpty()) {
+            // Itens antes dos não marcados: o progresso e, se aparece, a dica.
+            val before = 1 + if (showGestureHint) 1 else 0
+            val index = before + state.toPick.lastIndex
+            val visible = listState.layoutInfo.visibleItemsInfo.any { info ->
+                info.index == index && info.offset + info.size <= listState.layoutInfo.viewportEndOffset
+            }
+            if (!visible) listState.animateScrollToItem(index)
+            scrollToNewItem = false
+        }
+    }
     // Só o id do item em edição: o item em si é lido do estado (fresco após rotação).
     var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -146,7 +156,10 @@ fun ShoppingListScreen(
                 QuickAddField(
                     value = quickText,
                     onValueChange = { quickText = it },
-                    onAdd = viewModel::quickAdd,
+                    onAdd = { name ->
+                        scrollToNewItem = true
+                        viewModel.quickAdd(name)
+                    },
                     placeholder = stringResource(R.string.shopping_add_item),
                     addLabel = stringResource(R.string.shopping_quick_add_action),
                     modifier = Modifier
@@ -263,23 +276,20 @@ private fun PickedHeader(count: Int, expanded: Boolean, onToggle: () -> Unit, mo
     val actionLabel = stringResource(
         if (expanded) R.string.shopping_list_picked_collapse else R.string.shopping_list_picked_expand,
     )
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clickable(onClickLabel = actionLabel, role = Role.Button, onClick = onToggle),
-    ) {
-        SectionHeader(
-            title = stringResource(R.string.shopping_list_picked_group),
-            count = count,
-            contentPadding = PaddingValues(top = Spacing.m, bottom = Spacing.s),
-            modifier = Modifier.weight(1f),
-        )
-        Icon(
-            imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    // Um nó só (C2 do Esquadro): o texto "Marcados", a contagem, o cabeçalho e a ação de recolher.
+    SectionHeader(
+        title = stringResource(R.string.shopping_list_picked_group),
+        count = count,
+        contentPadding = PaddingValues(top = Spacing.m, bottom = Spacing.s),
+        onClick = onToggle,
+        onClickLabel = actionLabel,
+        trailing = {
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        modifier = modifier.heightIn(min = 48.dp),
+    )
 }
