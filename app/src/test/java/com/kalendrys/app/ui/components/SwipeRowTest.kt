@@ -176,4 +176,27 @@ class SwipeRowTest {
 
         assertEquals(listOf("excluir", "concluir"), calls)
     }
+
+    /**
+     * Perto do limiar: 30% e 60% passariam também com o limiar em 50% (ou o padrão de 56dp perderia
+     * em 30%). Aqui 35% não dispara e 47% dispara (≈45% depois da folga do toque), o que só vale
+     * com o limiar de 40%.
+     */
+    @Test
+    fun `deslize lento perto do limiar - 35 por cento volta e 47 por cento dispara`() {
+        setRow()
+
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeLeft(startX = right, endX = right - width * 0.35f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+        assertTrue("35% não dispara: $calls", calls.isEmpty())
+
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeLeft(startX = right, endX = right - width * 0.47f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+        assertEquals(listOf("excluir"), calls)
+        assertEquals(listOf(Haptics.typeOf(HapticEvent.Delete)), haptics)
+    }
 }

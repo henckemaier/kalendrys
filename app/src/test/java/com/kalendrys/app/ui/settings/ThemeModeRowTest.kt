@@ -77,4 +77,25 @@ class ThemeModeRowTest {
         compose.onNodeWithText("Claro").performClick()
         assertEquals(ThemeMode.LIGHT, chosen)
     }
+
+    /**
+     * Os dois testes acima (1.0 e 2.0) passariam com o corte em qualquer ponto entre eles. As escalas
+     * do sistema perto do corte são 1.3 e 1.5: "acima de 1.3" deixa 1.3 no segmentado e 1.5 no rádio.
+     */
+    @Test
+    fun `fonte 1_3 ainda e segmentado`() {
+        render(fontScale = 1.3f)
+
+        // Lado a lado (o SegmentedButton também se anuncia como rádio, então a posição é que decide).
+        assertEquals(top("Sistema"), top("Claro"))
+        assertEquals(top("Claro"), top("Escuro"))
+    }
+
+    @Test
+    fun `fonte 1_5 ja vira lista de radio`() {
+        render(fontScale = 1.5f)
+
+        assertEquals(3, compose.onAllNodes(radio).fetchSemanticsNodes().size)
+        assertTrue(top("Sistema") < top("Claro") && top("Claro") < top("Escuro"))
+    }
 }
