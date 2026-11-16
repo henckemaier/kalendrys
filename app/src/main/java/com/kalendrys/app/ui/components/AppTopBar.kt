@@ -33,9 +33,9 @@ import com.kalendrys.app.ui.theme.KalendrysTheme
 /**
  * Ação da barra de topo. Com [icon], aparece como botão de ícone ([label] vira a descrição para o
  * leitor de tela); sem ícone, ou quando passada em `menu`, vai para o menu de mais opções, com o
- * rótulo escrito. Com [prominent] (em `actions`), aparece como botão de texto com o [label], depois
- * dos ícones e antes do menu — para a ação principal de um editor, como "Salvar" (o [icon] é
- * ignorado).
+ * rótulo escrito. Com [prominent] (em `actions`), aparece como botão de texto com o [label] (o
+ * [icon] é ignorado): "Salvar" dos editores, "Hoje" das abas. As `actions` saem na ORDEM da lista:
+ * quem aparece e some vem antes das permanentes, para estas não mudarem de lugar.
  */
 @Immutable
 data class TopBarAction(
@@ -70,16 +70,18 @@ fun AppTopBar(
             }
         },
         actions = {
-            actions.filterNot { it.prominent }.forEach { action ->
+            // Na ordem em que a tela passa, ícone ou texto (O-2 do Esquadro): a ação que aparece e
+            // some (Hoje) vem antes das permanentes, e a engrenagem nunca muda de lugar.
+            actions.forEach { action ->
                 val icon = action.icon
-                if (icon != null) {
-                    IconButton(onClick = action.onClick, enabled = action.enabled) {
+                when {
+                    action.prominent -> TextButton(onClick = action.onClick, enabled = action.enabled) {
+                        Text(action.label)
+                    }
+                    icon != null -> IconButton(onClick = action.onClick, enabled = action.enabled) {
                         Icon(icon, contentDescription = action.label)
                     }
                 }
-            }
-            actions.filter { it.prominent }.forEach { action ->
-                TextButton(onClick = action.onClick, enabled = action.enabled) { Text(action.label) }
             }
             val inMenu = menu + actions.filter { it.icon == null && !it.prominent }
             if (inMenu.isNotEmpty()) OverflowMenu(inMenu)
