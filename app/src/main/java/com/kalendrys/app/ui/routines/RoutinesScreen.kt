@@ -44,9 +44,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -101,6 +99,7 @@ import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.rememberTimeColumnWidth
+import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
@@ -150,22 +149,12 @@ fun RoutinesScreen(
     val undoLabel = stringResource(R.string.undo)
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.completed.collectLatest { completed ->
-            val result = snackbarHostState.showSnackbar(
-                message = completedMessage,
-                actionLabel = undoLabel,
-                duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.undo(completed)
+            if (snackbarHostState.showUndo(completedMessage, undoLabel)) viewModel.undo(completed)
         }
     }
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.taskCompleted.collectLatest { logId ->
-            val result = snackbarHostState.showSnackbar(
-                message = taskCompletedMessage,
-                actionLabel = undoLabel,
-                duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.undoTaskCompletion(logId)
+            if (snackbarHostState.showUndo(taskCompletedMessage, undoLabel)) viewModel.undoTaskCompletion(logId)
         }
     }
 
