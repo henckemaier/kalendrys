@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -124,6 +127,30 @@ class ShoppingListScreenShellTest {
         assertEquals(listOf("Leite", "Pão", "Ovos", "Queijo", "Manteiga", "Suco"), itemNames())
         // Não há mais FAB nem diálogo de novo item (C1): a inclusão é só pelo campo.
         assertEquals(0, compose.onAllNodesWithText("Novo item").fetchSemanticsNodes().size)
+    }
+
+    /**
+     * Remover pelo deslize (removesRow = true) e Desfazer na tela de verdade: a linha some, o snackbar
+     * oferece Desfazer e o item volta VISÍVEL, no lugar (o estado do gesto não pode voltar
+     * "dispensado", fora da tela).
+     */
+    @Test
+    fun `deslizar o item para a esquerda remove e o Desfazer devolve a linha visivel`() {
+        compose.onNodeWithText("Leite").performTouchInput { swipeLeft() }
+
+        waitDraining { compose.onAllNodesWithText("Item removido").fetchSemanticsNodes().isNotEmpty() }
+        waitDraining { itemNames().isEmpty() }
+        compose.onNodeWithText("Desfazer").performClick()
+
+        waitDraining { itemNames() == listOf("Leite") && compose.onAllNodesWithText("Leite").fetchSemanticsNodes().isNotEmpty() }
+        val left = compose.onNodeWithText("Leite", useUnmergedTree = true).fetchSemanticsNode().positionInRoot.x
+        assertTrue("linha devolvida fora da tela (left=$left)", left >= 0f)
+    }
+
+    /** A inclusão/remoção passa pelo Room: drena o looper principal do Robolectric entre as checagens. */
+    private fun waitDraining(condition: () -> Boolean) = compose.waitUntil(LOAD_TIMEOUT_MS) {
+        shadowOf(Looper.getMainLooper()).idle()
+        condition()
     }
 
     private fun itemNames(): List<String> = runBlocking { repository.observeItems(listId).first().map { it.name } }

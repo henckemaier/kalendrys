@@ -28,6 +28,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -469,6 +470,30 @@ class BackupManagerTest {
         Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+
+    /**
+     * A dica única dos gestos da lista (ADR-0002, 12.4) é registro de uso do aparelho, não preferência:
+     * não vai no backup, e restaurar um backup não a apaga nem a liga.
+     */
+    @Test
+    fun `dica dos gestos da lista nao vai no backup e o restauro nao mexe nela`() = runTest {
+        val source = settingsRepo("source-hint")
+        source.setShoppingGestureHintSeen()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        assertFalse("o backup não pode levar a dica: $json", json.contains("hint", ignoreCase = true))
+        assertEquals(setOf("summaryEnabled", "summaryMinuteOfDay", "themeMode", "dynamicColor"),
+            JSONObject(json).getJSONObject("settings").keys().asSequence().toSet())
+
+        val fresh = settingsRepo("dest-hint-fresh")
+        BackupManager(destDb, context.contentResolver, fresh).restore(json)
+        assertFalse("aparelho novo continua sem ter visto a dica", fresh.shoppingGestureHintSeen.first())
+
+        val seen = settingsRepo("dest-hint-seen")
+        seen.setShoppingGestureHintSeen()
+        BackupManager(destDb, context.contentResolver, seen).restore(json)
+        assertTrue("quem já dispensou a dica não a vê de novo depois do restauro", seen.shoppingGestureHintSeen.first())
+    }
 
     private fun settingsRepo(name: String): SettingsRepository =
         SettingsRepository(

@@ -20,6 +20,9 @@ import com.kalendrys.app.domain.ShoppingProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -417,5 +420,31 @@ class ShoppingListViewModelTest {
             vm.togglePicked(lastUnpicked(listId)).join()
             expectNoEvents()
         }
+    }
+
+    /**
+     * Dica única dos gestos (ADR-0002, 12.4): aparece enquanto não foi dispensada e, dispensada, não
+     * volta ao reabrir a lista (outro ViewModel, mesmo DataStore). O estado inicial do StateFlow é
+     * `false` antes da leitura, então o "não volta" espera o DataStore responder de verdade.
+     */
+    @Test
+    fun `dica dos gestos aparece ate ser dispensada e nao volta ao reabrir a lista`() = runTest {
+        val listId = repository.createList("Mercado")
+
+        val first = viewModel(listId)
+        first.showGestureHint.test {
+            while (!awaitItem()) Unit // false inicial, depois true com a leitura
+            first.dismissGestureHint()
+            assertFalse(awaitItem())
+        }
+        assertTrue(settings.shoppingGestureHintSeen.first())
+
+        val reopened = viewModel(listId)
+        val seenValues = mutableListOf<Boolean>()
+        val job = backgroundScope.launch { reopened.showGestureHint.collect { seenValues += it } }
+        // Tempo real para o DataStore (em outra thread) responder ao novo coletor.
+        withContext(Dispatchers.Default) { delay(500) }
+        job.cancel()
+        assertEquals("a dica não pode reaparecer: $seenValues", false, seenValues.any { it })
     }
 }
