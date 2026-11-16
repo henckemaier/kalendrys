@@ -3,7 +3,7 @@
 Complementa `docs/VERSIONING.md` (a regra de versionamento) com o fluxo operacional de release
 via GitHub Actions (`.github/workflows/release.yml`).
 
-O **build-check** (`.github/workflows/build-check.yml`) roda em todo PR para a `main` e precisa estar verde antes do merge e da tag; os dois workflows mantêm o mesmo preparo, JDK e actions (mesmos SHAs).
+O **build-check** (`.github/workflows/build-check.yml`) roda em todo PR para a `main` (testes unitários, lint, `assembleRelease`, `aapt` e a conferência do R8) e precisa estar verde antes do merge e da tag; os dois workflows mantêm o mesmo preparo, JDK e actions (mesmos SHAs).
 
 ## Passo a passo
 
