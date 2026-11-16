@@ -37,6 +37,9 @@ val ContentMaxWidth: Dp = 640.dp
  * para o preenchimento lateral, dividido entre os dois lados. Com [hasFab], o fundo já inclui
  * [FabClearance], para a última linha nunca ficar sob o FAB. As margens da própria tela entram com
  * [plus]. Com o teclado aberto, a casca inteira encolhe acima dele (barra do topo fixa).
+ * Não guardar o preenchimento do Scaffold em `remember`: é um objeto vivo, cujos valores mudam sem o
+ * objeto mudar (R-1 da E4).
+ * Com cabeçalho alto (paisagem), a folga do FAB é limitada para sempre sobrar uma linha visível.
  * [bottomBar] fica fixo no rodapé (ex.: o [QuickAddField] da tela da lista), logo acima do teclado,
  * e cuida da barra do sistema e das laterais ([bottomBarInsets]); o conteúdo termina acima dele.
  */
@@ -71,11 +74,13 @@ fun AppScaffold(
             // Sem remember: o Scaffold reaproveita o MESMO objeto innerPadding e só troca os valores (ex.:
             // quando o rodapé aparece depois de carregar, ou os insets mudam ao girar); uma cópia
             // guardada com ele como chave ficava velha (R-1 da Coruja: a lista sem o fundo do rodapé).
+            val top = innerPadding.calculateTopPadding()
+            val bottomInset = innerPadding.calculateBottomPadding()
             val contentPadding = PaddingValues(
                 start = start + excess,
                 end = end + excess,
-                top = innerPadding.calculateTopPadding(),
-                bottom = innerPadding.calculateBottomPadding() + if (hasFab) FabClearance else 0.dp,
+                top = top,
+                bottom = bottomInset + if (hasFab) fabClearanceFor(maxHeight - top - bottomInset) else 0.dp,
             )
             content(contentPadding)
         }
@@ -88,6 +93,19 @@ fun AppScaffold(
  */
 val bottomBarInsets: WindowInsets
     @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+
+/** Altura mínima de uma linha que sempre fica visível acima da folga do FAB. */
+private val MinVisibleRow: Dp = 48.dp
+
+/**
+ * Folga do FAB no fim da lista, limitada ao espaço que sobra entre as barras ([available]): nunca maior
+ * que esse espaço menos uma linha. Sem o limite, numa tela com cabeçalho alto em paisagem (aba
+ * Rotinas, com a faixa da semana e os filtros presos na barra) a folga fixa era maior que a área útil
+ * e a lista rolava até o último item sumir sob a barra (S-1 da Coruja). Em telefone retrato vale a
+ * folga inteira ([FabClearance]).
+ */
+internal fun fabClearanceFor(available: Dp): Dp =
+    FabClearance.coerceAtMost((available - MinVisibleRow).coerceAtLeast(0.dp))
 
 /**
  * Soma as margens da própria tela ao preenchimento do [AppScaffold] (insets, excedente da largura
