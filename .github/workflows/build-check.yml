@@ -1,7 +1,7 @@
 # Build-check do Kalendrys: roda em todo PR para a main (e manualmente).
 #
 # Espelha o release.yml (ver docs/RELEASING.md) no que importa para o build: mesmo runner, mesmos
-# actions com os mesmos SHAs, mesmo JDK, mesmo comando de build e a mesma conferencia do
+# actions com os mesmos SHAs, mesmo JDK, o mesmo :app:assembleRelease e a mesma conferencia do
 # versionName/versionCode pela formula via aapt. Assim, verde aqui = o release da tag builda igual.
 # Mantenha os dois workflows comparaveis lado a lado: mudou preparo/JDK/actions em um, mude no outro.
 #
@@ -9,7 +9,11 @@
 #   - sem tag: valida so versionName -> versionCode pela formula (sem comparar com GITHUB_REF);
 #   - SEM secrets/keystore: sem a chave de upload, o build.gradle.kts assina o release com a chave
 #     de debug do runner (signingConfig "debug"); o APK nao e publicado nem anexado;
-#   - permissions so de leitura; sem upload-artifact, sem testes e sem lint.
+#   - a mesma invocacao do Gradle roda tambem a suite de testes unitarios (:app:testDebugUnitTest)
+#     e o lint (:app:lintDebug), aproveitando a configuracao; falha de teste ou erro de lint
+#     derruba o PR (relatorios so no log do job);
+#   - confere os construtores mantidos pelas regras keep do R8 (scripts/check-r8-keep-constructors.sh);
+#   - permissions so de leitura; sem upload-artifact.
 
 name: Build check
 
@@ -51,8 +55,9 @@ jobs:
           echo "EXPECTED_CODE=$EXPECTED_CODE" >> "$GITHUB_ENV"
           echo "OK: versionName=$VERSION_NAME versionCode(esperado)=$EXPECTED_CODE"
 
-      - name: Build assembleRelease (sem secrets; assina com a chave de debug)
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      # Uma so invocacao: testes, lint e o mesmo assembleRelease do release.yml.
+      - name: Testes, lint e assembleRelease (sem secrets; assina com a chave de debug)
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon --stacktrace
 
       - name: Localizar APK e validar versionCode/versionName vs formula (aapt)
         run: |
