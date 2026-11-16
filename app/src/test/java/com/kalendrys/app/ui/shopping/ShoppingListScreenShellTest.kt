@@ -111,9 +111,9 @@ class ShoppingListScreenShellTest {
     }
 
     @Test
-    fun `adicao rapida no rodape adiciona cinco itens seguidos sem perder o foco`() {
+    fun `adicao rapida no rodape adiciona oito itens seguidos, cada um inteiro acima do campo`() {
         val field = compose.onNode(hasSetTextAction())
-        listOf("Pão", "Ovos", "Queijo", "Manteiga", "Suco").forEach { name ->
+        NEW_ITEMS.forEach { name ->
             field.performTextInput(name)
             field.performImeAction()
             compose.waitUntil(LOAD_TIMEOUT_MS) {
@@ -121,17 +121,18 @@ class ShoppingListScreenShellTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 itemNames().contains(name)
             }
-            // C3: a lista rola até o item novo (o último dos não marcados), que aparece na tela.
+            // C3 e R-1: a lista rola até o item novo (o último dos não marcados) e ele fica INTEIRO
+            // acima do campo, inclusive o primeiro que já não cabia (antes não rolava ou atrasava um).
             compose.waitUntil(LOAD_TIMEOUT_MS) {
                 shadowOf(Looper.getMainLooper()).idle()
-                compose.onAllNodesWithText(name).fetchSemanticsNodes().isNotEmpty()
+                fullyAboveField(name)
             }
             // O campo volta vazio e continua focado: o teclado não fecha entre um item e outro.
             field.assertIsFocused()
             field.assert(hasText(""))
         }
         // Na ordem digitada, depois do Leite que já estava.
-        assertEquals(listOf("Leite", "Pão", "Ovos", "Queijo", "Manteiga", "Suco"), itemNames())
+        assertEquals(listOf("Leite") + NEW_ITEMS, itemNames())
         // Não há mais FAB nem diálogo de novo item (C1): a inclusão é só pelo campo.
         assertEquals(0, compose.onAllNodesWithText("Novo item").fetchSemanticsNodes().size)
     }
@@ -183,9 +184,17 @@ class ShoppingListScreenShellTest {
         )
     }
 
+    /** O item com este nome está na tela e termina acima do campo de adição rápida. */
+    private fun fullyAboveField(name: String): Boolean {
+        val item = compose.onAllNodesWithText(name).fetchSemanticsNodes().firstOrNull() ?: return false
+        val field = compose.onNode(hasSetTextAction()).fetchSemanticsNode()
+        return item.boundsInRoot.top >= 0f && item.boundsInRoot.bottom <= field.boundsInRoot.top
+    }
+
     private fun itemNames(): List<String> = runBlocking { repository.observeItems(listId).first().map { it.name } }
 
     private companion object {
+        val NEW_ITEMS = listOf("Pão", "Ovos", "Queijo", "Manteiga", "Suco", "Café", "Arroz", "Feijão")
         const val LOAD_TIMEOUT_MS = 5_000L
     }
 }
