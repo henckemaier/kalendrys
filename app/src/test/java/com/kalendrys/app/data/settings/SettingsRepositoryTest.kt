@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -79,5 +80,27 @@ class SettingsRepositoryTest {
         assertNull(ThemeMode.fromNameOrNull("light"))
         assertNull(ThemeMode.fromNameOrNull(""))
         assertNull(ThemeMode.fromNameOrNull(null))
+    }
+
+    // --- Dica única dos gestos da lista de compras (ADR-0002, 12.4) -------------------------------
+
+    @Test
+    fun `dica dos gestos comeca nao vista e fica vista depois de gravar`() = runTest {
+        assertFalse(repository.shoppingGestureHintSeen.first())
+
+        repository.setShoppingGestureHintSeen()
+
+        assertTrue(repository.shoppingGestureHintSeen.first())
+        assertEquals(true, dataStore.data.first()[booleanPreferencesKey("shopping_gesture_hint_seen")])
+    }
+
+    @Test
+    fun `dica dos gestos fica fora de AppSettings`() = runTest {
+        val before = repository.settings.first()
+
+        repository.setShoppingGestureHintSeen()
+
+        // As configurações (que entram no backup e reagendam o resumo) não mudam.
+        assertEquals(before, repository.settings.first())
     }
 }

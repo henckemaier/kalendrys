@@ -19,10 +19,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -44,7 +46,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,8 +56,10 @@ import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.CollapsingFab
+import com.kalendrys.app.ui.components.ConfirmDialog
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.ListRow
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.routines.routineTone
@@ -92,6 +95,9 @@ fun RoutineCategoriesScreen(
                 title = stringResource(R.string.routine_categories_empty_title),
                 message = stringResource(R.string.routine_categories_empty_message),
                 modifier = Modifier.padding(padding),
+                // D8: a ação principal dentro do vazio abre o mesmo diálogo do FAB.
+                actionLabel = stringResource(R.string.routine_category_add),
+                onAction = { editing = CategoryDialog.Create },
             )
         } else {
             LazyColumn(
@@ -126,23 +132,15 @@ fun RoutineCategoriesScreen(
     }
 
     deleting?.let { category ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text(stringResource(R.string.routine_category_delete_title)) },
-            text = { Text(stringResource(R.string.routine_category_delete_message, category.name)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.delete(category)
-                        deleting = null
-                    },
-                ) {
-                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-                }
+        ConfirmDialog(
+            title = stringResource(R.string.routine_category_delete_title),
+            text = stringResource(R.string.routine_category_delete_message, category.name),
+            confirmLabel = stringResource(R.string.delete),
+            onConfirm = {
+                viewModel.delete(category)
+                deleting = null
             },
-            dismissButton = {
-                TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) }
-            },
+            onDismiss = { deleting = null },
         )
     }
 }
@@ -152,34 +150,42 @@ private sealed interface CategoryDialog {
     data class Edit(val category: RoutineCategory) : CategoryDialog
 }
 
+/**
+ * Categoria (ADR-0002, 12.4, U4): toque na linha edita; Excluir fica no menu de três pontos e
+ * pede confirmação. Sem os botões soltos de editar e excluir.
+ */
 @Composable
-private fun CategoryRow(
+internal fun CategoryRow(
     category: RoutineCategory,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .padding(start = Spacing.l, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
-    ) {
-        Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 14.dp, filled = true)
-        Text(
-            text = category.name,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = Spacing.l),
-        )
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.routine_category_edit, category.name))
+    ListRow(
+        title = category.name,
+        modifier = Modifier.clip(MaterialTheme.shapes.small),
+        leading = { Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 14.dp, filled = true) },
+        trailing = { CategoryMenu(categoryName = category.name, onDelete = onDelete) },
+        onClick = onEdit,
+        onClickLabel = stringResource(R.string.routine_category_edit, category.name),
+    )
+}
+
+@Composable
+private fun CategoryMenu(categoryName: String, onDelete: () -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.routine_category_more, categoryName))
         }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.routine_category_delete, category.name))
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.delete)) },
+                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                onClick = {
+                    open = false
+                    onDelete()
+                },
+            )
         }
     }
 }
