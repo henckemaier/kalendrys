@@ -660,6 +660,25 @@ Regras fixadas no aceite da E3 (2026-11-16):
   componente; uma ação que tira o item da lista (`removesRow`) exige que quem chama garanta a
   saída do item.
 
+Regras fixadas na revisão da E4 e no fechamento (2026-11-16):
+
+- **O estado do item vai no nó da linha.** A linha de item de lista expõe "Marcado" ou "Não
+  marcado" como descrição de estado no próprio nó; texto riscado não é lido pelo leitor de tela.
+  A linha **não** vira caixa de marcar: o toque dela é Editar, e marcar é ação de deslize com
+  ação equivalente no leitor de tela. A caixa de marcar visual fica fora da semântica.
+- **Cabeçalho que recolhe é um nó só.** Em "Marcados (n)", o mesmo nó tem o texto, o papel de
+  cabeçalho e a ação de recolher ou abrir.
+- **A lista acompanha a adição rápida.** Depois de adicionar pelo `QuickAddField`, a tela rola
+  até o item novo, esperando ele ser posicionado. É regra da tela, não do componente.
+- **O preenchimento do `Scaffold` não vai para `remember`.** O objeto que o `Scaffold` entrega é
+  reaproveitado e os valores mudam sem o objeto mudar; o `AppScaffold` calcula o preenchimento
+  do conteúdo a cada composição.
+- **Folga do FAB limitada à área útil.** A folga de fim de lista para o FAB (104dp) nunca passa
+  do espaço entre as barras menos uma linha de 48dp (`fabClearanceFor`). Motivo: com cabeçalho
+  alto em paisagem (aba Rotinas) a folga fixa era maior que a área útil e a lista rolava até o
+  último bloco sumir sob a barra (S-1). Em retrato vale a folga inteira. A regra fica só no
+  `AppScaffold`.
+
 Limites aceitos nesta versão: com fonte 2.0 em paisagem a aba Tarefas não mostra nenhuma tarefa
 no primeiro quadro, e o editor de rotina com teclado fica com área útil mínima. Os dois dependem
 do miolo das telas e são revistos na v1.8.0.
@@ -675,8 +694,9 @@ Gestos por tela (U4). Decisão de arquitetura aceita pelo usuário; o produto po
 | Exercício (editor) | Sem mudança até a v1.8.0 | | |
 
 Excluir uma lista apaga muitos itens de uma vez, por isso pede confirmação e não cabe num
-deslize. Uma dica única, na primeira vez, explica o gesto; o registro de que ela já foi vista
-fica no DataStore, fora de `AppSettings` e fora do backup.
+deslize. Uma dica única explica o gesto: ela fica na tela **até ser dispensada** ("Entendi") e
+depois não volta mais; "única" quer dizer dispensada uma vez, não mostrada uma vez. O registro
+de que ela foi dispensada fica no DataStore, fora de `AppSettings` e fora do backup.
 
 Listas (U6, emenda E-4): o grupo "Marcados (n)" é calculado no ViewModel; recolhido ou aberto é
 estado de tela e não vai para o banco. O `QuickAddField` usa a operação de adicionar item que
@@ -690,7 +710,18 @@ usada pelo `ProgressLine`.
   passa a ver widgets claros. É mudança visível e vai nas notas da versão.
 - `widget/WidgetTheme` concentra as cores (claro, escuro e dinâmica), inclusive as fixas que
   hoje estão em `KalendrysWidgets` e a escolha da paleta de rotina.
-- `KalendrysApp` redesenha os widgets quando a Aparência muda.
+- `KalendrysApp` redesenha os widgets quando a Aparência muda, e só quando muda. Os widgets
+  leem a Aparência do DataStore, porque o processo pode ter sido aberto só pelo widget.
+- **Fundo claro opaco.** A variante clara, inclusive a de cor dinâmica, usa fundo sem
+  transparência; os 75% de opacidade ficam só na variante escura. Motivo: o fundo claro
+  translúcido sobre papel de parede escuro virava cinza médio e deixava de parecer a superfície
+  do app.
+- **Cores em par, do mesmo esquema.** Toda forma colorida com texto por cima sai do mesmo
+  esquema que o texto. O círculo do dia de hoje no widget Calendário é um desenho tingido com a
+  cor do esquema em uso, não uma cor fixa no recurso; com cor fixa, o tema claro dava número
+  branco sobre azul-claro.
+- Limite aceito: com cor dinâmica, as cores do papel de parede são lidas quando o widget é
+  desenhado; trocar o papel de parede só aparece no redesenho seguinte.
 - Os rótulos abreviados de dia e mês dos widgets e do seletor de lembrete passam a ser montados
   por tabela própria (seção 3, decisão 6), nos três pontos que ainda usam o formatador.
 
@@ -719,6 +750,20 @@ usada pelo `ProgressLine`.
   O perfil é regerado no fechamento, com o passo manual do `docs/RELEASING.md`.
 - Abertura a frio reavaliada no fechamento pelo protocolo da 11.8.3, com aparelho físico ou
   host livre.
+- **Fechamento da v1.7.0 (2026-11-16): abertura a frio NÃO MEDIDA, por decisão do usuário.** O
+  host tinha cerca de 2 GB livres e o emulador 3,7 GB, abaixo dos 4 GB livres que o protocolo
+  da 11.8.3 exige; medir assim daria número sem valor. O critério 6 da 11.6 fica **aceito sem
+  medição**, não cumprido. O que foi conferido no lugar (relato do time, não refeito pelo
+  arquiteto):
+  - Baseline Profile regerado com o código final: 32.144 linhas, 3.224 de `com.kalendrys.app`,
+    incluindo `MainActivity`, `KalendrysApp` e a leitura da Aparência; `baseline.prof` e
+    `baseline.profm` presentes no APK.
+  - APK de release: 3.246.230 → 3.306.319 bytes (+1,9%).
+  - O ponto de atenção desta versão é a leitura da Aparência antes do primeiro quadro (12.3),
+    com teto de 1 s; não há número que mostre o custo dela.
+  - **Pendência:** medir pelo protocolo da 11.8.3, em aparelho físico ou host livre, contra a
+    v1.6.2 (563137e), junto da passada de acessibilidade da v1.7.1. Se a v1.7.0 ficar mais de
+    10% acima, vira defeito da v1.7.1.
 - Limpeza: sai a entrada `kotlin-android` do catálogo e do `build.gradle.kts` da raiz.
 
 ### 12.8 v1.7.1
@@ -729,6 +774,9 @@ usada pelo `ProgressLine`.
   descartado no Cancelar (decisão do usuário); `resolveListId` sai do arquivo de tela para o
   repositório; título cortado em paisagem.
 - Passada de leitor de tela nas telas migradas, e o que o uso da v1.7.0 mostrar.
+- Medição da abertura a frio que ficou pendente no fechamento da v1.7.0 (12.7).
+- Toda mensagem com "Desfazer" passa a usar a duração longa, em todas as telas de uma vez.
+- Campo de busca da aba Tarefas, que fica meio encoberto pela barra com o teclado aberto.
 
 ### 12.9 Etapas e critérios de aceite da v1.7.0
 
@@ -756,7 +804,7 @@ release.
 | Risco | Mitigação |
 |-------|-----------|
 | Mudança em todas as telas sem teste de interface | E3 separada do miolo; critério por busca no código; matriz manual; capturas |
-| Piscar de tema ou custo na abertura a frio | Desenho da 12.3; medição na E7 |
+| Piscar de tema ou custo na abertura a frio | Desenho da 12.3; medição na E7 (**não feita**, ver 12.7; pendente para a v1.7.1) |
 | Teclado e insets no `QuickAddField` com edge-to-edge | Teste manual com e sem teclado, retrato e paisagem |
 | Voltar preditivo com painéis e o FAB novo | Roteiro do voltar preditivo da v1.6.2 repetido |
 | Contraste das cores de rotina com cor dinâmica | Dois papéis de parede na matriz |
