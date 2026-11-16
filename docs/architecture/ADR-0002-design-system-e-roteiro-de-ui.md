@@ -856,6 +856,9 @@ dependência nova e sem mudança no manifesto. Parte da 12.8. As decisões D1 a 
   data nova.
 - O store é parâmetro obrigatório dos dois ViewModels, sem valor padrão, para nenhuma tela
   ficar com um rascunho próprio por engano.
+- Para a v1.8.0, na reforma do painel: as operações do rascunho e a observação das listas estão
+  repetidas nos dois ViewModels. Não foram para o `KalendrysApp` para não pôr uma leitura do
+  banco na abertura do app.
 - Título cortado em paisagem: corrigido dentro do painel, sem trocar o tipo de painel.
 
 ### 13.2 Seletor de dias da semana
@@ -889,6 +892,9 @@ célula tem cerca de 44dp de largura. Com fonte grande a linha continua quebrand
 - **Limite aceito: adiamentos ficam fora.** "Adiar" agenda um alarme direto, sem gravar nos
   dados; com um adiamento pendente, o diagnóstico pode mostrar um horário posterior ao do aviso
   adiado. Gravar o adiamento seria mudança de dados e não cabe em PATCH.
+- **Limite aceito: resumo em dia vazio.** O resumo diário não notifica quando não há tarefa
+  pendente nem rotina adiante; num dia assim o diagnóstico pode anunciar um resumo previsto que
+  não aparece.
 
 ### 13.4 Mensagens com "Desfazer"
 
