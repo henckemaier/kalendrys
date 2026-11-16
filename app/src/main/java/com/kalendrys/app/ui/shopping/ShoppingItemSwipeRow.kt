@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,9 +50,10 @@ import com.kalendrys.app.ui.theme.Spacing
  * sem voltar deslizando antes de sumir. Se a exclusão no Room lançar, a exceção sobe no
  * `viewModelScope` (sem tratamento hoje) em vez de deixar a linha escondida.
  *
- * A caixa de marcar continua tocável, como antes (marcar sem deslizar); ela não entra na leitura da
- * linha, para o leitor de tela não ouvir "marcado" duas vezes: o estado já vem do texto riscado e da
- * ação "Marcar como pego"/"Desmarcar item".
+ * O estado vai como `stateDescription` no nó da linha ("Marcado"/"Não marcado"): o texto riscado
+ * não é lido pelo leitor de tela. A linha não vira caixa de marcar (sem `toggleable` nem
+ * `Role.Checkbox`): o toque continua sendo Editar. A caixa de marcar segue tocável, como antes
+ * (marcar sem deslizar), mas fica fora da leitura para o estado não ser anunciado duas vezes.
  */
 @Composable
 internal fun ShoppingItemSwipeRow(
@@ -84,14 +87,19 @@ internal fun ShoppingItemSwipeRow(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) { actionsModifier ->
         Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-            // Toque, rótulo do toque e as ações do deslize no mesmo nó (o que o leitor de tela foca).
+            // Toque, rótulo do toque, estado e ações do deslize no mesmo nó (o que o leitor de tela foca).
+            val state = stringResource(
+                if (item.picked) R.string.shopping_item_state_picked else R.string.shopping_item_state_unpicked,
+            )
             ShoppingItemContent(
                 item = item,
                 onToggle = onToggle,
-                modifier = actionsModifier.clickable(
-                    onClickLabel = stringResource(R.string.shopping_item_edit),
-                    onClick = onEdit,
-                ),
+                modifier = actionsModifier
+                    .semantics { stateDescription = state }
+                    .clickable(
+                        onClickLabel = stringResource(R.string.shopping_item_edit),
+                        onClick = onEdit,
+                    ),
             )
         }
     }

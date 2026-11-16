@@ -179,6 +179,9 @@
     <string name="shopping_item_delete">Remover item</string>
     <string name="shopping_item_picked">Marcar como pego</string>
     <string name="shopping_item_unpick">Desmarcar item</string>
+    <!-- Estado do item lido pelo leitor de tela no nó da linha (a caixa de marcar fica fora da leitura). -->
+    <string name="shopping_item_state_picked">Marcado</string>
+    <string name="shopping_item_state_unpicked">Não marcado</string>
     <!-- Dica única da lista de compras (ADR-0002, 12.4): mostrada na primeira vez que a pessoa abre uma lista. -->
     <string name="shopping_gesture_hint_title">Dica</string>
     <string name="shopping_gesture_hint_message">Deslize um item para a direita para marcar ou desmarcar, e para a esquerda para remover. Toque nele para editar.</string>
