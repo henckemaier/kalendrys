@@ -191,7 +191,9 @@ fun MacrobenchmarkScope.browseLists() {
         device.findObject(By.desc("Nova lista"))?.click()
         typeAndSave(SAMPLE_LIST)
     }
-    device.wait(Until.hasObject(By.desc("Adicionar item")), TIMEOUT_MS)
+    // Tela da lista (v1.7.0): o campo de adição rápida no rodapé, com a dica "Adicionar item", no
+    // lugar do FAB. Não adiciona nada: a jornada não pode criar itens a cada rodada.
+    device.wait(Until.hasObject(By.text("Adicionar item")), TIMEOUT_MS)
     device.pressBack()
     device.wait(Until.hasObject(By.desc("Nova lista")), TIMEOUT_MS)
     device.findObject(By.text("Tarefas"))?.click()
