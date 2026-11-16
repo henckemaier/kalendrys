@@ -546,3 +546,283 @@ Decisões:
 - O build-check não prova a assinatura com a chave real nem a criação do Release. Risco aceito:
   se a tag falhar, nenhum Release é criado e a tag é refeita.
 - Testes unitários e lint no CI ficam para o Backlog da v1.7.0.
+
+## 12. Emenda de 2026-11-16 — escopo e desenho da v1.7.0
+
+Decisões do usuário de 2026-11-15 sobre o parecer de escopo da v1.7.0. Detalha as seções 4 e 7
+e, onde divergir delas, vale esta. Base: `main` em 563137e (v1.6.2), toolchain da seção 11.8.1.
+
+### 12.1 Fatiamento
+
+| Versão | Tipo | Conteúdo |
+|--------|------|----------|
+| **v1.7.0** | MINOR | Fundação visual e fluxos rápidos: tudo que é visível e novo (12.3 a 12.7) |
+| **v1.7.1** | PATCH | Acessibilidade e pendências (12.8), logo em seguida |
+
+A v1.8.0 e a v1.9.0 não são renumeradas. Motivo do fatiamento: a v1.7.0 toca todas as telas
+sem teste de interface automatizado; tirar dela o que é correção deixa a entrega menor e já
+reserva uma versão de ajuste para o que o uso real mostrar.
+
+### 12.2 Regra da casca
+
+A v1.8.0 reescreve a aba Rotinas (que vira Hoje), a timeline, o editor de rotina e o detalhe
+da tarefa. Na v1.7.0 essas telas recebem **só a casca**: `AppScaffold`, `AppTopBar` e as formas
+e espaçamentos do tema. O miolo delas não é reorganizado agora.
+
+Consequências aceitas até a v1.8.0:
+- os exercícios do editor de rotina continuam com lápis e lixeira;
+- a faixa de 30 minutos e os títulos longos da timeline com fonte 2.0 continuam como estão;
+- a lista de tarefas só troca o `SwipeToDismissBox` pelo `SwipeRow`, sem mudar comportamento.
+
+Limites da versão: **sem migração de Room** (banco na versão 10), **sem subir o
+`SCHEMA_VERSION` do backup** (continua 6), targetSdk 35 e minSdk 26.
+
+### 12.3 Aparência (U1)
+
+- `AppSettings` ganha `themeMode` (`SYSTEM`, `LIGHT`, `DARK`) e `dynamicColor`. Padrão, inclusive
+  para quem atualiza: `SYSTEM` e cor dinâmica **desligada**. A atualização não muda a cor do app
+  sozinha.
+- Backup: os dois campos entram no JSON de configurações como opcionais. Restaurar um backup
+  **sem** os campos mantém a aparência atual do aparelho; não volta ao padrão.
+- **Sem piscar na abertura.** As configurações vêm do DataStore, que é assíncrono. `KalendrysApp`
+  expõe a aparência num `StateFlow` carregado no início do processo e a `MainActivity` segura o
+  primeiro quadro até o valor chegar. Sem `runBlocking` e sem biblioteca de splash.
+- **Janela inicial (acréscimo de 2026-11-16, consulta do Forja na E1).** Segurar o primeiro
+  quadro não cobre a splash do sistema nem o fundo da janela, que o Android desenha com o tema
+  do aparelho antes de o processo rodar. No Android 12 ou mais (API 31+) o app também informa
+  ao sistema o modo noturno escolhido (`UiModeManager.setApplicationNightMode`, API da
+  plataforma, sem permissão nem dependência), e o sistema o guarda por app. Regras:
+  - O DataStore continua sendo a única fonte da verdade; o modo noturno no sistema é um
+    **espelho**. Um único ponto o aplica: um coletor em `KalendrysApp` sobre a aparência,
+    inclusive na primeira emissão (cobre atualização e restauro). A tela de Configurações e o
+    `BackupManager` só gravam no `SettingsRepository`.
+  - A chamada da plataforma fica numa classe pequena fora de `data/`, com a guarda de versão
+    dentro dela.
+  - O tema do Compose continua decidido pelo `themeMode`, igual em todas as versões do Android;
+    não depende de a configuração do processo estar forçada.
+  - Segurar o primeiro quadro continua valendo em todas as versões.
+  - Trocar o tema recria a Activity, como já acontece ao trocar o tema do aparelho. A
+    `MainActivity` não passa a tratar essa mudança por conta própria nesta versão.
+  - Os widgets **não** contam com o espelho: são desenhados no processo da tela inicial. O
+    `WidgetTheme` (12.5) continua responsável por aplicar o tema escolhido.
+  - **Limite aceito:** no Android 8 a 11 (API 26 a 30) a janela inicial segue o tema do
+    aparelho; com tema forçado diferente, a splash sai num tema e o app no outro.
+  - "Sem piscar" significa: depois do primeiro quadro do app nunca há troca de tema, em
+    qualquer versão; e, no API 31+, da segunda abertura a frio em diante a splash já sai no
+    tema escolhido. Na primeira abertura depois de uma atualização ou restauro que mude o tema
+    pode haver uma recriação.
+- A marca do resumo diário (ADR-0003, 4.3.2) não pode reagir à troca de tema. O código já
+  observa só os dois campos do resumo (`summaryChanges`); a v1.7.0 acrescenta o teste que prova
+  isso com os campos novos.
+- `KalendrysTheme(themeMode, dynamicColor)`, `Shapes` próprio (12, 16 e 20dp) e objeto de
+  espaçamentos. As cores de rotina ganham variante para tema escuro e são conferidas contra a
+  cor dinâmica.
+
+### 12.4 Componentes e gestos
+
+Vale a tabela da seção 4.2, com estes acréscimos:
+
+- `SwipeRow` nasce na API nova de deslizar da `material3` 1.4 e a `AppTopBar` substitui a barra
+  grande. Com isso somem os dois avisos de API obsoleta listados na 11.8.1.
+- `CollapsingFab` recebe `expanded` como parâmetro; cada tela o deriva do próprio estado de
+  rolagem. O componente não conhece a lista.
+- Largura máxima de 640dp e insets ficam no `AppScaffold`. Nenhuma biblioteca adaptativa entra
+  agora; a aprovada na seção 3 continua para a v1.9.0.
+- Movimento (A5): só o que o Compose já oferece (animação de item de lista), respeitando a opção
+  do sistema de remover animações. Retorno tátil pelo `Haptics`, sem permissão nova.
+
+Regras fixadas no aceite da E3 (2026-11-16):
+
+- **O teclado encolhe a casca.** A `MainActivity` declara `windowSoftInputMode="adjustResize"`
+  e o `AppScaffold` aplica o espaço do teclado na casca inteira: a barra de topo fica no lugar,
+  a área visível do conteúdo diminui (o campo focado rola sozinho para dentro dela) e a barra de
+  rodapé sobe junto. Nenhuma tela aplica espaço de teclado por conta própria, e o teclado
+  **não** entra como preenchimento do conteúdo. Motivo: como preenchimento, a área visível não
+  encolhia e o sistema deslocava a janela inteira, levando a barra de topo para fora da tela
+  (regressão B-1 da E3; o mesmo deslocamento já existia no editor de tarefa por falta do
+  atributo no manifesto). Painéis e diálogos são janelas próprias e cuidam do próprio teclado.
+- **Largura máxima sem faixas mortas.** O conteúdo ocupa a largura toda e o que passar de 640dp
+  vai para o preenchimento lateral que a tela recebe; a rolagem pega a tela inteira.
+- **FAB recolhido em janela baixa.** Em altura compacta (paisagem de celular) o `CollapsingFab`
+  já nasce só com o ícone, pela regra de `rememberFabExpanded`, para não cobrir elemento tocável
+  com fonte grande. O rótulo para o leitor de tela não muda.
+- **Ação de navegação da barra tem rótulo escrito.** "Hoje" é botão de texto, não ícone. Ícone
+  sozinho fica para ações universais (voltar, configurações, mais opções).
+- **Ordem das ações da barra.** O `AppTopBar` desenha as ações na ordem em que a tela as passa,
+  seja ícone ou texto. A ação que aparece e some (como "Hoje") vem **antes** das permanentes,
+  para que nenhuma ação permanente mude de lugar; nos editores, "Salvar" é a última antes do
+  menu de mais opções.
+- **A barra de topo é fixa**, não recolhe ao rolar. Decisão tomada com as capturas de paisagem:
+  as 4 abas mostram conteúdo no primeiro quadro com fonte 1.0.
+- **O clique mora na linha.** `GroupedCard` não tem toque próprio; o clique e o rótulo ficam no
+  `ListRow`, para cada cartão ser um nó só para o leitor de tela.
+- **`SwipeRow`:** o deslize só dispara depois de 40% da largura; o retorno tátil do deslize é do
+  componente; uma ação que tira o item da lista (`removesRow`) exige que quem chama garanta a
+  saída do item.
+
+Regras fixadas na revisão da E4 e no fechamento (2026-11-16):
+
+- **O estado do item vai no nó da linha.** A linha de item de lista expõe "Marcado" ou "Não
+  marcado" como descrição de estado no próprio nó; texto riscado não é lido pelo leitor de tela.
+  A linha **não** vira caixa de marcar: o toque dela é Editar, e marcar é ação de deslize com
+  ação equivalente no leitor de tela. A caixa de marcar visual fica fora da semântica.
+- **Cabeçalho que recolhe é um nó só.** Em "Marcados (n)", o mesmo nó tem o texto, o papel de
+  cabeçalho e a ação de recolher ou abrir.
+- **A lista acompanha a adição rápida.** Depois de adicionar pelo `QuickAddField`, a tela rola
+  até o item novo, esperando ele ser posicionado. É regra da tela, não do componente.
+- **O preenchimento do `Scaffold` não vai para `remember`.** O objeto que o `Scaffold` entrega é
+  reaproveitado e os valores mudam sem o objeto mudar; o `AppScaffold` calcula o preenchimento
+  do conteúdo a cada composição.
+- **Folga do FAB limitada à área útil.** A folga de fim de lista para o FAB (104dp) nunca passa
+  do espaço entre as barras menos uma linha de 48dp (`fabClearanceFor`). Motivo: com cabeçalho
+  alto em paisagem (aba Rotinas) a folga fixa era maior que a área útil e a lista rolava até o
+  último bloco sumir sob a barra (S-1). Em retrato vale a folga inteira. A regra fica só no
+  `AppScaffold`.
+
+Limites aceitos nesta versão: com fonte 2.0 em paisagem a aba Tarefas não mostra nenhuma tarefa
+no primeiro quadro, e o editor de rotina com teclado fica com área útil mínima. Os dois dependem
+do miolo das telas e são revistos na v1.8.0.
+
+Gestos por tela (U4). Decisão de arquitetura aceita pelo usuário; o produto pode rever.
+
+| Onde | Toque | Deslizar | Menu |
+|------|-------|----------|------|
+| Item de lista | Editar | Marcar/desmarcar; remover com Desfazer | — |
+| Cartão de lista | Abrir | — | Renomear; excluir com confirmação |
+| Categoria de rotina | Editar | — | Excluir com confirmação |
+| Tarefa (lista) | Como hoje | Como hoje, via `SwipeRow` | — |
+| Exercício (editor) | Sem mudança até a v1.8.0 | | |
+
+Excluir uma lista apaga muitos itens de uma vez, por isso pede confirmação e não cabe num
+deslize. Uma dica única explica o gesto: ela fica na tela **até ser dispensada** ("Entendi") e
+depois não volta mais; "única" quer dizer dispensada uma vez, não mostrada uma vez. O registro
+de que ela foi dispensada fica no DataStore, fora de `AppSettings` e fora do backup.
+
+Listas (U6, emenda E-4): o grupo "Marcados (n)" é calculado no ViewModel; recolhido ou aberto é
+estado de tela e não vai para o banco. O `QuickAddField` usa a operação de adicionar item que
+já existe. A regra que esconde o "3/8" de lista vazia passa a ter uma origem só, em `domain/`,
+usada pelo `ProgressLine`.
+
+### 12.5 Widgets (E1)
+
+- **Os widgets seguem a Aparência do app** (decisão do usuário): sistema, claro ou escuro, e
+  cor dinâmica quando ligada. Quem usa o aparelho em tema claro e não mexer na configuração
+  passa a ver widgets claros. É mudança visível e vai nas notas da versão.
+- `widget/WidgetTheme` concentra as cores (claro, escuro e dinâmica), inclusive as fixas que
+  hoje estão em `KalendrysWidgets` e a escolha da paleta de rotina.
+- `KalendrysApp` redesenha os widgets quando a Aparência muda, e só quando muda. Os widgets
+  leem a Aparência do DataStore, porque o processo pode ter sido aberto só pelo widget.
+- **Fundo claro opaco.** A variante clara, inclusive a de cor dinâmica, usa fundo sem
+  transparência; os 75% de opacidade ficam só na variante escura. Motivo: o fundo claro
+  translúcido sobre papel de parede escuro virava cinza médio e deixava de parecer a superfície
+  do app.
+- **Cores em par, do mesmo esquema.** Toda forma colorida com texto por cima sai do mesmo
+  esquema que o texto. O círculo do dia de hoje no widget Calendário é um desenho tingido com a
+  cor do esquema em uso, não uma cor fixa no recurso; com cor fixa, o tema claro dava número
+  branco sobre azul-claro.
+- Limite aceito: com cor dinâmica, as cores do papel de parede são lidas quando o widget é
+  desenhado; trocar o papel de parede só aparece no redesenho seguinte.
+- Os rótulos abreviados de dia e mês dos widgets e do seletor de lembrete passam a ser montados
+  por tabela própria (seção 3, decisão 6), nos três pontos que ainda usam o formatador.
+
+### 12.6 Atalhos do app (C5)
+
+- Dois atalhos fixos: **Nova tarefa** e **Listas**. Arquivo `res/xml/shortcuts.xml`, sem
+  dependência nova.
+- Os atalhos usam endereços `kalendrys://`, resolvidos pelo `AppLinks` como os demais.
+  `AppLinks` ganha o endereço de nova tarefa e `LaunchRequest.NewTask`, que abre a aba Tarefas
+  com o painel de nova tarefa.
+- O manifesto ganha a referência aos atalhos na Activity principal. Vale a regra da 11.8.4:
+  teste no APK de release.
+
+### 12.7 Testes, CI e perfil
+
+- **Dependências de teste aprovadas pelo usuário:** `androidx.compose.ui:ui-test-junit4`
+  (`testImplementation`) e `ui-test-manifest` (`debugImplementation`), pela BOM, sem linha de
+  versão nova. Nada vai para o APK de release. Condição: ensaio na E0; **não foi verificado** se
+  o Robolectric 4.14.1 roda testes de Compose 1.12 neste projeto. Se o ensaio exigir subir o
+  Robolectric ou outra biblioteca, volta para parecer.
+- Uso: contrato de acessibilidade dos componentes (toda ação de gesto com ação equivalente para
+  o leitor de tela) e foco do `QuickAddField`.
+- O build-check passa a rodar a suíte e o lint em todo PR.
+- **As jornadas do Baseline Profile mudam nesta versão**, revogando para a v1.7.0 o "não entra"
+  da 11.4: FAB e cabeçalho mudam, e elas precisam rolar a lista e não criar dados duplicados.
+  O perfil é regerado no fechamento, com o passo manual do `docs/RELEASING.md`.
+- Abertura a frio reavaliada no fechamento pelo protocolo da 11.8.3, com aparelho físico ou
+  host livre.
+- **Fechamento da v1.7.0 (2026-11-16): abertura a frio NÃO MEDIDA, por decisão do usuário.** O
+  host tinha cerca de 2 GB livres e o emulador 3,7 GB, abaixo dos 4 GB livres que o protocolo
+  da 11.8.3 exige; medir assim daria número sem valor. O critério 6 da 11.6 fica **aceito sem
+  medição**, não cumprido. O que foi conferido no lugar (relato do time, não refeito pelo
+  arquiteto):
+  - Baseline Profile regerado com o código final: 32.144 linhas, 3.224 de `com.kalendrys.app`,
+    incluindo `MainActivity`, `KalendrysApp` e a leitura da Aparência; `baseline.prof` e
+    `baseline.profm` presentes no APK.
+  - APK de release: 3.246.230 → 3.306.319 bytes (+1,9%).
+  - O ponto de atenção desta versão é a leitura da Aparência antes do primeiro quadro (12.3),
+    com teto de 1 s; não há número que mostre o custo dela.
+  - **Pendência:** medir pelo protocolo da 11.8.3, em aparelho físico ou host livre, contra a
+    v1.6.2 (563137e), junto da passada de acessibilidade da v1.7.1. Se a v1.7.0 ficar mais de
+    10% acima, vira defeito da v1.7.1.
+- Limpeza: sai a entrada `kotlin-android` do catálogo e do `build.gradle.kts` da raiz.
+
+### 12.8 v1.7.1
+
+- Alvo de toque de 48dp no seletor de dias da semana (F2).
+- Diagnóstico de alarmes correto quando não há permissão de alarme exato.
+- Painel de nova tarefa: **o rascunho é guardado enquanto o app estiver aberto** e só é
+  descartado no Cancelar (decisão do usuário); `resolveListId` sai do arquivo de tela para o
+  repositório; título cortado em paisagem.
+- Passada de leitor de tela nas telas migradas, e o que o uso da v1.7.0 mostrar.
+- Medição da abertura a frio que ficou pendente no fechamento da v1.7.0 (12.7).
+- Toda mensagem com "Desfazer" passa a usar a duração longa, em todas as telas de uma vez.
+- Campo de busca da aba Tarefas, que fica meio encoberto pela barra com o teclado aberto.
+
+### 12.9 Etapas e critérios de aceite da v1.7.0
+
+Um PR de integração, um commit ou grupo de commits por etapa. E5 e E6 podem correr em paralelo
+depois da E1. Revisão de aderência do arquiteto ao fim da E1, ao fim da E2 (antes de a E3
+começar, porque a E2 é o contrato do resto) e antes da E7.
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Preparo sem mudança visível: suíte e lint no build-check, limpeza do catálogo, ensaio do ui-test, jornadas robustas | build-check verde com suíte e lint; jornada passa 2 vezes seguidas com dados cheios sem criar rotina duplicada |
+| E1 | Tema e Aparência (12.3) | 4 combinações de tema e cor; abrir a frio com tema forçado diferente do sistema sem piscar; backup ida e volta com e sem os campos; teste da marca do resumo |
+| E2 | Componentes (12.4) e a aba Listas como tela piloto | Prévias em claro, escuro e fonte 2.0; testes de semântica do `SwipeRow` e do foco do `QuickAddField` |
+| E3 | Casca em todas as telas: `AppScaffold`, `AppTopBar`, `CollapsingFab`, formas do tema; B2, B3, F4 mínimo | Nenhum `LargeTopAppBar`, FAB estendido fixo ou `RoundedCornerShape` solto em `ui/`; paisagem com conteúdo no primeiro quadro nas 4 abas; última linha nunca coberta pelo FAB |
+| E4 | Listas e fluxos: D5, U6, C1, U4, D8, retorno tátil | Adicionar 5 itens seguidos sem fechar o teclado; marcar manda para "Marcados" e desmarcar devolve à posição; toda ação de gesto disponível no leitor de tela |
+| E5 | Widgets (12.5) | Os 3 widgets nas 4 combinações; trocar a Aparência redesenha em segundos; rótulos iguais em qualquer versão do Android |
+| E6 | Atalhos (12.6) | Abrem o destino certo com o app fechado e aberto; testes do `AppLinks` |
+| E7 | Fechamento: perfil regerado, abertura a frio, tamanho do APK, matriz manual | Critérios 5 a 9 da 11.6, com o critério 6 medido pelo protocolo da 11.8.3 |
+
+Matriz manual: claro e escuro; fonte 1.0, 1.3 e 2.0; retrato e paisagem; cor dinâmica com dois
+papéis de parede; capturas antes e depois das telas principais. Testes de emulador no APK de
+release.
+
+### 12.10 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Mudança em todas as telas sem teste de interface | E3 separada do miolo; critério por busca no código; matriz manual; capturas |
+| Piscar de tema ou custo na abertura a frio | Desenho da 12.3; medição na E7 (**não feita**, ver 12.7; pendente para a v1.7.1) |
+| Teclado e insets no `QuickAddField` com edge-to-edge | Teste manual com e sem teclado, retrato e paisagem |
+| Voltar preditivo com painéis e o FAB novo | Roteiro do voltar preditivo da v1.6.2 repetido |
+| Contraste das cores de rotina com cor dinâmica | Dois papéis de parede na matriz |
+| Manifesto e classes criadas por nome (atalhos, widgets) | APK de release e verificação das regras keep (11.8.4) |
+| Perfil não comparável linha a linha com o da v1.6.2 | Esperado; conferir critério 5 da 11.6 |
+
+### 12.11 Triagem do backlog
+
+- **v1.7.0:** título da barra de topo com fonte 2.0; rótulos abreviados de data; paisagem na aba
+  Rotinas até onde o cabeçalho compacto resolver; regra única do "3/8"; teste da marca do
+  resumo; jornadas do perfil; limpeza do catálogo; abertura a frio; suíte e lint no CI.
+- **v1.7.1:** os itens da 12.8.
+- **v1.8.0:** Desfazer definitivo da tarefa única adiantada e remoção do `TaskDraft.rebase`;
+  Desfazer ao excluir pelo detalhe; repetição personalizada; rotina pausada que some da aba
+  (resolve com "Todas as rotinas"); desfazer o Pular (resolve na tela Hoje); entrega do
+  catch-up antes de gravar com título antigo ou aviso que pisca (reavaliar com o salvar na
+  hora); timeline com fonte 2.0.
+- **Depois da v1.9.0:** alarme próprio do widget Resumo, junto com o bloco em andamento (U10).
+- **Só acompanhar:** correção do plugin `baselineprofile`; regra do `InputMerger` quando o
+  Glance subir; ANR único visto no emulador; adiamento perdido ao revogar o alarme exato.
+- **Encerrados:** Desfazer cobrindo a última linha e resumo cruzando a meia-noite (aceitos).

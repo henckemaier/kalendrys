@@ -17,9 +17,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.FileDownload
@@ -30,17 +31,16 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,8 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -64,13 +64,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.BuildConfig
 import com.kalendrys.app.R
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.reminder.canScheduleExactAlarms
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.settings.SettingsViewModel.BackupEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.ExportEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.UpdateUi
+import com.kalendrys.app.ui.theme.Spacing
+import com.kalendrys.app.ui.theme.supportsDynamicColor
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.collectLatest
 
@@ -87,7 +94,6 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.update.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
     var showRestoreConfirm by rememberSaveable { mutableStateOf(false) }
     // Relidos ao voltar das configurações do sistema, onde o usuário pode ter mudado as permissões.
@@ -142,29 +148,42 @@ fun SettingsScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { innerPadding ->
-        val current = settings ?: return@Scaffold
+    AppScaffold(
+        topBar = { AppTopBar(title = stringResource(R.string.settings_title), onBack = onBack) },
+        snackbarHostState = snackbarHostState,
+    ) { padding ->
+        val current = settings ?: return@AppScaffold
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = padding.plus(horizontal = Spacing.l, bottom = Spacing.xl),
         ) {
-            item(key = "summary_header") { SectionHeader(stringResource(R.string.settings_section_summary)) }
+            item(key = "appearance_header") {
+                SectionHeader(stringResource(R.string.settings_section_appearance), contentPadding = SectionPadding)
+            }
+            // Material You só onde o sistema tem cor dinâmica (Android 12+).
+            val appearanceCount = if (supportsDynamicColor()) 2 else 1
+            item(key = "theme_mode") {
+                ThemeModeRow(
+                    selected = current.themeMode,
+                    onSelect = viewModel::setThemeMode,
+                    shape = groupedItemShape(0, appearanceCount),
+                )
+            }
+            if (supportsDynamicColor()) {
+                item(key = "dynamic_color") {
+                    SwitchRow(
+                        title = stringResource(R.string.settings_dynamic_color),
+                        supporting = stringResource(R.string.settings_dynamic_color_description),
+                        checked = current.dynamicColor,
+                        onCheckedChange = viewModel::setDynamicColor,
+                        shape = groupedItemShape(1, appearanceCount),
+                    )
+                }
+            }
+
+            item(key = "summary_header") {
+                SectionHeader(stringResource(R.string.settings_section_summary), contentPadding = SectionPadding)
+            }
             item(key = "summary_enabled") {
                 SwitchRow(
                     title = stringResource(R.string.settings_summary_enabled),
@@ -191,7 +210,9 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "notifications_header") { SectionHeader(stringResource(R.string.settings_section_notifications)) }
+            item(key = "notifications_header") {
+                SectionHeader(stringResource(R.string.settings_section_notifications), contentPadding = SectionPadding)
+            }
             // Linhas da seção: notificações do sistema + diagnóstico (sempre) e, quando aparece, o
             // aviso de alarme exato entre as duas.
             val notificationsCount = if (exactAlarmsAllowed) 2 else 3
@@ -246,7 +267,9 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "routines_header") { SectionHeader(stringResource(R.string.settings_section_routines)) }
+            item(key = "routines_header") {
+                SectionHeader(stringResource(R.string.settings_section_routines), contentPadding = SectionPadding)
+            }
             item(key = "routine_categories") {
                 SettingsRow(
                     title = stringResource(R.string.settings_routine_categories),
@@ -263,7 +286,9 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "data_header") { SectionHeader(stringResource(R.string.settings_section_data)) }
+            item(key = "data_header") {
+                SectionHeader(stringResource(R.string.settings_section_data), contentPadding = SectionPadding)
+            }
             item(key = "export") {
                 SettingsRow(
                     title = stringResource(R.string.settings_export),
@@ -310,7 +335,9 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "about_header") { SectionHeader(stringResource(R.string.settings_section_about)) }
+            item(key = "about_header") {
+                SectionHeader(stringResource(R.string.settings_section_about), contentPadding = SectionPadding)
+            }
             item(key = "update") {
                 UpdateRow(
                     state = updateState,
@@ -376,15 +403,71 @@ fun SettingsScreen(
     }
 }
 
+private val THEME_OPTIONS = listOf(
+    ThemeMode.SYSTEM to R.string.settings_theme_system,
+    ThemeMode.LIGHT to R.string.settings_theme_light,
+    ThemeMode.DARK to R.string.settings_theme_dark,
+)
+
+/** Acima disto o botão segmentado corta "Sistema" num telefone em retrato (D-1 da Coruja, fonte 2.0). */
+private const val SEGMENTED_MAX_FONT_SCALE = 1.3f
+
+/**
+ * Tema: Sistema, Claro ou Escuro. Escolha única, lida pelo leitor de tela como tal: num botão
+ * segmentado com a fonte normal e, com fonte grande, numa lista de opções de rádio, em que cada
+ * rótulo tem a largura toda e nunca é cortado. `internal` para o teste.
+ */
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
-    )
+internal fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, shape: Shape) {
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(text = stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(8.dp))
+            if (LocalDensity.current.fontScale > SEGMENTED_MAX_FONT_SCALE) {
+                Column(modifier = Modifier.selectableGroup()) {
+                    THEME_OPTIONS.forEach { (mode, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .selectable(
+                                    selected = mode == selected,
+                                    onClick = { onSelect(mode) },
+                                    role = Role.RadioButton,
+                                ),
+                        ) {
+                            RadioButton(selected = mode == selected, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            } else {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    THEME_OPTIONS.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = mode == selected,
+                            onClick = { onSelect(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index, THEME_OPTIONS.size),
+                        ) {
+                            Text(stringResource(label), maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
+
+/** A lista já tem a margem lateral da tela: o título de seção só ganha o espaço acima e abaixo. */
+private val SectionPadding = PaddingValues(top = Spacing.xl, bottom = Spacing.s)
 
 /**
  * Linha "Buscar atualizações": o texto de apoio e o toque mudam conforme o estado do atualizador.

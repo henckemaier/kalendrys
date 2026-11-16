@@ -6,6 +6,9 @@ import java.time.LocalTime
 data class AppSettings(
     val summaryEnabled: Boolean = true,
     val summaryTime: LocalTime = DEFAULT_SUMMARY_TIME,
+    /** Aparência (ADR-0002, 12.3): segue o sistema e sem cor dinâmica até o primeiro ajuste. */
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val dynamicColor: Boolean = false,
 ) {
     companion object {
         val DEFAULT_SUMMARY_TIME: LocalTime = LocalTime.of(8, 0)

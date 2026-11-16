@@ -16,6 +16,7 @@ import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
@@ -27,6 +28,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -345,6 +347,87 @@ class BackupManagerTest {
         assertEquals(listOf("Banana", "Maçã"), items.values.filter { it.listId == 2L }.map { it.name })
     }
 
+    // --- Aparência (ADR-0002, 12.3): campos opcionais no schema 6 ---------------------------------
+
+    @Test
+    fun `aparencia vai e volta no backup pelo nome do tema`() = runTest {
+        val source = settingsRepo("source-theme")
+        source.setThemeMode(ThemeMode.LIGHT)
+        source.setDynamicColor(true)
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        val saved = JSONObject(json).getJSONObject("settings")
+        assertEquals("LIGHT", saved.getString("themeMode"))
+        assertEquals(true, saved.getBoolean("dynamicColor"))
+        assertEquals(6, JSONObject(json).getInt("schemaVersion"))
+
+        val dest = settingsRepo("dest-theme")
+        BackupManager(destDb, context.contentResolver, dest).restore(json)
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.LIGHT, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
+    }
+
+    @Test
+    fun `backup antigo sem os campos de aparencia mantem a aparencia atual do aparelho`() = runTest {
+        val source = settingsRepo("source-no-theme")
+        source.setSummaryTime(LocalTime.of(7, 0))
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val root = JSONObject(json)
+        root.getJSONObject("settings").apply { remove("themeMode"); remove("dynamicColor") }
+
+        val dest = settingsRepo("dest-no-theme")
+        dest.setThemeMode(ThemeMode.DARK)
+        dest.setDynamicColor(true)
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.DARK, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
+        // O resto das configurações do backup continua sendo aplicado.
+        assertEquals(LocalTime.of(7, 0), restored.summaryTime)
+    }
+
+    @Test
+    fun `aparencia invalida ou nula no backup mantem a atual`() = runTest {
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("source-bad-theme")).serialize()
+        val root = JSONObject(json)
+        root.getJSONObject("settings").put("themeMode", "SEPIA").put("dynamicColor", JSONObject.NULL)
+
+        val dest = settingsRepo("dest-bad-theme")
+        dest.setThemeMode(ThemeMode.DARK)
+        dest.setDynamicColor(true)
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.DARK, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
+    }
+
+    @Test
+    fun `aparencia com tipo errado ou nome em minusculas no backup mantem a atual e o resto restaura`() = runTest {
+        val source = settingsRepo("source-wrong-type-theme")
+        source.setSummaryTime(LocalTime.of(6, 30))
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val root = JSONObject(json)
+        // "dark" em minúsculas, número no lugar do nome e texto no lugar do booleano.
+        root.getJSONObject("settings").put("themeMode", "dark").put("dynamicColor", "true")
+        val numeric = JSONObject(root.toString()).apply { getJSONObject("settings").put("themeMode", 2) }
+
+        listOf(root, numeric).forEachIndexed { i, backup ->
+            val dest = settingsRepo("dest-wrong-type-theme-$i")
+            dest.setThemeMode(ThemeMode.LIGHT)
+            dest.setDynamicColor(false)
+            BackupManager(destDb, context.contentResolver, dest).restore(backup.toString())
+
+            val restored = dest.settings.first()
+            assertEquals("backup $i", ThemeMode.LIGHT, restored.themeMode)
+            assertEquals("backup $i", false, restored.dynamicColor)
+            assertEquals("backup $i", LocalTime.of(6, 30), restored.summaryTime)
+        }
+    }
+
     @Test
     fun `rejeita backup de versao mais nova`() = runTest {
         val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("src-new")).serialize()
@@ -387,6 +470,30 @@ class BackupManagerTest {
         Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+
+    /**
+     * A dica única dos gestos da lista (ADR-0002, 12.4) é registro de uso do aparelho, não preferência:
+     * não vai no backup, e restaurar um backup não a apaga nem a liga.
+     */
+    @Test
+    fun `dica dos gestos da lista nao vai no backup e o restauro nao mexe nela`() = runTest {
+        val source = settingsRepo("source-hint")
+        source.setShoppingGestureHintSeen()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        assertFalse("o backup não pode levar a dica: $json", json.contains("hint", ignoreCase = true))
+        assertEquals(setOf("summaryEnabled", "summaryMinuteOfDay", "themeMode", "dynamicColor"),
+            JSONObject(json).getJSONObject("settings").keys().asSequence().toSet())
+
+        val fresh = settingsRepo("dest-hint-fresh")
+        BackupManager(destDb, context.contentResolver, fresh).restore(json)
+        assertFalse("aparelho novo continua sem ter visto a dica", fresh.shoppingGestureHintSeen.first())
+
+        val seen = settingsRepo("dest-hint-seen")
+        seen.setShoppingGestureHintSeen()
+        BackupManager(destDb, context.contentResolver, seen).restore(json)
+        assertTrue("quem já dispensou a dica não a vê de novo depois do restauro", seen.shoppingGestureHintSeen.first())
+    }
 
     private fun settingsRepo(name: String): SettingsRepository =
         SettingsRepository(

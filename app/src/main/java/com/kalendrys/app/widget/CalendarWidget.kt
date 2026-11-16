@@ -39,6 +39,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.glance.color.ColorProviders
 import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
@@ -49,12 +50,12 @@ import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import com.kalendrys.app.ui.components.weekdayName
-import com.kalendrys.app.ui.routines.RoutinePalette
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.first
 
 /** "Calendário": o mês com o dia de hoje marcado e, ao lado, as tarefas e rotinas de hoje. */
 class CalendarWidget : GlanceAppWidget() {
@@ -62,10 +63,13 @@ class CalendarWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = (context.applicationContext as KalendrysApp).todayRepository
         val initial = today.current()
+        val schemes = KalendrysWidgets.schemes(context)
+        val initialScheme = schemes.first()
         provideContent {
             // Ver TasksWidget: observar dentro da composição mantém a sessão aberta atualizada.
             val overview by remember { today.observe() }.collectAsState(initial)
-            GlanceTheme(colors = KalendrysWidgets.colors) {
+            val scheme by remember { schemes }.collectAsState(initialScheme)
+            KalendrysWidgetTheme(scheme) {
                 CalendarContent(overview)
             }
         }
@@ -85,10 +89,10 @@ private val TITLE: DateTimeFormatter = DateTimeFormatter.ofPattern("d 'de' MMMM"
 @Composable
 private fun CalendarContent(overview: TodayOverview) {
     val context = LocalContext.current
-    val items = dayItems(context, overview)
+    val items = dayItems(context, overview, GlanceTheme.colors, widgetPalette)
     Scaffold(
         modifier = GlanceModifier.clickable(actionStartActivity(AppLinks.openCalendar(context))),
-        backgroundColor = KalendrysWidgets.background,
+        backgroundColor = widgetPalette.background,
         horizontalPadding = 16.dp,
     ) {
         Row(modifier = GlanceModifier.fillMaxSize().padding(vertical = 12.dp)) {
@@ -122,6 +126,7 @@ private fun CalendarContent(overview: TodayOverview) {
 @Composable
 private fun MonthGrid(today: LocalDate) {
     val resources = LocalContext.current.resources
+    val palette = widgetPalette
     val firstDay = firstDayOfWeek()
     val weekend = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
     val cellStyle = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp, textAlign = TextAlign.Center)
@@ -146,13 +151,16 @@ private fun MonthGrid(today: LocalDate) {
                         when {
                             date == null -> Text(text = "", style = cellStyle)
                             date == today -> Box(
-                                modifier = GlanceModifier.size(20.dp).background(ImageProvider(R.drawable.widget_today_circle)),
+                                modifier = GlanceModifier.size(20.dp).background(
+                                    ImageProvider(R.drawable.widget_today_circle),
+                                    colorFilter = ColorFilter.tint(palette.today),
+                                ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = date.dayOfMonth.toString(),
                                     style = cellStyle.copy(
-                                        color = ColorProvider(KalendrysWidgets.onToday),
+                                        color = palette.onToday,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )
@@ -195,7 +203,12 @@ private fun DayItemRow(item: DayItem) {
 }
 
 /** Tarefas com data (de hoje ou atrasadas) e blocos de rotina ainda pendentes; os sem horário primeiro. */
-private fun dayItems(context: Context, overview: TodayOverview): List<DayItem> {
+private fun dayItems(
+    context: Context,
+    overview: TodayOverview,
+    colors: ColorProviders,
+    palette: WidgetPalette,
+): List<DayItem> {
     val tasks = overview.pending.filter { it.dated }.map { task ->
         DayItem(
             key = task.taskId,
@@ -205,7 +218,7 @@ private fun dayItems(context: Context, overview: TodayOverview): List<DayItem> {
                 task.reminderToday != null -> task.reminderToday.format(TIME)
                 else -> context.getString(R.string.widget_all_day)
             },
-            color = if (task.overdue) ColorProvider(KalendrysWidgets.overdue) else ColorProvider(KalendrysWidgets.accent),
+            color = if (task.overdue) colors.error else colors.primary,
             time = task.reminderToday,
         )
     }
@@ -215,7 +228,7 @@ private fun dayItems(context: Context, overview: TodayOverview): List<DayItem> {
             key = -block.routineId,
             title = block.title,
             subtitle = listOfNotNull(block.start, block.end).joinToString("–") { it.format(TIME) },
-            color = ColorProvider(RoutinePalette.dark(block.color).accent),
+            color = palette.routineAccent(block.color),
             time = block.start,
         )
     }

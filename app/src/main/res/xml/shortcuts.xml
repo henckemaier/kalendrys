@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Atalhos fixos do app (ADR-0002, 12.6): toque longo no ícone. Cada um abre a MainActivity com um
+     endereço kalendrys:// que o AppLinks.parse resolve, como os do widget e das notificações.
+     O intent de atalho estático exige targetPackage e targetClass explícitos; o pacote é o
+     applicationId (não há sufixo por build type). O sistema abre atalho estático com NEW_TASK e
+     CLEAR_TASK: com o app aberto a pilha é recriada e o pedido chega pelo onCreate. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="new_task"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new_task"
+        android:shortcutShortLabel="@string/shortcut_new_task_short"
+        android:shortcutLongLabel="@string/shortcut_new_task_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kalendrys://new-task"
+            android:targetPackage="com.kalendrys.app"
+            android:targetClass="com.kalendrys.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="lists"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_lists"
+        android:shortcutShortLabel="@string/shortcut_lists_short"
+        android:shortcutLongLabel="@string/shortcut_lists_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="kalendrys://lists"
+            android:targetPackage="com.kalendrys.app"
+            android:targetClass="com.kalendrys.app.MainActivity" />
+    </shortcut>
+
+</shortcuts>

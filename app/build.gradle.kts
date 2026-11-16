@@ -32,7 +32,7 @@ val hasUploadKeystore = uploadStoreFile != null && uploadStorePassword != null &
 // mesmo espírito (SemVer + código monotônico), mecânica agora automática. Para subir de versão,
 // edite SOMENTE appVersionName; o release é publicado por push da tag "v$appVersionName"
 // (ver .github/workflows/release.yml).
-val appVersionName = "1.6.2"
+val appVersionName = "1.7.0"
 val appVersionCode = appVersionName.split(".").let { parts ->
     require(parts.size == 3) { "versionName deve ser MAJOR.MINOR.PATCH, recebido: $appVersionName" }
     val (major, minor, patch) = parts.map(String::toInt)
@@ -166,6 +166,11 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.junit) // AndroidJUnit4 para os testes de Room/Robolectric
+    // Testes de Compose na JVM (Robolectric + createComposeRule); versões pela compose-bom.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Registra a ComponentActivity vazia que o createComposeRule usa (só no manifest de debug).
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

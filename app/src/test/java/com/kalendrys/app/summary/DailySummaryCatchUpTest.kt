@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.data.settings.ThemeMode
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -154,6 +155,17 @@ class DailySummaryCatchUpTest {
         val off = nine.copy(summaryEnabled = false)
         val emitted = flowOf(eight, eight.copy(), nine, nine, off).summaryChanges().toList()
         assertEquals(listOf(eight, nine, off), emitted)
+    }
+
+    @Test
+    fun `trocar tema e cor dinamica nao emite em summaryChanges`() = runTest {
+        val eight = AppSettings(summaryEnabled = true, summaryTime = LocalTime.of(8, 0))
+        val dark = eight.copy(themeMode = ThemeMode.DARK)
+        val dynamic = dark.copy(dynamicColor = true)
+        val light = dynamic.copy(themeMode = ThemeMode.LIGHT, dynamicColor = false)
+        val emitted = flowOf(eight, dark, dynamic, light).summaryChanges().toList()
+        // Só a primeira: a aparência não reagenda o resumo nem zera a marca dele (L14).
+        assertEquals(listOf(eight), emitted)
     }
 
     @Test

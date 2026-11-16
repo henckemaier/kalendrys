@@ -31,6 +31,7 @@ import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.TodayOverview
+import kotlinx.coroutines.flow.first
 
 /** "Resumo do dia": quanto falta hoje (tarefas + rotinas) e o que vem a seguir. */
 class SummaryWidget : GlanceAppWidget() {
@@ -38,10 +39,13 @@ class SummaryWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = (context.applicationContext as KalendrysApp).todayRepository
         val initial = today.current()
+        val schemes = KalendrysWidgets.schemes(context)
+        val initialScheme = schemes.first()
         provideContent {
             // Ver TasksWidget: observar dentro da composição mantém a sessão aberta atualizada.
             val overview by remember { today.observe() }.collectAsState(initial)
-            GlanceTheme(colors = KalendrysWidgets.colors) {
+            val scheme by remember { schemes }.collectAsState(initialScheme)
+            KalendrysWidgetTheme(scheme) {
                 SummaryContent(overview)
             }
         }
@@ -61,7 +65,7 @@ private fun SummaryContent(overview: TodayOverview) {
     val routines = overview.pendingRoutines.size
     Scaffold(
         modifier = GlanceModifier.clickable(actionStartActivity(AppLinks.openApp(context))),
-        backgroundColor = KalendrysWidgets.background,
+        backgroundColor = widgetPalette.background,
     ) {
         Column(modifier = GlanceModifier.fillMaxSize().padding(vertical = 14.dp)) {
             Text(

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import java.time.LocalTime
@@ -29,6 +30,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                 summaryEnabled = prefs[SUMMARY_ENABLED] ?: true,
                 summaryTime = prefs[SUMMARY_MINUTE]?.let(AppSettings::timeFromMinuteOfDay)
                     ?: AppSettings.DEFAULT_SUMMARY_TIME,
+                // Nome desconhecido (ex.: valor de uma versão futura) cai em SYSTEM.
+                themeMode = ThemeMode.fromNameOrNull(prefs[THEME_MODE]) ?: ThemeMode.SYSTEM,
+                dynamicColor = prefs[DYNAMIC_COLOR] ?: false,
             )
         }
         .distinctUntilChanged()
@@ -39,6 +43,15 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setSummaryTime(time: LocalTime) {
         dataStore.edit { it[SUMMARY_MINUTE] = AppSettings.minuteOfDay(time) }
+    }
+
+    /** Guardado pelo nome do enum ([ThemeMode.name]). */
+    suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { it[THEME_MODE] = mode.name }
+    }
+
+    suspend fun setDynamicColor(enabled: Boolean) {
+        dataStore.edit { it[DYNAMIC_COLOR] = enabled }
     }
 
     /**
@@ -73,11 +86,28 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SUMMARY_LAST_SEEN] = nowMillis }
     }
 
+    /**
+     * A dica única dos gestos da lista de compras (ADR-0002, 12.4) já foi dispensada. `false` até a
+     * primeira vez. Fica fora de [AppSettings] e do backup (como as marcas do catch-up): é registro
+     * de uso deste aparelho, não preferência, e não deve reemitir o fluxo de configurações.
+     */
+    val shoppingGestureHintSeen: Flow<Boolean> = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { it[SHOPPING_GESTURE_HINT_SEEN] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setShoppingGestureHintSeen() {
+        dataStore.edit { it[SHOPPING_GESTURE_HINT_SEEN] = true }
+    }
+
     private companion object {
         val SUMMARY_ENABLED = booleanPreferencesKey("summary_enabled")
         val SUMMARY_MINUTE = intPreferencesKey("summary_minute_of_day")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val LAST_SEEN = longPreferencesKey("last_seen_at")
         val ROUTINE_LAST_SEEN = longPreferencesKey("routine_last_seen_at")
         val SUMMARY_LAST_SEEN = longPreferencesKey("summary_last_seen_at")
+        val SHOPPING_GESTURE_HINT_SEEN = booleanPreferencesKey("shopping_gesture_hint_seen")
     }
 }

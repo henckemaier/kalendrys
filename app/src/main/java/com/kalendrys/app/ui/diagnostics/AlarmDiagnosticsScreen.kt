@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -24,15 +23,11 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -54,7 +48,12 @@ import com.kalendrys.app.reminder.canScheduleExactAlarms
 import com.kalendrys.app.reminder.ignoreBatteryOptimizationsSettingsIntent
 import com.kalendrys.app.reminder.isIgnoringBatteryOptimizations
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.components.plus
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -74,7 +73,6 @@ import com.kalendrys.app.domain.AppLocale
 @Composable
 fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var nextAlarmMillis by remember { mutableStateOf<Long?>(null) }
     var exactAllowed by remember { mutableStateOf(true) }
@@ -86,27 +84,16 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
         batteryUnrestricted = isIgnoringBatteryOptimizations(context)
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.diagnostics_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { innerPadding ->
+    AppScaffold(
+        topBar = { AppTopBar(title = stringResource(R.string.diagnostics_title), onBack = onBack) },
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = padding.plus(horizontal = Spacing.l, bottom = Spacing.xl),
         ) {
-            item(key = "header") { SectionHeader(stringResource(R.string.diagnostics_section)) }
+            item(key = "header") {
+                SectionHeader(stringResource(R.string.diagnostics_section), contentPadding = SectionPadding)
+            }
             item(key = "next_alarm") {
                 val next = nextAlarmMillis
                 DiagnosticRow(
@@ -155,7 +142,7 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
                     text = stringResource(R.string.diagnostics_footnote),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = Spacing.s),
                 )
             }
         }
@@ -177,15 +164,8 @@ private const val ROW_COUNT = 3
 
 private enum class DiagStatus { Ok, Warn, Neutral }
 
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
-    )
-}
+/** A lista já tem a margem lateral da tela: o título de seção só ganha o espaço acima e abaixo. */
+private val SectionPadding = PaddingValues(top = Spacing.xl, bottom = Spacing.s)
 
 /**
  * Linha de status. Quando [onFix] existe, a linha inteira é clicável e leva à tela do sistema
@@ -220,7 +200,7 @@ private fun DiagnosticRowContent(title: String, status: String, level: DiagStatu
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .heightIn(min = 72.dp)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = Spacing.m),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
@@ -234,7 +214,7 @@ private fun DiagnosticRowContent(title: String, status: String, level: DiagStatu
                 },
             )
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(Spacing.l))
         if (hasFix) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -242,7 +222,7 @@ private fun DiagnosticRowContent(title: String, status: String, level: DiagStatu
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Spacing.s))
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                     contentDescription = null,
@@ -290,14 +270,14 @@ private fun BatteryExemptionSheet(onOpenSettings: () -> Unit, onDismiss: () -> U
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
+                .padding(horizontal = Spacing.xl)
+                .padding(bottom = Spacing.xl),
         ) {
             Text(
                 text = stringResource(R.string.battery_flow_title),
                 style = MaterialTheme.typography.headlineSmall,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Spacing.m))
             Text(
                 text = stringResource(R.string.battery_flow_why),
                 style = MaterialTheme.typography.bodyMedium,
@@ -307,13 +287,13 @@ private fun BatteryExemptionSheet(onOpenSettings: () -> Unit, onDismiss: () -> U
             StepRow(1, stringResource(R.string.battery_flow_step1))
             StepRow(2, stringResource(R.string.battery_flow_step2))
             StepRow(3, stringResource(R.string.battery_flow_step3))
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(Spacing.xl))
             Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
                 Icon(imageVector = Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Spacing.s))
                 Text(stringResource(R.string.battery_flow_open))
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(Spacing.xs))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text(stringResource(R.string.battery_flow_dismiss))
             }
@@ -325,14 +305,14 @@ private fun BatteryExemptionSheet(onOpenSettings: () -> Unit, onDismiss: () -> U
 private fun StepRow(number: Int, text: String) {
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = Modifier.padding(vertical = 4.dp),
+        modifier = Modifier.padding(vertical = Spacing.xs),
     ) {
         Text(
             text = "$number.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary,
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(Spacing.m))
         Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
