@@ -495,4 +495,20 @@
         <item>sexta-feira</item>
         <item>sábado</item>
     </string-array>
+    <!-- Meses abreviados (pt-BR), de janeiro a dezembro. Tabela própria em vez do formatador "MMM",
+         cuja saída ("nov", "nov.") varia entre versões do Android (ADR-0002, seção 3, decisão 6). -->
+    <string-array name="month_short">
+        <item>jan</item>
+        <item>fev</item>
+        <item>mar</item>
+        <item>abr</item>
+        <item>mai</item>
+        <item>jun</item>
+        <item>jul</item>
+        <item>ago</item>
+        <item>set</item>
+        <item>out</item>
+        <item>nov</item>
+        <item>dez</item>
+    </string-array>
 </resources>

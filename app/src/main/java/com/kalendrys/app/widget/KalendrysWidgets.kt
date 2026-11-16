@@ -1,30 +1,19 @@
 package com.kalendrys.app.widget
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.glance.appwidget.updateAll
-import androidx.glance.material3.ColorProviders
-import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
-import com.kalendrys.app.domain.AppLocale
-import com.kalendrys.app.ui.theme.DarkColors
+import com.kalendrys.app.ui.components.weekdayTimeLabel
+import com.kalendrys.app.ui.theme.appearance
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 object KalendrysWidgets {
-
-    /** Paleta escura do app sempre, mesmo com o sistema no tema claro: o texto claro combina com o fundo escuro. */
-    val colors = ColorProviders(scheme = DarkColors)
-
-    /** Fundo escuro com 75% de opacidade: deixa o papel de parede aparecer sem perder a leitura. */
-    val background = ColorProvider(Color(0xBF0C0E13))
-
-    /** Cores fixas da paleta escura usadas fora do GlanceTheme (pontos e o dia de hoje). */
-    val accent = Color(0xFFAAC7FF)
-    val onToday = Color(0xFF0A305F)
-    val overdue = Color(0xFFFFB4AB)
 
     suspend fun updateAll(context: Context) {
         // Sessão do widget aberta: update() só recompõe com o que o observe() já tem. O refresh faz o
@@ -35,13 +24,23 @@ object KalendrysWidgets {
         CalendarWidget().updateAll(context)
     }
 
-    private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    private val WEEKDAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, HH:mm", AppLocale.LOCALE)
+    /**
+     * Esquema de cores dos widgets pela Aparência do app (ADR-0002, 12.5), lido do DataStore (não do
+     * StateFlow da [KalendrysApp], que ainda pode estar vazio num processo aberto só para o widget).
+     * Observado dentro da composição, como os dados: com a sessão do widget aberta, trocar a
+     * Aparência recompõe sem esperar uma sessão nova.
+     */
+    fun schemes(context: Context): Flow<WidgetScheme> =
+        (context.applicationContext as KalendrysApp).settingsRepository.settings
+            .map { WidgetTheme.schemeFor(it.appearance()) }
+            .distinctUntilChanged()
 
-    /** "18:05" hoje, "Amanhã, 09:00", "qua., 09:00" nos demais dias. */
+    private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    /** "18:05" hoje, "Amanhã, 09:00", "Qua, 09:00" nos demais dias (dia da semana pela tabela pt-BR). */
     fun reminderMoment(context: Context, at: LocalDateTime, today: LocalDate): String = when (at.toLocalDate()) {
         today -> at.format(TIME)
         today.plusDays(1) -> context.getString(R.string.widget_tomorrow_at, at.format(TIME))
-        else -> at.format(WEEKDAY_TIME)
+        else -> context.resources.weekdayTimeLabel(at.toLocalDate(), at.toLocalTime())
     }
 }
