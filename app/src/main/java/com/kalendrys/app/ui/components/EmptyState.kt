@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -19,13 +23,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.kalendrys.app.ui.theme.KalendrysTheme
+import com.kalendrys.app.ui.theme.Spacing
 
+/**
+ * Estado vazio de uma tela (ADR-0002, 4.2): ícone, título, mensagem e, opcional, a ação principal
+ * dentro (ex.: "Nova lista"). A ação só aparece com [actionLabel] e [onAction] juntos; sem eles o
+ * componente fica igual ao de antes, então os usos atuais não mudam.
+ */
 @Composable
 fun EmptyState(
     icon: ImageVector,
     title: String,
     message: String,
     modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    actionIcon: ImageVector? = null,
+    onAction: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -49,18 +63,45 @@ fun EmptyState(
                 )
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(Spacing.xl))
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Spacing.s))
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(Spacing.xl))
+            FilledTonalButton(onClick = onAction) {
+                if (actionIcon != null) {
+                    Icon(actionIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(Spacing.s))
+                }
+                Text(actionLabel, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+@KalendrysPreviews
+@Composable
+private fun EmptyStatePreview() {
+    KalendrysTheme {
+        Surface {
+            EmptyState(
+                icon = Icons.Outlined.ShoppingCart,
+                title = "Nenhuma lista ainda",
+                message = "Crie uma lista de compras e use no mercado.",
+                actionLabel = "Nova lista",
+                actionIcon = Icons.Outlined.Add,
+                onAction = {},
+            )
+        }
     }
 }
