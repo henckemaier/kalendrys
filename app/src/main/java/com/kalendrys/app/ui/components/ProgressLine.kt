@@ -18,7 +18,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.ShoppingProgress
-import com.kalendrys.app.ui.shopping.pluralQuantity
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import com.kalendrys.app.ui.theme.Spacing
 
