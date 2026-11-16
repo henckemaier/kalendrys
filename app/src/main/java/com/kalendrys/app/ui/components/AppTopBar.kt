@@ -14,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -32,13 +33,16 @@ import com.kalendrys.app.ui.theme.KalendrysTheme
 /**
  * Ação da barra de topo. Com [icon], aparece como botão de ícone ([label] vira a descrição para o
  * leitor de tela); sem ícone, ou quando passada em `menu`, vai para o menu de mais opções, com o
- * rótulo escrito.
+ * rótulo escrito. Com [prominent] (em `actions`), aparece como botão de texto com o [label], depois
+ * dos ícones e antes do menu — para a ação principal de um editor, como "Salvar" (o [icon] é
+ * ignorado).
  */
 @Immutable
 data class TopBarAction(
     val label: String,
     val icon: ImageVector? = null,
     val enabled: Boolean = true,
+    val prominent: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -66,7 +70,7 @@ fun AppTopBar(
             }
         },
         actions = {
-            actions.forEach { action ->
+            actions.filterNot { it.prominent }.forEach { action ->
                 val icon = action.icon
                 if (icon != null) {
                     IconButton(onClick = action.onClick, enabled = action.enabled) {
@@ -74,7 +78,10 @@ fun AppTopBar(
                     }
                 }
             }
-            val inMenu = menu + actions.filter { it.icon == null }
+            actions.filter { it.prominent }.forEach { action ->
+                TextButton(onClick = action.onClick, enabled = action.enabled) { Text(action.label) }
+            }
+            val inMenu = menu + actions.filter { it.icon == null && !it.prominent }
             if (inMenu.isNotEmpty()) OverflowMenu(inMenu)
         },
         colors = TopAppBarDefaults.topAppBarColors(),

@@ -43,6 +43,9 @@ import kotlinx.coroutines.launch
  * @param removesRow `true` quando a ação tira o item da lista (ex.: excluir com Desfazer): depois do
  *   deslize a linha fica fora da tela até sair da composição, em vez de voltar deslizando e só
  *   então sumir quando a lista atualizar. `false` (padrão): a linha volta ao lugar.
+ *   CUIDADO: com `true`, quem chama GARANTE que o item sai da lista. Se a ação falhar, for
+ *   cancelada ou só pedir confirmação depois, a linha fica invisível (fora da tela) até a tela ser
+ *   recomposta do zero. Para ação que pode não remover, use `false`.
  */
 @Immutable
 class SwipeAction(

@@ -12,24 +12,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
@@ -39,16 +36,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,10 +53,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,15 +65,20 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingListCard
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.taskdetail.TaskDetailViewModel.Event
 import com.kalendrys.app.ui.tasks.LocationField
 import com.kalendrys.app.ui.tasks.TaskTimingField
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -101,7 +100,6 @@ fun TaskDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     // Seletor "Criar nova / Usar lista existente" da lista de compras.
@@ -133,38 +131,32 @@ fun TaskDetailScreen(
     }
     BackHandler(enabled = state.hasChanges) { showDiscardDialog = true }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    // Salvar fica escrito na barra; Excluir (rara) vai para o menu com rótulo (ADR-0002, 4.2).
+    val hasDraft = state.draft != null
+    val saveLabel = stringResource(R.string.save)
+    val deleteLabel = stringResource(R.string.delete_task)
+    AppScaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.task_detail_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { requestBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
+            AppTopBar(
+                title = stringResource(R.string.task_detail_title),
+                onBack = { requestBack() },
+                actions = if (hasDraft) {
+                    listOf(TopBarAction(saveLabel, enabled = state.canSave, prominent = true, onClick = viewModel::save))
+                } else {
+                    emptyList()
                 },
-                actions = {
-                    if (state.draft != null) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete_task))
-                        }
-                        TextButton(onClick = viewModel::save, enabled = state.canSave) {
-                            Text(stringResource(R.string.save))
-                        }
-                    }
-                },
-                scrollBehavior = scrollBehavior,
+                menu = if (hasDraft) listOf(TopBarAction(deleteLabel) { showDeleteDialog = true }) else emptyList(),
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { innerPadding ->
+        snackbarHostState = snackbarHostState,
+    ) { padding ->
         val draft = state.draft
         when {
             state.notFound -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
                 title = stringResource(R.string.task_not_found_title),
                 message = stringResource(R.string.task_not_found_message),
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(padding),
             )
             draft == null -> Unit
             else -> TaskDetailContent(
@@ -178,10 +170,8 @@ fun TaskDetailScreen(
                 onOpenShoppingList = { listId -> state.task?.let { onOpenShoppingList(listId, it.id) } },
                 onAddShoppingList = { showListPicker = true },
                 onDetachShoppingList = viewModel::detachShoppingList,
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding)
-                    .imePadding(),
+                // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
+                contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s).plusBottom(Spacing.xl),
             )
         }
     }
@@ -257,13 +247,13 @@ private fun TaskDetailContent(
     onOpenShoppingList: (listId: Long) -> Unit,
     onAddShoppingList: () -> Unit,
     onDetachShoppingList: () -> Unit,
-    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues,
 ) {
     val zone = state.zone
     val context = LocalContext.current
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
     ) {
         item(key = "title") {
             OutlinedTextField(
@@ -410,7 +400,7 @@ private fun TaskDetailContent(
 private fun StatusCard(doneAt: Long?, repeats: Boolean, zone: ZoneId, onComplete: () -> Unit) {
     val done = doneAt != null
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -516,4 +506,16 @@ private fun historyDayLabel(date: LocalDate): String {
         date.year == today.year -> weekdayDateLabel(date)
         else -> longDateLabel(date)
     }
+}
+
+/** Folga no fim da lista do detalhe, somada ao fundo do [AppScaffold] (barra do sistema ou teclado). */
+@Composable
+private fun PaddingValues.plusBottom(extra: Dp): PaddingValues {
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = calculateStartPadding(direction),
+        end = calculateEndPadding(direction),
+        top = calculateTopPadding(),
+        bottom = calculateBottomPadding() + extra,
+    )
 }

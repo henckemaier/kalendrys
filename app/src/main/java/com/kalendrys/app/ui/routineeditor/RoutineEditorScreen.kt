@@ -13,11 +13,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,21 +26,16 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -52,14 +47,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,7 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -79,6 +71,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -94,17 +87,22 @@ import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.TimePickerDialog
+import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.WeekdayToggleRow
 import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.shopping.ShoppingListCard
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -120,7 +118,6 @@ fun RoutineEditorScreen(
     viewModel: RoutineEditorViewModel = viewModel(factory = RoutineEditorViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
@@ -138,52 +135,46 @@ fun RoutineEditorScreen(
     }
     BackHandler(enabled = state.hasChanges) { showDiscardDialog = true }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    // Salvar fica escrito na barra; Duplicar, Pausar/Retomar e Excluir (raras) vão para o menu com
+    // rótulo (ADR-0002, 4.2). Sem rascunho carregado, nenhuma ação (como antes).
+    val actions = mutableListOf<TopBarAction>()
+    val menu = mutableListOf<TopBarAction>()
+    if (state.draft != null) {
+        if (!state.isNew) {
+            val copyTitle = stringResource(R.string.routine_copy_suffix, state.routine?.title.orEmpty())
+            menu += TopBarAction(stringResource(R.string.routine_duplicate)) { viewModel.duplicate(copyTitle) }
+            val paused = state.routine?.pausedAt != null
+            menu += TopBarAction(
+                stringResource(if (paused) R.string.routine_resume else R.string.routine_pause),
+                onClick = viewModel::togglePause,
+            )
+            menu += TopBarAction(stringResource(R.string.routine_delete)) { showDeleteDialog = true }
+        }
+        actions += TopBarAction(
+            stringResource(R.string.save),
+            enabled = state.canSave,
+            prominent = true,
+            onClick = viewModel::save,
+        )
+    }
+
+    AppScaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(if (state.isNew) R.string.routine_new_title else R.string.routine_edit_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { requestBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
-                actions = {
-                    if (state.draft != null) {
-                        if (!state.isNew) {
-                            val copyTitle = stringResource(R.string.routine_copy_suffix, state.routine?.title.orEmpty())
-                            IconButton(onClick = { viewModel.duplicate(copyTitle) }) {
-                                Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.routine_duplicate))
-                            }
-                            val paused = state.routine?.pausedAt != null
-                            IconButton(onClick = viewModel::togglePause) {
-                                Icon(
-                                    if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                                    contentDescription = stringResource(
-                                        if (paused) R.string.routine_resume else R.string.routine_pause,
-                                    ),
-                                )
-                            }
-                            IconButton(onClick = { showDeleteDialog = true }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.routine_delete))
-                            }
-                        }
-                        TextButton(onClick = viewModel::save, enabled = state.canSave) {
-                            Text(stringResource(R.string.save))
-                        }
-                    }
-                },
-                scrollBehavior = scrollBehavior,
+            AppTopBar(
+                title = stringResource(if (state.isNew) R.string.routine_new_title else R.string.routine_edit_title),
+                onBack = { requestBack() },
+                actions = actions,
+                menu = menu,
             )
         },
-    ) { innerPadding ->
+    ) { padding ->
         val draft = state.draft
         when {
             state.notFound -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
                 title = stringResource(R.string.routine_not_found_title),
                 message = stringResource(R.string.routine_not_found_message),
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(padding),
             )
             draft == null -> Unit
             else -> EditorContent(
@@ -196,10 +187,8 @@ fun RoutineEditorScreen(
                 exerciseItems = state.exerciseItems,
                 viewModel = viewModel,
                 onOpenShoppingList = onOpenShoppingList,
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding)
-                    .imePadding(),
+                // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
+                contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s).plusBottom(Spacing.xxl),
             )
         }
     }
@@ -260,7 +249,7 @@ private fun EditorContent(
     exerciseItems: List<ExerciseItem>,
     viewModel: RoutineEditorViewModel,
     onOpenShoppingList: (Long) -> Unit,
-    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues,
 ) {
     var showStartPicker by rememberSaveable { mutableStateOf(false) }
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
@@ -273,8 +262,8 @@ private fun EditorContent(
     var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
     ) {
         item(key = "preview") { Preview(draft) }
         if (viewModel.isNew) {
@@ -783,7 +772,7 @@ private fun Preview(draft: RoutineDraft) {
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(width = 48.dp, height = 64.dp)
-                .clip(RoundedCornerShape(percent = 50))
+                .clip(CircleShape)
                 .background(tone.fill),
         ) {
             Icon(draft.icon.imageVector, contentDescription = null, tint = tone.onFill)
@@ -901,7 +890,7 @@ private fun WeekIntervalStepper(weeks: Int, onChange: (Int) -> Unit) {
         stringResource(R.string.routine_week_interval_every, weeks)
     }
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -1000,7 +989,7 @@ private fun DayPicker(mask: Int, onToggle: (DayOfWeek) -> Unit) {
 @Composable
 private fun RemindRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -1024,4 +1013,16 @@ private fun RemindRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modi
             Switch(checked = checked, onCheckedChange = null)
         }
     }
+}
+
+/** Folga no fim da lista do editor, somada ao fundo do [AppScaffold] (barra do sistema ou teclado). */
+@Composable
+private fun PaddingValues.plusBottom(extra: Dp): PaddingValues {
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = calculateStartPadding(direction),
+        end = calculateEndPadding(direction),
+        top = calculateTopPadding(),
+        bottom = calculateBottomPadding() + extra,
+    )
 }
