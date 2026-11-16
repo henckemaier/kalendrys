@@ -2,8 +2,6 @@
 
 package com.kalendrys.app.ui.diagnostics
 
-import android.app.AlarmManager
-import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,7 +41,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.AppAlarmKind
 import com.kalendrys.app.reminder.canScheduleExactAlarms
 import com.kalendrys.app.reminder.ignoreBatteryOptimizationsSettingsIntent
 import com.kalendrys.app.reminder.isIgnoringBatteryOptimizations
@@ -63,7 +64,8 @@ import com.kalendrys.app.domain.AppLocale
 /**
  * Tela de diagnóstico: mostra, em um lugar só, por que um lembrete pode não disparar no horário.
  * Três checagens, cada uma com um atalho para a tela do sistema que a corrige:
- *  - próximo alarme que o sistema vai disparar (confirma que há algo agendado);
+ *  - próximo aviso do Kalendrys, calculado dos dados do app ([AlarmDiagnosticsViewModel]), não o
+ *    próximo despertador do sistema (que pode ser de outro app, como o Relógio);
  *  - permissão de alarme exato ([canScheduleExactAlarms]);
  *  - otimização de bateria ([isIgnoringBatteryOptimizations]).
  *
@@ -71,15 +73,18 @@ import com.kalendrys.app.domain.AppLocale
  * sistema e voltado para cá.
  */
 @Composable
-fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
+fun AlarmDiagnosticsScreen(
+    onBack: () -> Unit,
+    viewModel: AlarmDiagnosticsViewModel = viewModel(factory = AlarmDiagnosticsViewModel.Factory),
+) {
     val context = LocalContext.current
 
-    var nextAlarmMillis by remember { mutableStateOf<Long?>(null) }
+    val nextAlarm by viewModel.nextAlarm.collectAsStateWithLifecycle()
     var exactAllowed by remember { mutableStateOf(true) }
     var batteryUnrestricted by remember { mutableStateOf(true) }
     var showBatterySheet by rememberSaveable { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        nextAlarmMillis = nextAlarmClockTriggerMillis(context)
+        viewModel.refresh()
         exactAllowed = canScheduleExactAlarms(context)
         batteryUnrestricted = isIgnoringBatteryOptimizations(context)
     }
@@ -95,11 +100,10 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
                 SectionHeader(stringResource(R.string.diagnostics_section), contentPadding = SectionPadding)
             }
             item(key = "next_alarm") {
-                val next = nextAlarmMillis
                 DiagnosticRow(
                     title = stringResource(R.string.diagnostics_next_alarm_title),
-                    status = next?.let(::formatTrigger) ?: stringResource(R.string.diagnostics_next_alarm_none),
-                    // Informativo: não ter um próximo alarme é normal quando não há lembretes pendentes.
+                    status = nextAlarmStatus(nextAlarm, exactAllowed),
+                    // Informativo: não ter um próximo aviso é normal quando não há lembretes pendentes.
                     level = DiagStatus.Neutral,
                     shape = groupedItemShape(0, ROW_COUNT),
                 )
@@ -317,11 +321,35 @@ private fun StepRow(number: Int, text: String) {
     }
 }
 
-/** O horário do próximo alarme-despertador que o sistema vai disparar (de qualquer app), ou null. */
-private fun nextAlarmClockTriggerMillis(context: Context): Long? {
-    val manager = context.getSystemService(AlarmManager::class.java) ?: return null
-    return manager.nextAlarmClock?.triggerTime
-}
+/**
+ * Texto da linha do próximo aviso: horário e tipo, ou "nenhum". Sem permissão de alarme exato o
+ * horário continua (o app agenda inexato) com o aviso de que pode atrasar.
+ */
+@Composable
+private fun nextAlarmStatus(state: AlarmDiagnosticsViewModel.NextAlarmState, exactAllowed: Boolean): String =
+    when (state) {
+        AlarmDiagnosticsViewModel.NextAlarmState.Loading -> stringResource(R.string.diagnostics_next_alarm_loading)
+        is AlarmDiagnosticsViewModel.NextAlarmState.Loaded -> {
+            val next = state.next
+            if (next == null) {
+                stringResource(R.string.diagnostics_next_alarm_none)
+            } else {
+                val line = stringResource(
+                    R.string.diagnostics_next_alarm_at,
+                    formatTrigger(next.atMillis),
+                    stringResource(next.kind.labelRes),
+                )
+                if (exactAllowed) line else line + "\n" + stringResource(R.string.diagnostics_next_alarm_may_delay)
+            }
+        }
+    }
+
+private val AppAlarmKind.labelRes: Int
+    get() = when (this) {
+        AppAlarmKind.TASK -> R.string.diagnostics_next_alarm_kind_task
+        AppAlarmKind.ROUTINE -> R.string.diagnostics_next_alarm_kind_routine
+        AppAlarmKind.SUMMARY -> R.string.diagnostics_next_alarm_kind_summary
+    }
 
 private val TRIGGER_FORMAT: DateTimeFormatter =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(AppLocale.LOCALE)

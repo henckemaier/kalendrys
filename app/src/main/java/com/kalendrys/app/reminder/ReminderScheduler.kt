@@ -6,7 +6,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.domain.ReminderRecurrence
+import com.kalendrys.app.domain.TaskSchedule
 import java.time.ZoneId
 
 /**
@@ -21,15 +21,7 @@ open class ReminderScheduler(private val context: Context) {
 
     /** Agenda a próxima ocorrência depois de [after]; não faz nada se o lembrete já acabou. */
     open fun schedule(task: Task, after: Long = System.currentTimeMillis()) {
-        val triggerAt = ReminderRecurrence.nextTriggerMillis(
-            reminderAt = task.reminderAt,
-            repeat = task.repeat,
-            now = after,
-            zone = ZoneId.systemDefault(),
-            every = task.intervalEvery,
-            unit = task.intervalUnit,
-            byWeekdays = task.byWeekdays,
-        ) ?: return
+        val triggerAt = TaskSchedule.nextReminderMillis(task, now = after, zone = ZoneId.systemDefault()) ?: return
         alarmManager.setAlarmClockOrInexact(context, triggerAt, pendingIntent(task.id))
     }
 
