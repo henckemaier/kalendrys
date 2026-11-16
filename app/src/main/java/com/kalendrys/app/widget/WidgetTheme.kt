@@ -70,14 +70,20 @@ data class WidgetScheme(val day: WidgetVariant, val night: WidgetVariant) {
  */
 object WidgetTheme {
 
-    /** Opacidade do fundo: o papel de parede aparece sem prejudicar a leitura. */
-    private const val BACKGROUND_ALPHA = 0.75f
+    /** Opacidade do fundo escuro: o papel de parede aparece sem prejudicar a leitura. */
+    private const val DARK_BACKGROUND_ALPHA = 0.75f
+
+    /**
+     * Opacidade do fundo claro (O-4): opaco. Translúcido, um papel de parede escuro escurecia o fundo
+     * claro e tirava o contraste do texto escuro (o secundário, onSurfaceVariant, era o primeiro a sumir).
+     */
+    private const val LIGHT_BACKGROUND_ALPHA = 1f
 
     /** Fundo escuro de sempre (0xBF0C0E13), um pouco mais escuro que a superfície do app. */
     val BackgroundDark = Color(0xBF0C0E13)
 
-    /** Fundo claro: a superfície clara do app com a mesma opacidade. */
-    val BackgroundLight = Color(0xBFF9F9FF)
+    /** Fundo claro: a superfície clara do app, opaca. */
+    val BackgroundLight = Color(0xFFF9F9FF)
 
     /** Destaque da rotina: pastel no escuro, tom mais forte no claro, como no app. */
     fun routineAccent(variant: WidgetVariant, color: RoutineColor): Color =
@@ -93,7 +99,9 @@ object WidgetTheme {
     fun background(context: Context, variant: WidgetVariant): Color = when (variant) {
         WidgetVariant.BRAND_DARK -> BackgroundDark
         WidgetVariant.BRAND_LIGHT -> BackgroundLight
-        else -> colorScheme(context, variant).surface.copy(alpha = BACKGROUND_ALPHA)
+        else -> colorScheme(context, variant).surface.copy(
+            alpha = if (variant.isDark) DARK_BACKGROUND_ALPHA else LIGHT_BACKGROUND_ALPHA,
+        )
     }
 
     /** Esquema da aparência atual, com a disponibilidade de cor dinâmica do aparelho. */
@@ -106,6 +114,15 @@ class WidgetPalette(
     val background: ColorProvider,
     private val scheme: WidgetScheme,
 ) {
+    /**
+     * Círculo do dia de hoje no widget Calendário (O-4): o primary do MESMO esquema do número
+     * ([onToday]), para claro, escuro e dinâmica. O desenho é só a forma; a cor vem por tint.
+     */
+    val today: ColorProvider get() = colors.primary
+
+    /** Número do dia de hoje sobre o [today]. */
+    val onToday: ColorProvider get() = colors.onPrimary
+
     fun routineAccent(color: RoutineColor): ColorProvider = DayNightColorProvider(
         day = WidgetTheme.routineAccent(scheme.day, color),
         night = WidgetTheme.routineAccent(scheme.night, color),
