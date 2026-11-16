@@ -36,9 +36,10 @@ import com.kalendrys.app.ui.theme.Spacing
  * componente só limpa (via [onValueChange]) depois de chamar [onAdd], com o texto sem espaços nas
  * pontas.
  *
- * Posição no rodapé e o recuo do teclado (`imePadding`) ficam com o chamador ou com o
- * `AppScaffold`. O botão ao fim faz o mesmo que o Enter, para quem não usa o teclado na tela
- * (leitor de tela, teclado físico sem Enter mapeado); [addLabel] é o nome dele para o leitor.
+ * A posição no rodapé fica com o chamador. Sem `imePadding` próprio: o `AppScaffold` usa
+ * `WindowInsets.safeDrawing`, que já inclui o teclado (recuar de novo contaria duas vezes).
+ * O botão ao fim faz o mesmo que o Enter, para quem não usa o teclado na tela (leitor de tela,
+ * teclado físico sem Enter mapeado); [addLabel] é o nome dele para o leitor.
  */
 @Composable
 fun QuickAddField(

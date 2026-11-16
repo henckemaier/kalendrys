@@ -27,7 +27,6 @@
     <!-- Tela da lista -->
     <string name="shopping_list_not_found_title">Lista não encontrada</string>
     <string name="shopping_list_not_found_message">Ela pode ter sido excluída.</string>
-    <string name="shopping_list_more">Mais opções</string>
     <string name="shopping_list_clear_picked">Desmarcar todos</string>
     <string name="shopping_list_item_removed">Item removido</string>
     <string name="shopping_list_picked_cleared">Itens desmarcados</string>

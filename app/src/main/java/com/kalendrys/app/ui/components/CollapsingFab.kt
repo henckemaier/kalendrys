@@ -25,7 +25,9 @@ import com.kalendrys.app.ui.theme.Spacing
 /**
  * FAB que recolhe para só o ícone (ADR-0002, 4.2 e 12.4). Sem estado: [expanded] vem da tela, que
  * o deriva da própria rolagem (por exemplo com [rememberFabExpanded]); o componente não conhece a
- * lista. O rótulo [text] é lido pelo leitor de tela aberto ou recolhido, uma vez só.
+ * lista. O leitor de tela lê [contentDescription] (padrão: o próprio [text]) aberto ou recolhido,
+ * uma vez só; uma descrição mais completa serve quando o rótulo curto omite algo, como o dia
+ * selecionado no Calendário.
  */
 @Composable
 fun CollapsingFab(
@@ -34,6 +36,7 @@ fun CollapsingFab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector = Icons.Filled.Add,
+    contentDescription: String = text,
 ) {
     ExtendedFloatingActionButton(
         onClick = onClick,
@@ -42,7 +45,7 @@ fun CollapsingFab(
         text = { Text(text) },
         // O ExtendedFAB tira o texto da semântica, aberto ou recolhido (conferido no AppBarsTest): o
         // rótulo fica no próprio botão e o leitor de tela o lê uma vez só nos dois estados.
-        modifier = modifier.semantics { contentDescription = text },
+        modifier = modifier.semantics { this.contentDescription = contentDescription },
     )
 }
 

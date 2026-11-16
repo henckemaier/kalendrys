@@ -23,27 +23,21 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +49,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -75,27 +68,31 @@ import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.calendar.CalendarViewModel.Entry
 import com.kalendrys.app.ui.calendar.CalendarViewModel.RoutineEntry
 import com.kalendrys.app.ui.calendar.CalendarViewModel.UiState
-import com.kalendrys.app.ui.components.fabListContentPadding
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
-import com.kalendrys.app.ui.components.SettingsButton
+import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.monthYearLabel
+import com.kalendrys.app.ui.components.plus
+import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.tasks.NewTaskSheet
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
-private val CardShape = RoundedCornerShape(20.dp)
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
@@ -106,55 +103,47 @@ fun CalendarScreen(
     viewModel: CalendarViewModel = viewModel(factory = CalendarViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
-    val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    val fabExpanded by rememberFabExpanded(listState)
     // Lembrete inicial do painel de nova tarefa; null = painel fechado.
     var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    val todayLabel = stringResource(R.string.calendar_today)
+    val settingsLabel = stringResource(R.string.settings_title)
+    AppScaffold(
+        topBar = {
+            AppTopBar(
+                title = stringResource(R.string.tab_calendar),
+                actions = buildList {
+                    if (state.isLoaded && !state.isShowingToday) {
+                        add(TopBarAction(todayLabel, Icons.Outlined.Today, onClick = viewModel::goToToday))
+                    }
+                    add(TopBarAction(settingsLabel, Icons.Outlined.Settings, onClick = onOpenSettings))
+                },
+            )
+        },
         floatingActionButton = {
             // Dias passados não aceitam lembrete, então o botão só aparece de hoje em diante.
             if (state.isLoaded) {
-                ExtendedFloatingActionButton(
-                    onClick = { newTaskEpochDay = state.selectedDate.toEpochDay() },
+                CollapsingFab(
+                    text = stringResource(R.string.new_task),
                     expanded = fabExpanded,
-                    icon = {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = stringResource(
-                                R.string.new_task_on_day,
-                                weekdayDateLabel(state.selectedDate),
-                            ),
-                        )
-                    },
-                    text = { Text(stringResource(R.string.new_task)) },
+                    onClick = { newTaskEpochDay = state.selectedDate.toEpochDay() },
+                    // O leitor de tela ouve em que dia a tarefa nasce, como antes da casca.
+                    contentDescription = stringResource(
+                        R.string.new_task_on_day,
+                        weekdayDateLabel(state.selectedDate),
+                    ),
                 )
             }
         },
-        topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.tab_calendar)) },
-                actions = {
-                    if (state.isLoaded && !state.isShowingToday) {
-                        TextButton(onClick = viewModel::goToToday) {
-                            Text(stringResource(R.string.calendar_today))
-                        }
-                    }
-                    SettingsButton(onClick = onOpenSettings)
-                },
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { innerPadding ->
+        hasFab = true,
+    ) { padding ->
         if (state.isLoaded) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = fabListContentPadding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = padding.plus(horizontal = Spacing.l),
             ) {
                 item(key = "month", contentType = "month") {
                     MonthCard(
@@ -193,18 +182,18 @@ private fun MonthCard(
     val firstDayOfWeek = firstDayOfWeek()
 
     Surface(
-        shape = CardShape,
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp)) {
+        Column(modifier = Modifier.padding(start = Spacing.m, end = Spacing.m, top = Spacing.s, bottom = Spacing.l)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = monthYearLabel(state.month),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 8.dp),
+                        .padding(start = Spacing.s),
                 )
                 IconButton(onClick = onPreviousMonth) {
                     Icon(
@@ -219,7 +208,7 @@ private fun MonthCard(
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Spacing.s))
             WeekdayHeader(firstDayOfWeek)
             HorizontalSwipeContent(
                 target = state.month,
@@ -234,7 +223,7 @@ private fun MonthCard(
                     onSelectDate = onSelectDate,
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Spacing.m))
             Legend()
         }
     }
@@ -251,7 +240,7 @@ private fun WeekdayHeader(firstDayOfWeek: DayOfWeek) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = Spacing.s),
             )
         }
     }
@@ -305,10 +294,10 @@ private fun DayCell(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .selectable(selected = isSelected, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description }
-            .padding(vertical = 4.dp),
+            .padding(vertical = Spacing.xs),
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -331,7 +320,7 @@ private fun DayCell(
                 },
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(Spacing.xs))
         Row(
             horizontalArrangement = Arrangement.spacedBy(3.dp),
             modifier = Modifier
@@ -347,9 +336,9 @@ private fun DayCell(
 @Composable
 private fun Legend() {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.l),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(start = 8.dp),
+        modifier = Modifier.padding(start = Spacing.s),
     ) {
         LegendItem(MaterialTheme.colorScheme.primary, stringResource(R.string.calendar_completed))
         LegendItem(MaterialTheme.colorScheme.tertiary, stringResource(R.string.calendar_reminders))
@@ -376,7 +365,7 @@ private fun LazyListScope.dayAgenda(state: UiState, onOpenTask: (Long) -> Unit, 
         Text(
             text = weekdayDateLabel(state.selectedDate),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+            modifier = Modifier.padding(top = Spacing.xl, bottom = Spacing.xs),
         )
     }
     val routines = state.routinesOnSelected
@@ -388,7 +377,7 @@ private fun LazyListScope.dayAgenda(state: UiState, onOpenTask: (Long) -> Unit, 
                 text = stringResource(R.string.calendar_empty_day),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(vertical = Spacing.s),
             )
         }
         return
@@ -426,7 +415,7 @@ private fun LazyListScope.entrySection(
             text = stringResource(titleRes),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.padding(top = Spacing.l, bottom = Spacing.s),
         )
     }
     itemsIndexed(
@@ -453,7 +442,7 @@ private fun LazyListScope.routineSection(routines: List<RoutineEntry>, onOpenRou
             text = stringResource(R.string.calendar_routines),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.padding(top = Spacing.l, bottom = Spacing.s),
         )
     }
     itemsIndexed(
@@ -499,7 +488,7 @@ private fun RoutineEntryContent(entry: RoutineEntry) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .heightIn(min = 56.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = Spacing.l, vertical = Spacing.m),
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -515,7 +504,7 @@ private fun RoutineEntryContent(entry: RoutineEntry) {
                 modifier = Modifier.size(16.dp),
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(Spacing.m))
         Text(
             text = minuteOfDayLabel(entry.startMinute),
             style = MaterialTheme.typography.labelLarge,
@@ -539,7 +528,7 @@ private fun RoutineEntryContent(entry: RoutineEntry) {
                 contentDescription = stringResource(R.string.calendar_completed),
                 tint = tone.accent,
                 modifier = Modifier
-                    .padding(start = 8.dp)
+                    .padding(start = Spacing.s)
                     .size(20.dp),
             )
         }
@@ -574,7 +563,7 @@ private fun EntryContent(entry: Entry, icon: ImageVector, iconTint: Color) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .heightIn(min = 56.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = Spacing.l, vertical = Spacing.m),
     ) {
         Icon(
             imageVector = when {
@@ -586,7 +575,7 @@ private fun EntryContent(entry: Entry, icon: ImageVector, iconTint: Color) {
             tint = if (entry.done) MaterialTheme.colorScheme.primary else iconTint,
             modifier = Modifier.size(20.dp),
         )
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(Spacing.l))
         Text(
             text = entry.time?.format(TIME) ?: stringResource(R.string.calendar_all_day),
             style = MaterialTheme.typography.labelLarge,

@@ -30,9 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.EventRepeat
@@ -40,24 +38,19 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,7 +67,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -98,13 +90,17 @@ import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.domain.ShoppingProgress
-import com.kalendrys.app.ui.components.fabListContentPadding
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
-import com.kalendrys.app.ui.components.SettingsButton
+import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.WeekdayName
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberCurrentMinute
+import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
@@ -112,6 +108,7 @@ import com.kalendrys.app.ui.routines.RoutinesViewModel.DayTask
 import com.kalendrys.app.ui.routines.RoutinesViewModel.UiState
 import com.kalendrys.app.ui.routines.RoutinesViewModel.WeekDay
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.flow.collectLatest
@@ -122,7 +119,8 @@ private val TimeColumnWidth = 44.dp
 private val TimeColumnEndGap = 4.dp
 private val TrackWidth = 64.dp
 private val PillWidth = 48.dp
-private val PillShape = RoundedCornerShape(percent = 50)
+// Pílula: CircleShape é o arredondamento total (50%) também em formas não quadradas.
+private val PillShape = CircleShape
 // O losango (16.dp girado 45°) ocupa ~22.6.dp na diagonal; a trilha abre essa folga para a linha.
 private val DiamondTrackGap = 24.dp
 
@@ -140,8 +138,7 @@ fun RoutinesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    val fabExpanded by rememberFabExpanded(listState)
 
     LaunchedEffect(requestedDate) {
         if (requestedDate != null) {
@@ -173,25 +170,21 @@ fun RoutinesScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    val todayLabel = stringResource(R.string.calendar_today)
+    val settingsLabel = stringResource(R.string.settings_title)
+    AppScaffold(
         topBar = {
-            // A faixa da semana fica presa embaixo da barra, com o mesmo fundo (sem emenda ao recolher).
+            // Casca da v1.7.0 (ADR-0002, 12.2): barra pequena e fixa; a faixa da semana e os filtros
+            // ficam presos embaixo dela, com o mesmo fundo. O miolo muda na v1.8.0 (tela Hoje).
             Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {
-                LargeTopAppBar(
-                    title = { Text(stringResource(R.string.tab_routines)) },
-                    actions = {
+                AppTopBar(
+                    title = stringResource(R.string.tab_routines),
+                    actions = buildList {
                         if (state.isLoaded && !state.isShowingToday) {
-                            TextButton(onClick = viewModel::goToToday) {
-                                Text(stringResource(R.string.calendar_today))
-                            }
+                            add(TopBarAction(todayLabel, Icons.Outlined.Today, onClick = viewModel::goToToday))
                         }
-                        SettingsButton(onClick = onOpenSettings)
+                        add(TopBarAction(settingsLabel, Icons.Outlined.Settings, onClick = onOpenSettings))
                     },
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    scrollBehavior = scrollBehavior,
                 )
                 if (state.isLoaded && state.hasContent) {
                     WeekStrip(
@@ -211,23 +204,18 @@ fun RoutinesScreen(
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onNewRoutine,
-                expanded = fabExpanded,
-                // O ExtendedFAB remove o texto da semântica; quem dá o rótulo acessível é o ícone.
-                icon = { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_routine)) },
-                text = { Text(stringResource(R.string.new_routine)) },
-            )
+            CollapsingFab(text = stringResource(R.string.new_routine), expanded = fabExpanded, onClick = onNewRoutine)
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { innerPadding ->
+        hasFab = true,
+        snackbarHostState = snackbarHostState,
+    ) { padding ->
         when {
             !state.isLoaded -> Unit
             !state.hasContent -> EmptyState(
                 icon = Icons.Outlined.EventRepeat,
                 title = stringResource(R.string.routines_empty_title),
                 message = stringResource(R.string.routines_empty_message),
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(padding),
             )
             else -> Timeline(
                 state = state,
@@ -237,7 +225,8 @@ fun RoutinesScreen(
                 onOpenException = onOpenException,
                 onToggle = viewModel::toggle,
                 onToggleTask = viewModel::toggleTask,
-                modifier = Modifier.padding(innerPadding),
+                // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
+                contentPadding = padding.plus(horizontal = Spacing.s, top = Spacing.xs),
             )
         }
     }
@@ -340,7 +329,7 @@ private fun WeekDayCell(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
             .semantics { contentDescription = description }
             .padding(vertical = 6.dp),
@@ -394,6 +383,7 @@ private fun Timeline(
     onOpenException: (Long, Long) -> Unit,
     onToggle: (DayTimeline.Block) -> Unit,
     onToggleTask: (Task, Boolean) -> Unit,
+    contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     val now = rememberCurrentMinute()
@@ -404,7 +394,7 @@ private fun Timeline(
         state = listState,
         modifier = modifier.fillMaxSize(),
         // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
-        contentPadding = fabListContentPadding(horizontal = 8.dp, top = 4.dp),
+        contentPadding = contentPadding,
     ) {
         if (state.untimedTasks.isNotEmpty()) {
             item(key = "today_tasks_header", contentType = "tasks_header") {
@@ -508,7 +498,7 @@ private fun BlockRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .then(
                 if (onOpen != null) {
                     Modifier.combinedClickable(onClick = onOpen, onLongClick = onLongPress)
@@ -710,7 +700,7 @@ private fun TaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen),
     ) {
         Box(
@@ -768,7 +758,7 @@ private fun DayTasksHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onToggle)
             .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
     ) {
@@ -802,7 +792,7 @@ private fun DayTaskRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
     ) {
@@ -857,9 +847,9 @@ private fun Diamond(filled: Boolean, color: Color) {
             .rotate(45f)
             .then(
                 if (filled) {
-                    Modifier.background(color, RoundedCornerShape(3.dp))
+                    Modifier.background(color, MaterialTheme.shapes.extraSmall)
                 } else {
-                    Modifier.border(2.dp, color, RoundedCornerShape(3.dp))
+                    Modifier.border(2.dp, color, MaterialTheme.shapes.extraSmall)
                 },
             ),
     )

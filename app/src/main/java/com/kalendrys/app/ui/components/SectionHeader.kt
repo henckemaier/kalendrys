@@ -2,6 +2,7 @@ package com.kalendrys.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,13 +20,15 @@ import com.kalendrys.app.ui.theme.Spacing
 /**
  * Título de seção de uma lista (ADR-0002, 4.2), com a contagem opcional ao lado: "Marcados 3".
  * Marcado como cabeçalho para o leitor de tela pular de seção em seção; título e contagem são lidos
- * juntos. A margem lateral é a das telas ([Spacing.l]); o chamador só posiciona.
+ * juntos. Por padrão a margem lateral é a das telas ([Spacing.l]); numa lista que já tem margem
+ * (Configurações), [contentPadding] troca o espaçamento sem duplicar a margem.
  */
 @Composable
 fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     count: Int? = null,
+    contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.l, vertical = Spacing.s),
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -33,7 +36,7 @@ fun SectionHeader(
         modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) { heading() }
-            .padding(horizontal = Spacing.l, vertical = Spacing.s),
+            .padding(contentPadding),
     ) {
         Text(
             text = title,

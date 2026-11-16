@@ -5,7 +5,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -108,5 +113,30 @@ class AppBarsTest {
         compose.onNodeWithText("Renomear").performClick()
 
         assertEquals(listOf(1, 1, 1), listOf(back, settings, rename))
+    }
+
+    @Test
+    fun `acao prominent aparece como botao de texto na barra, respeitando enabled`() {
+        var saves = 0
+        var enabled by mutableStateOf(false)
+        compose.setContent {
+            KalendrysTheme {
+                AppTopBar(
+                    title = "Editar tarefa",
+                    onBack = {},
+                    actions = listOf(TopBarAction("Salvar", enabled = enabled, prominent = true) { saves++ }),
+                    menu = listOf(TopBarAction("Excluir tarefa") {}),
+                )
+            }
+        }
+
+        // Na barra, escrito (não no menu), e desligado enquanto não pode salvar.
+        compose.onNodeWithText("Salvar").assertIsDisplayed().assertIsNotEnabled()
+        assertEquals(0, compose.onAllNodesWithText("Excluir tarefa").fetchSemanticsNodes().size)
+
+        enabled = true
+        compose.onNodeWithText("Salvar").assertIsEnabled().performClick()
+
+        assertEquals(1, saves)
     }
 }

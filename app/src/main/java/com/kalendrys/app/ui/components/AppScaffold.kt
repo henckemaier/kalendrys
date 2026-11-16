@@ -14,6 +14,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -72,15 +73,39 @@ fun AppScaffold(
 
 /**
  * Soma as margens da própria tela ao preenchimento do [AppScaffold] (insets, excedente da largura
- * máxima e folga do FAB), para usar como `contentPadding` da lista.
+ * máxima e folga do FAB), para usar como `contentPadding` da lista. [bottom] é o respiro de fim de
+ * lista das telas sem FAB (com FAB, a folga já vem do [AppScaffold]).
  */
 @Composable
-fun PaddingValues.plus(horizontal: Dp = 0.dp, top: Dp = 0.dp): PaddingValues {
+fun PaddingValues.plus(horizontal: Dp = 0.dp, top: Dp = 0.dp, bottom: Dp = 0.dp): PaddingValues {
     val direction = LocalLayoutDirection.current
     return PaddingValues(
         start = calculateStartPadding(direction) + horizontal,
         end = calculateEndPadding(direction) + horizontal,
         top = calculateTopPadding() + top,
+        bottom = calculateBottomPadding() + bottom,
+    )
+}
+
+/**
+ * O preenchimento do [AppScaffold] separado para telas com cabeçalho FIXO acima da lista (busca,
+ * filtros): o [top] vai para o cabeçalho, que não rola; as laterais ([start], [end], já com as
+ * margens da tela) servem ao cabeçalho e à lista; o fundo (insets e folga do FAB) só à lista.
+ */
+@Immutable
+class ScreenPadding(val top: Dp, val start: Dp, val end: Dp, val bottom: Dp) {
+    /** `contentPadding` da lista abaixo do cabeçalho: laterais e fundo, sem o topo. */
+    val list: PaddingValues get() = PaddingValues(start = start, end = end, bottom = bottom)
+}
+
+/** Separa o topo do resto do preenchimento, somando [horizontal] de margem da tela nas laterais. */
+@Composable
+fun PaddingValues.splitTop(horizontal: Dp = 0.dp): ScreenPadding {
+    val direction = LocalLayoutDirection.current
+    return ScreenPadding(
+        top = calculateTopPadding(),
+        start = calculateStartPadding(direction) + horizontal,
+        end = calculateEndPadding(direction) + horizontal,
         bottom = calculateBottomPadding(),
     )
 }
