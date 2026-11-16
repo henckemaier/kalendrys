@@ -266,4 +266,33 @@ class ReminderCatchUpTest {
         val result = plan(listOf(daily), millis(day, LocalTime.of(1, 0), ny), shifted + minutes(5), z = ny)
         assertEquals(late(1L to shifted), result.late)
     }
+
+    // --- Predicado compartilhado com o diagnóstico (D-71-1) ---
+
+    @Test
+    fun `isDiscarded - repetida no dia com conclusao e descartada, em outro dia nao`() {
+        val daily = task(1, wed, repeat = ReminderRepeat.DAILY)
+        val done = setOf(wed)
+
+        assertTrue(ReminderCatchUp.isDiscarded(daily, millis(wed), done, zone))
+        assertEquals(false, ReminderCatchUp.isDiscarded(daily, millis(wed.plusDays(1)), done, zone))
+        assertEquals(false, ReminderCatchUp.isDiscarded(daily, millis(wed), emptySet(), zone))
+    }
+
+    @Test
+    fun `isDiscarded - tarefa sem repeticao nunca e descartada pelo dia concluido`() {
+        val once = task(1, wed)
+
+        assertEquals(false, ReminderCatchUp.isDiscarded(once, millis(wed), setOf(wed), zone))
+    }
+
+    @Test
+    fun `isDiscarded - o dia da ocorrencia e o do fuso`() {
+        // 23:30 de quarta em São Paulo já é quinta em UTC.
+        val daily = task(1, wed, LocalTime.of(23, 30), ReminderRepeat.DAILY)
+        val fired = millis(wed, LocalTime.of(23, 30))
+
+        assertTrue(ReminderCatchUp.isDiscarded(daily, fired, setOf(wed), zone))
+        assertEquals(false, ReminderCatchUp.isDiscarded(daily, fired, setOf(wed), ZoneId.of("UTC")))
+    }
 }
