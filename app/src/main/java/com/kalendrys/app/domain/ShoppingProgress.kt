@@ -16,8 +16,19 @@ data class ShoppingProgress(val picked: Int, val total: Int) {
     /** "3/8". */
     val label: String get() = "$picked/$total"
 
+    /**
+     * Quantidade para escolher o plural de "marcado(s)" (R.plurals.list_card_progress e
+     * list_progress_description): concorda com o TOTAL de itens ("1 de 1 marcado", "0 de 1 marcado",
+     * "1 de 3 marcados"). A regra CLDR do pt (pt-BR) põe 0 e 1 em "one", mas o total 0 nunca aparece
+     * (lista vazia esconde o progresso) e, se aparecesse, levaria plural; então só o total 1 é singular.
+     */
+    val pluralQuantity: Int get() = if (total == 1) 1 else PLURAL_OTHER
+
     companion object {
         val EMPTY = ShoppingProgress(picked = 0, total = 0)
+
+        /** Qualquer número que a regra do pt põe em "other". */
+        private const val PLURAL_OTHER = 2
 
         /**
          * Título com o progresso da lista ao lado, no formato único do app (ADR-0001, P8):
