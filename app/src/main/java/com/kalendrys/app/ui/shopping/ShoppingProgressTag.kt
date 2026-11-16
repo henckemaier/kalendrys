@@ -43,6 +43,8 @@ fun ShoppingProgressTag(
             style = MaterialTheme.typography.labelMedium,
             color = color,
             maxLines = 1,
+            // M-1: a etiqueta nunca quebra nem encolhe; na linha, quem cede é o texto vizinho.
+            softWrap = false,
         )
     }
 }
