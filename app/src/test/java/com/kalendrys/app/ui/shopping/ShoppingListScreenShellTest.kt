@@ -59,6 +59,7 @@ class ShoppingListScreenShellTest {
     private lateinit var repository: ShoppingRepository
     private var backs = 0
     private var listId = 0L
+    private lateinit var viewModel: ShoppingListViewModel
 
     @Before
     fun setup() {
@@ -69,7 +70,7 @@ class ShoppingListScreenShellTest {
         listId = runBlocking {
             repository.createList("Mercado").also { repository.add(it, "Leite", quantity = 1, priceCents = null) }
         }
-        val viewModel = testDb.track(
+        viewModel = testDb.track(
             ShoppingListViewModel(
                 SavedStateHandle(mapOf(SHOPPING_LIST_ID_ARG to listId)),
                 repository,
@@ -182,6 +183,49 @@ class ShoppingListScreenShellTest {
             "Mostrar marcados",
             compose.onNodeWithText("Marcados").fetchSemanticsNode().config[SemanticsActions.OnClick].label,
         )
+    }
+
+    /**
+     * C3/R-1 com a dica dos gestos já dispensada: o índice do item novo conta só o progresso antes dos
+     * não marcados (sem a dica). Errar essa conta mira o item errado ou um índice que não existe.
+     */
+    @Test
+    fun `com a dica dispensada a adicao rapida ainda deixa cada item novo inteiro acima do campo`() {
+        compose.onNodeWithText("Dica").assertIsDisplayed()
+        viewModel.dismissGestureHint()
+        waitDraining { compose.onAllNodesWithText("Dica").fetchSemanticsNodes().isEmpty() }
+
+        val field = compose.onNode(hasSetTextAction())
+        NEW_ITEMS.forEach { name ->
+            field.performTextInput(name)
+            field.performImeAction()
+            waitDraining { itemNames().contains(name) }
+            waitDraining { fullyAboveField(name) }
+        }
+        assertEquals(listOf("Leite") + NEW_ITEMS, itemNames())
+    }
+
+    /**
+     * C3: a rolagem até o item novo é só da adição rápida. Itens que chegam do banco (abrir a lista já
+     * cheia) e marcar/desmarcar mudam a contagem dos não marcados, mas não podem rolar a lista.
+     */
+    @Test
+    fun `itens que chegam do banco e desmarcar um item nao rolam a lista`() {
+        runBlocking { (1..12).forEach { repository.add(listId, "Item $it", quantity = 1, priceCents = null) } }
+        waitDraining { viewModel.uiState.value.toPick.size == 13 }
+        compose.waitForIdle()
+        val hintTop = compose.onNodeWithText("Dica").assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
+
+        val last = runBlocking { repository.observeItems(listId).first().first { it.name == "Item 12" } }
+        runBlocking { repository.setPicked(last, true) }
+        waitDraining { viewModel.uiState.value.toPick.size == 12 }
+        runBlocking { repository.setPicked(last.copy(picked = true), false) }
+        waitDraining { viewModel.uiState.value.toPick.size == 13 }
+        compose.waitForIdle()
+
+        // Continua no topo: a dica no mesmo lugar e o Leite, primeiro da lista, à vista.
+        assertEquals(hintTop, compose.onNodeWithText("Dica").assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top)
+        compose.onNodeWithText("Leite").assertIsDisplayed()
     }
 
     /** O item com este nome está na tela e termina acima do campo de adição rápida. */
