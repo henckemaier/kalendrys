@@ -1,12 +1,19 @@
 package com.kalendrys.app.ui.components
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.Assert.assertEquals
@@ -33,6 +40,49 @@ class AppBarsTest {
         compose.onNodeWithContentDescription("Nova lista").assertIsDisplayed().performClick()
 
         assertEquals(1, clicks)
+    }
+
+    @Test
+    fun `FAB aberto e lido uma vez so, pela descricao (o ExtendedFAB tira o texto da semantica)`() {
+        compose.setContent {
+            KalendrysTheme { CollapsingFab(text = "Nova lista", expanded = true, onClick = {}) }
+        }
+
+        compose.onNodeWithContentDescription("Nova lista").assertExists()
+        assertEquals(0, compose.onAllNodesWithText("Nova lista").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `em tela larga o excedente de 640dp vai para o preenchimento lateral`() {
+        var padding: PaddingValues? = null
+        compose.setContent {
+            KalendrysTheme {
+                Box(Modifier.requiredSize(width = 1000.dp, height = 400.dp)) {
+                    AppScaffold { padding = it }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        // (1000 - 640) / 2 = 180dp de cada lado; sem insets de sistema no teste.
+        assertEquals(180.dp, checkNotNull(padding).calculateLeftPadding(LayoutDirection.Ltr))
+        assertEquals(180.dp, checkNotNull(padding).calculateRightPadding(LayoutDirection.Ltr))
+    }
+
+    @Test
+    fun `em telefone nao ha excedente`() {
+        var padding: PaddingValues? = null
+        compose.setContent {
+            KalendrysTheme {
+                Box(Modifier.requiredSize(width = 400.dp, height = 400.dp)) {
+                    AppScaffold(hasFab = true) { padding = it }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertEquals(0.dp, checkNotNull(padding).calculateLeftPadding(LayoutDirection.Ltr))
+        assertEquals(FabClearance, checkNotNull(padding).calculateBottomPadding())
     }
 
     @Test

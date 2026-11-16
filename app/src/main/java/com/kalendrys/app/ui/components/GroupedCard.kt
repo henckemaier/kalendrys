@@ -17,15 +17,15 @@ private val GroupGap = 2.dp
 
 /**
  * Cartão de um grupo de linhas (ADR-0002, 4.2), evolução do [groupedItemShape]: cantos grandes nas
- * pontas do grupo e pequenos entre os itens, no fundo `surfaceContainer`. Com [onClick], o cartão
- * inteiro é o alvo do toque. O conteúdo (em geral uma [ListRow]) decide o próprio preenchimento.
+ * pontas do grupo e pequenos entre os itens, no fundo `surfaceContainer`. Sem toque próprio: o
+ * clique e o rótulo para o leitor de tela moram no conteúdo (em geral uma [ListRow] com onClick),
+ * para cada cartão ser um nó focável só (parecer do Esquadro sobre a E2).
  */
 @Composable
 fun GroupedCard(
     index: Int,
     count: Int,
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val shape = groupedItemShape(index, count)
@@ -33,11 +33,7 @@ fun GroupedCard(
     val cardModifier = modifier
         .fillMaxWidth()
         .padding(bottom = if (index < count - 1) GroupGap else 0.dp)
-    if (onClick != null) {
-        Surface(onClick = onClick, shape = shape, color = color, modifier = cardModifier, content = content)
-    } else {
-        Surface(shape = shape, color = color, modifier = cardModifier, content = content)
-    }
+    Surface(shape = shape, color = color, modifier = cardModifier, content = content)
 }
 
 @KalendrysPreviews

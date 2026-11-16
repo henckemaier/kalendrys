@@ -25,7 +25,7 @@ import com.kalendrys.app.ui.theme.Spacing
 /**
  * FAB que recolhe para só o ícone (ADR-0002, 4.2 e 12.4). Sem estado: [expanded] vem da tela, que
  * o deriva da própria rolagem (por exemplo com [rememberFabExpanded]); o componente não conhece a
- * lista. O rótulo [text] é a descrição para o leitor de tela também recolhido.
+ * lista. O rótulo [text] é lido pelo leitor de tela aberto ou recolhido, uma vez só.
  */
 @Composable
 fun CollapsingFab(
@@ -40,7 +40,8 @@ fun CollapsingFab(
         expanded = expanded,
         icon = { Icon(icon, contentDescription = null) },
         text = { Text(text) },
-        // O ExtendedFAB tira o texto da semântica quando recolhe; o rótulo fica no próprio botão.
+        // O ExtendedFAB tira o texto da semântica, aberto ou recolhido (conferido no AppBarsTest): o
+        // rótulo fica no próprio botão e o leitor de tela o lê uma vez só nos dois estados.
         modifier = modifier.semantics { contentDescription = text },
     )
 }

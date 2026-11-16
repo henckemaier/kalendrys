@@ -23,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.ui.navigation.KalendrysNavHost
 import com.kalendrys.app.ui.theme.Appearance
+import com.kalendrys.app.ui.theme.FirstFrameHold
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -92,11 +93,11 @@ class MainActivity : ComponentActivity() {
      */
     private fun holdFirstFrameUntil(isReady: () -> Boolean) {
         val content = findViewById<View>(android.R.id.content)
-        val deadline = SystemClock.uptimeMillis() + FIRST_FRAME_TIMEOUT_MS
+        val hold = FirstFrameHold(isReady, now = SystemClock::uptimeMillis, timeoutMs = FIRST_FRAME_TIMEOUT_MS)
         content.viewTreeObserver.addOnPreDrawListener(
             object : ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
-                    if (!isReady() && SystemClock.uptimeMillis() < deadline) return false
+                    if (!hold.canDraw()) return false
                     content.viewTreeObserver.removeOnPreDrawListener(this)
                     return true
                 }

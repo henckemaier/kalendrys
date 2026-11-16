@@ -34,12 +34,14 @@ val ListRowMinHeight = 48.dp
  * - A semântica é mesclada: o leitor de tela lê título, apoio e o que houver no início/fim como um
  *   item só. Ações extras (ex.: as do [SwipeRow]) entram pelo [modifier], no mesmo nó.
  * - Altura mínima de [ListRowMinHeight]; os textos quebram linha em vez de cortar (fonte 2.0).
+ * - [below] fica abaixo do apoio, dentro do mesmo nó (ex.: a [ProgressLine] de um cartão de lista).
  */
 @Composable
 fun ListRow(
     title: String,
     modifier: Modifier = Modifier,
     supporting: String? = null,
+    below: (@Composable () -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
@@ -76,6 +78,7 @@ fun ListRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            below?.invoke()
         }
         if (trailing != null) {
             Box(contentAlignment = Alignment.Center) { trailing() }

@@ -1,10 +1,6 @@
 package com.kalendrys.app.ui.shopping
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -26,10 +22,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
@@ -44,6 +38,7 @@ import com.kalendrys.app.ui.components.GroupedCard
 import com.kalendrys.app.ui.components.ListRow
 import com.kalendrys.app.ui.components.ProgressLine
 import com.kalendrys.app.ui.components.TopBarAction
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.shopping.ShoppingListsViewModel.Event
 import com.kalendrys.app.ui.theme.Spacing
@@ -159,20 +154,9 @@ fun ShoppingListsScreen(
     }
 }
 
-/** Soma margens próprias da tela ao preenchimento do [AppScaffold] (insets e folga do FAB). */
+/** `internal` para o teste do nó único por cartão (ShoppingListRowTest). */
 @Composable
-private fun PaddingValues.plus(horizontal: Dp, top: Dp): PaddingValues {
-    val direction = LocalLayoutDirection.current
-    return PaddingValues(
-        start = calculateStartPadding(direction) + horizontal,
-        end = calculateEndPadding(direction) + horizontal,
-        top = calculateTopPadding() + top,
-        bottom = calculateBottomPadding(),
-    )
-}
-
-@Composable
-private fun ShoppingListRow(
+internal fun ShoppingListRow(
     summary: ShoppingListSummary,
     index: Int,
     count: Int,
@@ -180,19 +164,17 @@ private fun ShoppingListRow(
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    GroupedCard(index = index, count = count, onClick = onOpen) {
-        Column {
-            ListRow(
-                title = summary.name,
-                supporting = rowSupporting(summary),
-                trailing = { RowMenu(name = summary.name, onRename = onRename, onDelete = onDelete) },
-            )
-            // Lista vazia: a ProgressLine não desenha nada (regra única em domain/ShoppingProgress).
-            ProgressLine(
-                progress = summary.progress,
-                modifier = Modifier.padding(start = Spacing.l, end = Spacing.l, bottom = Spacing.m),
-            )
-        }
+    // Um nó focável por cartão (além do menu): o toque e o rótulo moram na ListRow, e o progresso
+    // entra no mesmo nó. Lista vazia: a ProgressLine não desenha nada (regra única em domain).
+    GroupedCard(index = index, count = count) {
+        ListRow(
+            title = summary.name,
+            supporting = rowSupporting(summary),
+            below = { ProgressLine(progress = summary.progress, modifier = Modifier.padding(top = Spacing.xs)) },
+            trailing = { RowMenu(name = summary.name, onRename = onRename, onDelete = onDelete) },
+            onClick = onOpen,
+            onClickLabel = stringResource(R.string.shopping_list_open),
+        )
     }
 }
 
