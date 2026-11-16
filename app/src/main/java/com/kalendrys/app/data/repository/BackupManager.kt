@@ -16,6 +16,7 @@ import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
@@ -210,6 +211,11 @@ class BackupManager(
         root.optJSONObject("settings")?.let { s ->
             settings.setSummaryEnabled(s.optBoolean("summaryEnabled", true))
             settings.setSummaryTime(AppSettings.timeFromMinuteOfDay(s.optInt("summaryMinuteOfDay", DEFAULT_SUMMARY_MINUTE)))
+            // Aparência (ADR-0002, 12.3): campos opcionais no mesmo schema 6. Ausente, nulo ou
+            // inválido mantém o valor atual do aparelho (backup antigo não troca o tema de ninguém).
+            ThemeMode.fromNameOrNull(s.opt("themeMode") as? String)
+                ?.let { settings.setThemeMode(it) }
+            (s.opt("dynamicColor") as? Boolean)?.let { settings.setDynamicColor(it) }
         }
 
         afterRestore()
@@ -481,6 +487,8 @@ private fun JSONObject.toRoutineCompletion() = RoutineCompletion(
 private fun AppSettings.toJson() = JSONObject().apply {
     put("summaryEnabled", summaryEnabled)
     put("summaryMinuteOfDay", AppSettings.minuteOfDay(summaryTime))
+    put("themeMode", themeMode.name)
+    put("dynamicColor", dynamicColor)
 }
 
 // --- Utilitários de JSON ---------------------------------------------------------------------

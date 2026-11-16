@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Atalhos do app (toque longo no ícone; ADR-0002, 12.6). Rótulo curto até ~10 caracteres,
+     longo até ~25, como pede o sistema. Arquivo próprio para não disputar o strings.xml. -->
+<resources>
+    <string name="shortcut_new_task_short">Nova tarefa</string>
+    <string name="shortcut_new_task_long">Nova tarefa</string>
+    <string name="shortcut_lists_short">Listas</string>
+    <string name="shortcut_lists_long">Listas de compras</string>
+</resources>
