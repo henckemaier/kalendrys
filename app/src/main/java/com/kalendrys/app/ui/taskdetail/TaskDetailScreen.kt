@@ -34,9 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +66,7 @@ import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
 import com.kalendrys.app.ui.components.plus
+import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingListCard
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
@@ -110,12 +109,7 @@ fun TaskDetailScreen(
             when (event) {
                 Event.Saved -> snackbarHostState.showSnackbar(savedMessage)
                 is Event.Completed -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = completedMessage,
-                        actionLabel = undoLabel,
-                        duration = SnackbarDuration.Short,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) viewModel.undoCompletion(event.logId)
+                    if (snackbarHostState.showUndo(completedMessage, undoLabel)) viewModel.undoCompletion(event.logId)
                 }
                 Event.Deleted -> currentOnBack()
             }

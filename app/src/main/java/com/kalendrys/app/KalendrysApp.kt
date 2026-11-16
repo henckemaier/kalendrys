@@ -119,6 +119,9 @@ class KalendrysApp : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(settingsDataStore) }
 
+    /** Rascunho único do painel de nova tarefa (Tarefas e Calendário), só em memória (v1.7.1). */
+    val newTaskDraftStore: NewTaskDraftStore by lazy { NewTaskDraftStore() }
+
     /**
      * Backup/restauro completo. Depois de restaurar (substitui tudo), reagenda os alarmes e
      * atualiza os widgets pelos caminhos idempotentes de sempre — senão o aparelho novo fica

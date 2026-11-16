@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,6 +92,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -158,16 +160,28 @@ fun CalendarScreen(
     }
 
     newTaskEpochDay?.let { epochDay ->
+        // Rascunho único (o mesmo da aba Tarefas): a data vira o dia tocado, a não ser que o usuário
+        // já a tenha escolhido no rascunho.
+        LaunchedEffect(epochDay) { viewModel.openNewTask(LocalDate.ofEpochDay(epochDay)) }
         val lists by viewModel.lists.collectAsStateWithLifecycle()
-        NewTaskSheet(
-            initialDate = LocalDate.ofEpochDay(epochDay),
-            onSave = { title, notes, timing, location, list ->
-                viewModel.addTask(title, notes, timing, location, list)
-                newTaskEpochDay = null
-            },
-            onDismiss = { newTaskEpochDay = null },
-            lists = lists,
-        )
+        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
+        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+        draft?.let {
+            NewTaskSheet(
+                draft = it,
+                onChange = viewModel::updateNewTask,
+                onSave = {
+                    viewModel.saveNewTask()
+                    newTaskEpochDay = null
+                },
+                onCancel = {
+                    viewModel.cancelNewTask()
+                    newTaskEpochDay = null
+                },
+                onDismiss = { newTaskEpochDay = null },
+                lists = lists,
+            )
+        }
     }
 }
 

@@ -264,11 +264,18 @@ class TaskRepository(
      * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
      */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
+        scheduler.rescheduleAll(tasksToRemind(now))
+    }
+
+    /**
+     * As tarefas cujo lembrete o app mantém agendado em [now]: com lembrete pendente e não
+     * encerradas. Um conjunto só para o [rescheduleReminders] e para o diagnóstico de alarmes.
+     * Só leitura.
+     */
+    suspend fun tasksToRemind(now: Long = System.currentTimeMillis()): List<Task> {
         val zone = ZoneId.systemDefault()
         val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
-        scheduler.rescheduleAll(
-            taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) },
-        )
+        return taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) }
     }
 
     /**
