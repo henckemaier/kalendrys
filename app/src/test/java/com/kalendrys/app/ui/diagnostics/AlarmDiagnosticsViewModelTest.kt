@@ -8,13 +8,17 @@ import android.os.Looper
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.AppAlarmKind
 import com.kalendrys.app.domain.NextAppAlarm
+import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarmReceiver
 import com.kalendrys.app.reminder.RoutineAlarms
@@ -198,6 +202,73 @@ class AlarmDiagnosticsViewModelTest {
         runBlocking { testDb.db.taskDao().insert(Task(title = "Ligar", dueDate = due.toEpochDay(), reminderAt = reminderAt)) }
 
         assertEquals(NextAppAlarm(reminderAt, AppAlarmKind.TASK), nextAlarm(routines = routines))
+    }
+
+    // Casos de borda (Lince, v1.7.1 E3): o diagnóstico usa os mesmos filtros dos agendadores.
+
+    private fun at(day: Int, hour: Int, minute: Int = 0) =
+        LocalDateTime.of(2026, 11, day, hour, minute).atZone(zone).toInstant().toEpochMilli()
+
+    @Test
+    fun `tarefa sem repeticao ja concluida ou com lembrete que ja passou nao conta`() {
+        disableSummary()
+        val today = LocalDate.of(2026, 11, 16).toEpochDay()
+        runBlocking {
+            val dao = testDb.db.taskDao()
+            // Lembrete daqui a 2h, mas concluída hoje cedo: encerrada, o agendador não a reagenda.
+            val done = dao.insert(Task(title = "Concluída", dueDate = today, reminderAt = at(16, 10)))
+            testDb.db.completionLogDao().insert(CompletionLog(taskId = done, completedAt = at(16, 7)))
+            // Lembrete único de 1h atrás: já tocou.
+            dao.insert(Task(title = "Passada", dueDate = today, reminderAt = at(16, 7)))
+        }
+
+        assertEquals(null, nextAlarm())
+    }
+
+    @Test
+    fun `tarefa diaria com ancora no passado mostra a proxima ocorrencia, estritamente depois de agora`() {
+        disableSummary()
+        // Âncora 10/11 às 08:00 e agora é 16/11 às 08:00 em ponto: a de hoje já é "agora", vale a de amanhã.
+        runBlocking {
+            testDb.db.taskDao().insert(
+                Task(
+                    title = "Remédio",
+                    dueDate = LocalDate.of(2026, 11, 10).toEpochDay(),
+                    reminderAt = at(10, 8),
+                    repeat = ReminderRepeat.DAILY,
+                ),
+            )
+        }
+
+        assertEquals(NextAppAlarm(at(17, 8), AppAlarmKind.TASK), nextAlarm())
+    }
+
+    @Test
+    fun `rotina pausada nao conta e o dia pulado passa o aviso para a proxima ocorrencia`() {
+        disableSummary()
+        val routines = routineRepository()
+        runBlocking {
+            routines.add(Routine(title = "Pausada", startMinute = 9 * 60, remind = true, createdAt = 0, pausedAt = 1))
+            val treino = routines.add(Routine(title = "Treino", startMinute = 10 * 60, remind = true, createdAt = 0))
+            testDb.db.routineOverrideDao().insert(
+                RoutineOverride(
+                    routineId = treino.id,
+                    epochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
+                    type = RoutineOverrideType.SKIP,
+                ),
+            )
+        }
+
+        assertEquals(NextAppAlarm(at(17, 10), AppAlarmKind.ROUTINE), nextAlarm(routines = routines))
+    }
+
+    @Test
+    fun `rotina que comeca exatamente agora fica para o dia seguinte`() {
+        disableSummary()
+        val routines = routineRepository()
+        runBlocking { routines.add(Routine(title = "Café", startMinute = 8 * 60, remind = true, createdAt = 0)) }
+
+        assertEquals(NextAppAlarm(at(17, 8), AppAlarmKind.ROUTINE), nextAlarm(routines = routines))
     }
 
     private companion object {

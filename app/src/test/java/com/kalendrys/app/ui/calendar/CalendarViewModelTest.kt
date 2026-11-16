@@ -142,6 +142,35 @@ class CalendarViewModelTest {
         assertNull(store.draft.value)
     }
 
+    /**
+     * Rascunho único (E1): o Salvar descarta antes de gravar, então um segundo toque (toque duplo,
+     * ou o painel ainda na tela) não grava outra tarefa nem cria a lista nova de novo.
+     */
+    @Test
+    fun `salvar duas vezes seguidas grava uma tarefa so e cria a lista nova uma vez`() = runTest {
+        val store = NewTaskDraftStore()
+        val calendar = testDb.track(CalendarViewModel(taskRepository, routineRepository, shoppingRepository, store))
+        calendar.openNewTask(day.date)
+        calendar.updateNewTask { it.copy(title = "Feira", list = NewTaskList.New("Feira de domingo")) }
+
+        calendar.saveNewTask()
+        // O primeiro Salvar já descartou: o segundo não tem o que gravar.
+        assertNull(store.draft.value)
+        calendar.saveNewTask()
+        // Marcador pelo MESMO caminho (com lista nova), gravado depois: quando ele e a lista dele
+        // chegam, um segundo "Feira" lançado antes também já teria chegado.
+        calendar.openNewTask(day.date)
+        calendar.updateNewTask { it.copy(title = "Marcador", list = NewTaskList.New("Marca")) }
+        calendar.saveNewTask()
+
+        val tasks = taskRepository.tasks.first { list -> list.any { it.title == "Feira" } && list.any { it.title == "Marcador" } }
+        val lists = shoppingRepository.observeLists().first { list -> list.any { it.name == "Marca" } }
+        assertEquals(1, tasks.count { it.title == "Feira" })
+        assertEquals(setOf("Feira de domingo", "Marca"), lists.map { it.name }.toSet())
+        assertEquals(2, lists.size)
+        assertNull(store.draft.value)
+    }
+
     @Test
     fun `cancelar descarta o rascunho sem gravar`() = runTest {
         val store = NewTaskDraftStore()
