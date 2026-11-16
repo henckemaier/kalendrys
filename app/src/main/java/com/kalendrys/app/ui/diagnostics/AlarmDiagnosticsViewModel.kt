@@ -13,7 +13,6 @@ import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.DailySummarySchedule
 import com.kalendrys.app.domain.NextAppAlarm
 import com.kalendrys.app.domain.NextAppAlarms
-import com.kalendrys.app.domain.TaskSchedule
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -55,7 +54,7 @@ class AlarmDiagnosticsViewModel(
 
     private suspend fun compute(now: Long): NextAppAlarm? {
         val zone = zone()
-        val task = tasks.tasksToRemind(now).mapNotNull { TaskSchedule.nextReminderMillis(it, now, zone) }.minOrNull()
+        val task = tasks.nextReminderToDeliver(now, zone)
         val routine = routines.nextRemindingStart(now)
         val current = settings.settings.first()
         val summary = DailySummarySchedule.nextAt(
