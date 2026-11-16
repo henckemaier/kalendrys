@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -29,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -49,6 +53,7 @@ import com.kalendrys.app.ui.components.bottomBarInsets
 import com.kalendrys.app.ui.shopping.ShoppingListViewModel.Event
 import com.kalendrys.app.ui.theme.Spacing
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 
 /** Tela única de uso da lista (ADR-0001, fatia 2): marcar, adicionar, editar, remover, total. */
 @Composable
@@ -69,16 +74,16 @@ fun ShoppingListScreen(
     // dos não marcados. Só quando a inclusão veio do campo (não ao abrir a tela nem ao desmarcar).
     var scrollToNewItem by remember { mutableStateOf(false) }
     LaunchedEffect(state.toPick.size) {
-        if (scrollToNewItem && state.toPick.isNotEmpty()) {
-            // Itens antes dos não marcados: o progresso e, se aparece, a dica.
-            val before = 1 + if (showGestureHint) 1 else 0
-            val index = before + state.toPick.lastIndex
-            val visible = listState.layoutInfo.visibleItemsInfo.any { info ->
-                info.index == index && info.offset + info.size <= listState.layoutInfo.viewportEndOffset
-            }
-            if (!visible) listState.animateScrollToItem(index)
-            scrollToNewItem = false
-        }
+        if (!scrollToNewItem || state.toPick.isEmpty()) return@LaunchedEffect
+        scrollToNewItem = false
+        // Itens antes dos não marcados: o progresso e, se aparece, a dica.
+        val before = 1 + if (showGestureHint) 1 else 0
+        val index = before + state.toPick.lastIndex
+        // R-1 da Coruja: o efeito roda quando a contagem muda, ANTES do item novo ser medido; com o
+        // layout anterior a rolagem ia até o item de antes (um atrasado) ou não rolava. Espera o
+        // item novo entrar no layout e só então o traz inteiro para cima do campo.
+        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > index }
+        listState.bringFullyIntoView(index)
     }
     // Só o id do item em edição: o item em si é lido do estado (fresco após rotação).
     var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -292,4 +297,26 @@ private fun PickedHeader(count: Int, expanded: Boolean, onToggle: () -> Unit, mo
         },
         modifier = modifier.heightIn(min = 48.dp),
     )
+}
+
+/**
+ * Traz o item [index] INTEIRO para a área visível, com a borda de baixo logo acima do fim útil da
+ * lista (descontado o preenchimento inferior, onde ficam o campo de adição rápida e o teclado). Se
+ * já está inteiro, não rola. Se ainda nem foi medido (fora da tela), pula até ele e o assenta no
+ * fim, para a pessoa continuar vendo os itens de antes.
+ */
+private suspend fun LazyListState.bringFullyIntoView(index: Int) {
+    fun item() = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    fun usableEnd() = layoutInfo.viewportEndOffset - layoutInfo.afterContentPadding
+    val measured = item()
+    if (measured == null) {
+        scrollToItem(index)
+        val atTop = item() ?: return
+        // No topo da área; desce o conteúdo para o item terminar no fim útil (rolagem para trás).
+        val back = usableEnd() - (atTop.offset + atTop.size)
+        if (back > 0) scrollBy(-back.toFloat())
+        return
+    }
+    val overflow = measured.offset + measured.size - usableEnd()
+    if (overflow > 0) animateScrollBy(overflow.toFloat())
 }

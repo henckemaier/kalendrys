@@ -18,7 +18,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
@@ -69,14 +68,15 @@ fun AppScaffold(
             val end = innerPadding.calculateEndPadding(direction)
             // Largura que sobra além do máximo, dividida entre as laterais (0 em telefone retrato).
             val excess = ((maxWidth - start - end - ContentMaxWidth) / 2).coerceAtLeast(0.dp)
-            val contentPadding = remember(innerPadding, hasFab, direction, excess) {
-                PaddingValues(
-                    start = start + excess,
-                    end = end + excess,
-                    top = innerPadding.calculateTopPadding(),
-                    bottom = innerPadding.calculateBottomPadding() + if (hasFab) FabClearance else 0.dp,
-                )
-            }
+            // Sem remember: o Scaffold reaproveita o MESMO objeto innerPadding e só troca os valores (ex.:
+            // quando o rodapé aparece depois de carregar, ou os insets mudam ao girar); uma cópia
+            // guardada com ele como chave ficava velha (R-1 da Coruja: a lista sem o fundo do rodapé).
+            val contentPadding = PaddingValues(
+                start = start + excess,
+                end = end + excess,
+                top = innerPadding.calculateTopPadding(),
+                bottom = innerPadding.calculateBottomPadding() + if (hasFab) FabClearance else 0.dp,
+            )
             content(contentPadding)
         }
     }
