@@ -40,16 +40,15 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.kalendrys.app.AppLinks
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.R
-import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TodayOverview
-import com.kalendrys.app.ui.routines.RoutinePalette
+import com.kalendrys.app.ui.components.weekdayDayMonthLabel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.first
 
 /** "Hoje": tarefas pendentes e blocos de rotina do dia, com conclusão direto da tela inicial. */
 class TasksWidget : GlanceAppWidget() {
@@ -57,11 +56,14 @@ class TasksWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = (context.applicationContext as KalendrysApp).todayRepository
         val initial = today.current()
+        val schemes = KalendrysWidgets.schemes(context)
+        val initialScheme = schemes.first()
         provideContent {
             // Observado dentro da composição: com a sessão do widget aberta (após um toque),
             // um update() só recompõe — dados lidos fora daqui ficariam congelados.
             val overview by remember { today.observe() }.collectAsState(initial)
-            GlanceTheme(colors = KalendrysWidgets.colors) {
+            val scheme by remember { schemes }.collectAsState(initialScheme)
+            KalendrysWidgetTheme(scheme) {
                 TasksContent(overview)
             }
         }
@@ -95,19 +97,18 @@ private val TaskIdKey = ActionParameters.Key<Long>("taskId")
 private val RoutineIdKey = ActionParameters.Key<Long>("routineId")
 private val EpochDayKey = ActionParameters.Key<Long>("epochDay")
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val TITLE_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", AppLocale.LOCALE)
 
 @Composable
 private fun TasksContent(overview: TodayOverview) {
     val context = LocalContext.current
     val routines = overview.pendingRoutines
     Scaffold(
-        backgroundColor = KalendrysWidgets.background,
+        backgroundColor = widgetPalette.background,
         titleBar = {
             TitleBar(
                 startIcon = ImageProvider(R.drawable.ic_widget_check_circle),
                 iconColor = GlanceTheme.colors.primary,
-                title = context.getString(R.string.widget_tasks_title, overview.date.format(TITLE_DATE)),
+                title = context.getString(R.string.widget_tasks_title, context.resources.weekdayDayMonthLabel(overview.date)),
                 actions = {
                     // Sem fundo: um círculo preenchido encostava no canto arredondado do widget.
                     CircleIconButton(
@@ -195,7 +196,7 @@ private fun TaskRow(task: TodayOverview.PendingTask) {
 private fun RoutineRow(block: TodayOverview.RoutineBlock, date: LocalDate) {
     val context = LocalContext.current
     // O Glance não desenha os ícones vetoriais da rotina: a cor dela vai no círculo de conclusão.
-    val accent = ColorProvider(RoutinePalette.dark(block.color).accent)
+    val accent = widgetPalette.routineAccent(block.color)
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
