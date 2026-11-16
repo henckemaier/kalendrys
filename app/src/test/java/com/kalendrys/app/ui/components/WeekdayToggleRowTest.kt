@@ -107,4 +107,20 @@ class WeekdayToggleRowTest {
         val widths = compose.weekdayCells().map { it.size.width }
         assertTrue("larguras $widths", widths.max() - widths.min() <= 1)
     }
+
+    @Test
+    fun `quando nao cabem sete as linhas sao repartidas por igual`() {
+        // A conta: o mínimo de linhas, com no máximo um dia de diferença entre elas.
+        assertEquals(listOf(7), weekdayRowSizes(7))
+        listOf(6, 5, 4).forEach { assertEquals("cabem $it", listOf(4, 3), weekdayRowSizes(it)) }
+        assertEquals(listOf(3, 2, 2), weekdayRowSizes(3))
+        assertEquals(listOf(2, 2, 2, 1), weekdayRowSizes(2))
+        assertEquals(List(7) { 1 }, weekdayRowSizes(1))
+
+        // Na tela, em 360dp e fonte 2.0: nenhuma linha com um dia sozinho embaixo de uma cheia.
+        render(fontScale = 2f)
+        val perLine = compose.weekdayCells().groupBy { it.positionInRoot.y }.values.map { it.size }
+        assertTrue("dias por linha: $perLine", perLine.size > 1 && perLine.max() - perLine.min() <= 1)
+        compose.assertWeekdayCellsFit(pills, compose.density.density)
+    }
 }

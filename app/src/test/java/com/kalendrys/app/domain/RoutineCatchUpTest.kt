@@ -177,4 +177,11 @@ class RoutineCatchUpTest {
 
         assertEquals(listOf(first, second), due.single().routines)
     }
+
+    @Test
+    fun `isDiscarded - sem aviso ou concluida no dia e descartada`() {
+        assertTrue(RoutineCatchUp.isDiscarded(block(1, 9 * 60, remind = false), emptySet()))
+        assertTrue(RoutineCatchUp.isDiscarded(block(1, 9 * 60), setOf(1L)))
+        assertEquals(false, RoutineCatchUp.isDiscarded(block(1, 9 * 60), setOf(2L)))
+    }
 }
