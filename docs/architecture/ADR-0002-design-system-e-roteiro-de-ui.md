@@ -859,7 +859,11 @@ dependência nova e sem mudança no manifesto. Parte da 12.8. As decisões D1 a 
 - Para a v1.8.0, na reforma do painel: as operações do rascunho e a observação das listas estão
   repetidas nos dois ViewModels. Não foram para o `KalendrysApp` para não pôr uma leitura do
   banco na abertura do app.
-- Título cortado em paisagem: corrigido dentro do painel, sem trocar o tipo de painel.
+- Título do painel: fica fixo, fora da área que rola, **só em janela de altura normal**. Em
+  altura compacta (paisagem de celular, o mesmo corte do FAB recolhido) o título rola junto com
+  os campos. Motivo: com o título fixo e o teclado aberto em paisagem sobrava tão pouca altura
+  que o Salvar ficava inalcançável (matriz da v1.7.1). **Limite aceito:** em paisagem com
+  teclado o título pode sair de cena ao rolar; fica para a reforma do painel na v1.8.0.
 
 ### 13.2 Seletor de dias da semana
 
@@ -895,6 +899,14 @@ célula tem cerca de 44dp de largura. Com fonte grande a linha continua quebrand
 - **Limite aceito: resumo em dia vazio.** O resumo diário não notifica quando não há tarefa
   pendente nem rotina adiante; num dia assim o diagnóstico pode anunciar um resumo previsto que
   não aparece.
+- **O diagnóstico mostra o próximo aviso que será ENTREGUE** (decisão na matriz, D-71-1). O
+  agendador marca o alarme da ocorrência mesmo quando ela já foi concluída no dia, e a entrega
+  a descarta; o diagnóstico pula essas ocorrências, de tarefa repetida e de rotina, usando o
+  **mesmo predicado** que a entrega usa, extraído para uma função pura compartilhada. Aqui o
+  diagnóstico pode divergir do instante que está no sistema, de propósito.
+- Para a v1.8.0, com a reforma do Desfazer: o agendador deixar de marcar alarme para ocorrência
+  já concluída. Não entra em PATCH porque desfazer a conclusão no mesmo dia teria de devolver
+  o alarme, e hoje isso funciona justamente porque o alarme continua lá.
 
 ### 13.4 Mensagens com "Desfazer"
 
