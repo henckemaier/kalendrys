@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -18,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -87,6 +89,24 @@ class ShoppingItemSwipeRowTest {
         assertEquals("Editar item", rowConfig()[SemanticsActions.OnClick].label)
         compose.onNodeWithText("Arroz").performClick()
 
+        compose.runOnIdle { assertEquals(listOf("edit"), calls) }
+    }
+
+    @Test
+    fun `estado vai como stateDescription no no da linha e o toque continua Editar`() {
+        setRow()
+        assertEquals("Não marcado", rowConfig()[SemanticsProperties.StateDescription])
+        assertEquals("Editar item", rowConfig()[SemanticsActions.OnClick].label)
+        // A linha não vira caixa de marcar.
+        assertNull(rowConfig().getOrNull(SemanticsProperties.ToggleableState))
+        assertNull(rowConfig().getOrNull(SemanticsProperties.Role))
+
+        item = item.copy(picked = true)
+        compose.waitForIdle()
+        assertEquals("Marcado", rowConfig()[SemanticsProperties.StateDescription])
+        assertEquals("Editar item", rowConfig()[SemanticsActions.OnClick].label)
+
+        compose.onNodeWithText("Arroz").performClick()
         compose.runOnIdle { assertEquals(listOf("edit"), calls) }
     }
 
