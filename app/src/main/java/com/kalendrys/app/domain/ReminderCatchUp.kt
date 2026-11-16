@@ -62,10 +62,7 @@ object ReminderCatchUp {
             if (task.reminderAt == null) continue
             if (TaskSchedule.isFinished(task, lastCompletions[task.id], zone)) continue
             val doneDays = completionDays[task.id].orEmpty()
-            val pending = occurrences(task, lastSeen, now, zone).filterNot { occurrence ->
-                task.repeat != ReminderRepeat.NONE &&
-                    Instant.ofEpochMilli(occurrence.firedAt).atZone(zone).toLocalDate() in doneDays
-            }
+            val pending = occurrences(task, lastSeen, now, zone).filterNot { isDiscarded(task, it.firedAt, doneDays, zone) }
             val latest = pending.lastOrNull() ?: continue
             val latestIsLate = now - latest.firedAt <= toleranceMs
             if (latestIsLate) late += latest else missed++
@@ -75,6 +72,15 @@ object ReminderCatchUp {
         late.sortBy { it.firedAt }
         return Plan(late, missed)
     }
+
+    /**
+     * A ocorrência do lembrete de [task] em [firedAt] é descartada na entrega: tarefa repetida e o
+     * dia dela (no [zone]) já tem conclusão ([doneDays]). Tarefa sem repetição nunca cai aqui (a
+     * encerrada sai antes, por [TaskSchedule.isFinished]). O [plan] e o diagnóstico de alarmes
+     * ([com.kalendrys.app.data.repository.TaskRepository.nextReminderToDeliver]) usam a mesma regra.
+     */
+    fun isDiscarded(task: Task, firedAt: Long, doneDays: Set<LocalDate>, zone: ZoneId): Boolean =
+        task.repeat != ReminderRepeat.NONE && Instant.ofEpochMilli(firedAt).atZone(zone).toLocalDate() in doneDays
 
     /** Ocorrências do lembrete de [task] em `(lastSeen, now]`, em ordem de horário. */
     fun occurrences(task: Task, lastSeen: Long, now: Long, zone: ZoneId): List<Occurrence> {
