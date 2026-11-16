@@ -648,6 +648,10 @@ Regras fixadas no aceite da E3 (2026-11-16):
   com fonte grande. O rótulo para o leitor de tela não muda.
 - **Ação de navegação da barra tem rótulo escrito.** "Hoje" é botão de texto, não ícone. Ícone
   sozinho fica para ações universais (voltar, configurações, mais opções).
+- **Ordem das ações da barra.** O `AppTopBar` desenha as ações na ordem em que a tela as passa,
+  seja ícone ou texto. A ação que aparece e some (como "Hoje") vem **antes** das permanentes,
+  para que nenhuma ação permanente mude de lugar; nos editores, "Salvar" é a última antes do
+  menu de mais opções.
 - **A barra de topo é fixa**, não recolhe ao rolar. Decisão tomada com as capturas de paisagem:
   as 4 abas mostram conteúdo no primeiro quadro com fonte 1.0.
 - **O clique mora na linha.** `GroupedCard` não tem toque próprio; o clique e o rótulo ficam no
