@@ -51,6 +51,8 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.NewTaskDraft
 import com.kalendrys.app.domain.NewTaskList
+import com.kalendrys.app.ui.components.isCompactHeight
+import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import kotlinx.coroutines.launch
 
@@ -82,17 +84,23 @@ internal fun NewTaskSheet(
         scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
     }
 
+    // Título fixo só em janela de altura normal (L29: rolando, o foco no campo Título o escondia sob
+    // a alça). Em janela baixa (o mesmo corte que recolhe o FAB) ele volta para a área que rola, como
+    // na v1.7.0: fixo, ele tirava a altura que o teclado deixa e o Salvar ficava fora de alcance (O-1).
+    val fixedHeader = !isCompactHeight(windowHeightDp())
+    val header = @Composable { modifier: Modifier ->
+        Text(stringResource(R.string.new_task), style = MaterialTheme.typography.titleLarge, modifier = modifier)
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        // Título do painel FORA da área que rola (L29): em paisagem o foco no campo Título rolava a
-        // coluna e o "Nova tarefa" sumia sob a alça de arrastar.
-        Text(
-            stringResource(R.string.new_task),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 16.dp),
-        )
+        if (fixedHeader) {
+            header(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 16.dp),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -101,6 +109,7 @@ internal fun NewTaskSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (!fixedHeader) header(Modifier)
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = { value -> onChange { it.copy(title = value) } },
