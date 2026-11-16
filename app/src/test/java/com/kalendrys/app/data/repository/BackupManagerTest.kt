@@ -16,6 +16,7 @@ import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
@@ -343,6 +344,64 @@ class BackupManagerTest {
         assertEquals(1L, items.getValue(11).listId)
         assertEquals(3L, items.getValue(12).listId)
         assertEquals(listOf("Banana", "Maçã"), items.values.filter { it.listId == 2L }.map { it.name })
+    }
+
+    // --- Aparência (ADR-0002, 12.3): campos opcionais no schema 6 ---------------------------------
+
+    @Test
+    fun `aparencia vai e volta no backup pelo nome do tema`() = runTest {
+        val source = settingsRepo("source-theme")
+        source.setThemeMode(ThemeMode.LIGHT)
+        source.setDynamicColor(true)
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+
+        val saved = JSONObject(json).getJSONObject("settings")
+        assertEquals("LIGHT", saved.getString("themeMode"))
+        assertEquals(true, saved.getBoolean("dynamicColor"))
+        assertEquals(6, JSONObject(json).getInt("schemaVersion"))
+
+        val dest = settingsRepo("dest-theme")
+        BackupManager(destDb, context.contentResolver, dest).restore(json)
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.LIGHT, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
+    }
+
+    @Test
+    fun `backup antigo sem os campos de aparencia mantem a aparencia atual do aparelho`() = runTest {
+        val source = settingsRepo("source-no-theme")
+        source.setSummaryTime(LocalTime.of(7, 0))
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val root = JSONObject(json)
+        root.getJSONObject("settings").apply { remove("themeMode"); remove("dynamicColor") }
+
+        val dest = settingsRepo("dest-no-theme")
+        dest.setThemeMode(ThemeMode.DARK)
+        dest.setDynamicColor(true)
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.DARK, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
+        // O resto das configurações do backup continua sendo aplicado.
+        assertEquals(LocalTime.of(7, 0), restored.summaryTime)
+    }
+
+    @Test
+    fun `aparencia invalida ou nula no backup mantem a atual`() = runTest {
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("source-bad-theme")).serialize()
+        val root = JSONObject(json)
+        root.getJSONObject("settings").put("themeMode", "SEPIA").put("dynamicColor", JSONObject.NULL)
+
+        val dest = settingsRepo("dest-bad-theme")
+        dest.setThemeMode(ThemeMode.DARK)
+        dest.setDynamicColor(true)
+        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+
+        val restored = dest.settings.first()
+        assertEquals(ThemeMode.DARK, restored.themeMode)
+        assertEquals(true, restored.dynamicColor)
     }
 
     @Test
