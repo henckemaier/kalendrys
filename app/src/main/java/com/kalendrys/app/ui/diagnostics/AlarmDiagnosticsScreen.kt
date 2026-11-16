@@ -5,6 +5,7 @@ package com.kalendrys.app.ui.diagnostics
 import android.app.AlarmManager
 import android.content.Context
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +50,7 @@ import com.kalendrys.app.reminder.isIgnoringBatteryOptimizations
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.theme.Spacing
@@ -89,7 +91,9 @@ fun AlarmDiagnosticsScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = padding.plus(horizontal = Spacing.l, bottom = Spacing.xl),
         ) {
-            item(key = "header") { SectionHeader(stringResource(R.string.diagnostics_section)) }
+            item(key = "header") {
+                SectionHeader(stringResource(R.string.diagnostics_section), contentPadding = SectionPadding)
+            }
             item(key = "next_alarm") {
                 val next = nextAlarmMillis
                 DiagnosticRow(
@@ -160,15 +164,8 @@ private const val ROW_COUNT = 3
 
 private enum class DiagStatus { Ok, Warn, Neutral }
 
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = Spacing.xl, bottom = Spacing.s),
-    )
-}
+/** A lista já tem a margem lateral da tela: o título de seção só ganha o espaço acima e abaixo. */
+private val SectionPadding = PaddingValues(top = Spacing.xl, bottom = Spacing.s)
 
 /**
  * Linha de status. Quando [onFix] existe, a linha inteira é clicável e leva à tela do sistema

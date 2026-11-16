@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -62,7 +60,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -71,7 +68,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -188,7 +184,7 @@ fun RoutineEditorScreen(
                 viewModel = viewModel,
                 onOpenShoppingList = onOpenShoppingList,
                 // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
-                contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s).plusBottom(Spacing.xxl),
+                contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s, bottom = Spacing.xxl),
             )
         }
     }
@@ -1015,14 +1011,3 @@ private fun RemindRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modi
     }
 }
 
-/** Folga no fim da lista do editor, somada ao fundo do [AppScaffold] (barra do sistema ou teclado). */
-@Composable
-private fun PaddingValues.plusBottom(extra: Dp): PaddingValues {
-    val direction = LocalLayoutDirection.current
-    return PaddingValues(
-        start = calculateStartPadding(direction),
-        end = calculateEndPadding(direction),
-        top = calculateTopPadding(),
-        bottom = calculateBottomPadding() + extra,
-    )
-}

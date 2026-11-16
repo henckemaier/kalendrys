@@ -6,10 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -58,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,6 +76,7 @@ import com.kalendrys.app.ui.components.SwipeRow
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.rememberFabExpanded
+import com.kalendrys.app.ui.components.splitTop
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
@@ -147,6 +144,7 @@ fun TaskListScreen(
         hasFab = true,
         snackbarHostState = snackbarHostState,
     ) { padding ->
+        val screen = padding.splitTop(horizontal = Spacing.l)
         when {
             !state.isLoaded -> Unit
             // Sem nenhuma tarefa criada: vazio "comece por aqui" (sem busca nem filtros).
@@ -159,11 +157,10 @@ fun TaskListScreen(
             // Busca e chips ficam fixos acima da lista (como hoje): só o topo do preenchimento vai
             // para a coluna; laterais e fundo (insets, largura máxima e folga do FAB) seguem para a
             // busca, os chips e o contentPadding da lista, que rola por baixo da barra do sistema.
-            else -> Column(modifier = Modifier.padding(top = padding.calculateTopPadding())) {
-                val direction = LocalLayoutDirection.current
-                val start = padding.calculateStartPadding(direction) + Spacing.l
-                val end = padding.calculateEndPadding(direction) + Spacing.l
-                val listPadding = PaddingValues(start = start, end = end, bottom = padding.calculateBottomPadding())
+            else -> Column(modifier = Modifier.padding(top = screen.top)) {
+                val start = screen.start
+                val end = screen.end
+                val listPadding = screen.list
                 TaskSearchBar(
                     query = query,
                     onQueryChange = viewModel::setQuery,
@@ -325,7 +322,7 @@ private fun LazyListScope.taskSection(
 ) {
     if (items.isEmpty()) return
     item(key = "header_$key", contentType = "header") {
-        SectionHeader(title = title, count = items.size, modifier = Modifier.animateItem())
+        TaskSectionHeader(title = title, count = items.size, modifier = Modifier.animateItem())
     }
     itemsIndexed(items, key = { _, item -> item.task.id }, contentType = { _, _ -> "task" }) { index, item ->
         SwipeableTaskRow(
@@ -345,8 +342,12 @@ private fun LazyListScope.taskSection(
     }
 }
 
+/**
+ * Exceção ao SectionHeader de ui/components (parecer do Esquadro, NB-1 da E3): aqui a contagem fica
+ * na ponta direita e o espaço acima é maior; trocar mudaria o miolo da lista, que é da v1.8.0.
+ */
 @Composable
-private fun SectionHeader(title: String, count: Int, modifier: Modifier = Modifier) {
+private fun TaskSectionHeader(title: String, count: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
