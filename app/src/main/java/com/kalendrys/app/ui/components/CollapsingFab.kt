@@ -16,6 +16,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -49,10 +51,24 @@ fun CollapsingFab(
     )
 }
 
-/** Aberto no topo da lista, recolhido depois de rolar: o padrão das abas. */
+/** Abaixo desta altura de janela (paisagem de telefone) o FAB já nasce recolhido (parecer da E3). */
+const val COMPACT_HEIGHT_DP = 480
+
+/**
+ * Aberto só no topo da lista E com altura de sobra: em janela baixa o FAB estendido cobriria o
+ * conteúdo, então fica sempre recolhido (o rótulo para o leitor de tela é o mesmo).
+ */
+fun fabExpanded(atTop: Boolean, windowHeightDp: Int): Boolean = atTop && windowHeightDp >= COMPACT_HEIGHT_DP
+
+/** Aberto no topo da lista, recolhido depois de rolar ou em janela baixa: o padrão das abas. */
 @Composable
-fun rememberFabExpanded(listState: LazyListState): State<Boolean> =
-    remember(listState) { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+fun rememberFabExpanded(listState: LazyListState): State<Boolean> {
+    val heightPx = LocalWindowInfo.current.containerSize.height
+    val heightDp = with(LocalDensity.current) { heightPx.toDp().value.toInt() }
+    return remember(listState, heightDp) {
+        derivedStateOf { fabExpanded(atTop = listState.firstVisibleItemIndex == 0, windowHeightDp = heightDp) }
+    }
+}
 
 @KalendrysPreviews
 @Composable
