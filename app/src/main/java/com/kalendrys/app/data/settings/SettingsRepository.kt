@@ -86,6 +86,20 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[SUMMARY_LAST_SEEN] = nowMillis }
     }
 
+    /**
+     * A dica única dos gestos da lista de compras (ADR-0002, 12.4) já foi dispensada. `false` até a
+     * primeira vez. Fica fora de [AppSettings] e do backup (como as marcas do catch-up): é registro
+     * de uso deste aparelho, não preferência, e não deve reemitir o fluxo de configurações.
+     */
+    val shoppingGestureHintSeen: Flow<Boolean> = dataStore.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { it[SHOPPING_GESTURE_HINT_SEEN] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setShoppingGestureHintSeen() {
+        dataStore.edit { it[SHOPPING_GESTURE_HINT_SEEN] = true }
+    }
+
     private companion object {
         val SUMMARY_ENABLED = booleanPreferencesKey("summary_enabled")
         val SUMMARY_MINUTE = intPreferencesKey("summary_minute_of_day")
@@ -94,5 +108,6 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val LAST_SEEN = longPreferencesKey("last_seen_at")
         val ROUTINE_LAST_SEEN = longPreferencesKey("routine_last_seen_at")
         val SUMMARY_LAST_SEEN = longPreferencesKey("summary_last_seen_at")
+        val SHOPPING_GESTURE_HINT_SEEN = booleanPreferencesKey("shopping_gesture_hint_seen")
     }
 }

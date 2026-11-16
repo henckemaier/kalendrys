@@ -152,6 +152,8 @@ fun TaskListScreen(
                 icon = Icons.Outlined.TaskAlt,
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
+                actionLabel = stringResource(R.string.new_task),
+                onAction = { showNewTask = true },
                 modifier = Modifier.padding(padding),
             )
             // Busca e chips ficam fixos acima da lista (como hoje): só o topo do preenchimento vai

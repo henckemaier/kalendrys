@@ -97,7 +97,7 @@
     <string name="routine_category_edit_title">Editar categoria</string>
     <string name="routine_category_name_label">Nome</string>
     <string name="routine_category_edit">Editar %1$s</string>
-    <string name="routine_category_delete">Excluir %1$s</string>
+    <string name="routine_category_more">Mais opções para %1$s</string>
     <string name="routine_category_delete_title">Excluir categoria?</string>
     <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
     <string name="routine_category_kind_label">Tipo</string>
@@ -178,6 +178,11 @@
     <string name="shopping_item_edit">Editar item</string>
     <string name="shopping_item_delete">Remover item</string>
     <string name="shopping_item_picked">Marcar como pego</string>
+    <string name="shopping_item_unpick">Desmarcar item</string>
+    <!-- Dica única da lista de compras (ADR-0002, 12.4): mostrada na primeira vez que a pessoa abre uma lista. -->
+    <string name="shopping_gesture_hint_title">Dica</string>
+    <string name="shopping_gesture_hint_message">Deslize um item para a direita para marcar ou desmarcar, e para a esquerda para remover. Toque nele para editar.</string>
+    <string name="shopping_gesture_hint_dismiss">Entendi</string>
     <string name="shopping_item_quantity_badge">×%1$d</string>
     <string name="shopping_price_invalid">Informe um preço válido ou deixe em branco.</string>
     <string name="shopping_total">Total</string>
@@ -494,5 +499,21 @@
         <item>quinta-feira</item>
         <item>sexta-feira</item>
         <item>sábado</item>
+    </string-array>
+    <!-- Meses abreviados (pt-BR), de janeiro a dezembro. Tabela própria em vez do formatador "MMM",
+         cuja saída ("nov", "nov.") varia entre versões do Android (ADR-0002, seção 3, decisão 6). -->
+    <string-array name="month_short">
+        <item>jan</item>
+        <item>fev</item>
+        <item>mar</item>
+        <item>abr</item>
+        <item>mai</item>
+        <item>jun</item>
+        <item>jul</item>
+        <item>ago</item>
+        <item>set</item>
+        <item>out</item>
+        <item>nov</item>
+        <item>dez</item>
     </string-array>
 </resources>

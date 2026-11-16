@@ -8,7 +8,11 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ShoppingProgress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -157,5 +161,21 @@ class ShoppingRepositoryTest {
         repository.restoreReset("k1")
         assertTrue(items(listId).none { it.picked })
         assertEquals("k2", repository.list(listId)!!.lastResetKey)
+    }
+
+    @Test
+    fun `inclusoes concorrentes na mesma lista dao posicoes distintas e consecutivas`() {
+        val listId = runBlocking { repository.createList("Mercado") }
+        val total = 20
+        // Várias inclusões ao mesmo tempo, em threads de verdade (adição rápida com Enter seguido):
+        // a leitura da maior posição e a inserção estão na mesma transação.
+        runBlocking {
+            (1..total).map { n ->
+                async(Dispatchers.IO) { repository.add(listId, "Item $n", quantity = 1, priceCents = null) }
+            }.awaitAll()
+        }
+
+        val positions = runBlocking { repository.observeItems(listId).first() }.map { it.position }.sorted()
+        assertEquals((0 until total).toList(), positions)
     }
 }

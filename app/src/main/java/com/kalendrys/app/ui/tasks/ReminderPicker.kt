@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +59,7 @@ import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.WeekdayToggleRow
+import com.kalendrys.app.ui.components.weekdayNumericDateLabel
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -342,17 +344,16 @@ private fun TaskDatePickerDialog(
     }
 }
 
-private val SHORT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, dd/MM", AppLocale.LOCALE)
 private val FULL_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", AppLocale.LOCALE)
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-/** "Hoje", "Amanhã", "Ontem", "qua., 30/10" ou, em outro ano, "30/10/2027". */
+/** "Hoje", "Amanhã", "Ontem", "Qua, 30/10" (dia da semana pela tabela pt-BR) ou, em outro ano, "30/10/2027". */
 @Composable
 fun dateLabel(date: LocalDate, today: LocalDate = LocalDate.now()): String = when {
     date == today -> stringResource(R.string.reminder_today)
     date == today.plusDays(1) -> stringResource(R.string.reminder_tomorrow)
     date == today.minusDays(1) -> stringResource(R.string.yesterday)
-    date.year == today.year -> date.format(SHORT_DATE)
+    date.year == today.year -> LocalResources.current.weekdayNumericDateLabel(date)
     else -> date.format(FULL_DATE)
 }
 

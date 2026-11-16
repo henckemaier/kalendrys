@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.shopping
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -10,6 +11,8 @@ import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.settings.SettingsRepository
+import java.io.File
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -43,6 +46,7 @@ class ShoppingListViewModelTest {
     private lateinit var repository: ShoppingRepository
     private lateinit var taskRepository: TaskRepository
     private lateinit var scheduler: FakeReminderScheduler
+    private lateinit var settings: SettingsRepository
 
     @Before
     fun setup() {
@@ -52,6 +56,9 @@ class ShoppingListViewModelTest {
         db = testDb.db
         repository = ShoppingRepository(db)
         scheduler = FakeReminderScheduler(context)
+        settings = SettingsRepository(
+            PreferenceDataStoreFactory.create { File(context.cacheDir, "lista-${System.nanoTime()}.preferences_pb") },
+        )
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
@@ -66,7 +73,7 @@ class ShoppingListViewModelTest {
             put(SHOPPING_LIST_ID_ARG, listId)
             if (taskId != null) put(SHOPPING_LIST_TASK_ID_ARG, taskId)
         }
-        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository, taskRepository))
+        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository, taskRepository, settings))
     }
 
     private suspend fun ReceiveTurbine<ShoppingListViewModel.UiState>.awaitUntil(
@@ -92,6 +99,41 @@ class ShoppingListViewModelTest {
             assertEquals(ShoppingProgress(picked = 0, total = 2), state.progress)
             assertEquals(2_000L, state.totalCents)
             assertFalse(state.hasPicked)
+        }
+    }
+
+    @Test
+    fun `marcar manda para Marcados e desmarcar devolve o item a posicao dele`() = runTest {
+        val listId = repository.createList("Mercado")
+        listOf("Arroz", "Feijão", "Café", "Leite").forEach { repository.add(listId, it, quantity = 1, priceCents = null) }
+
+        val vm = viewModel(listId)
+        vm.uiState.test {
+            val loaded = awaitUntil { it.items.size == 4 }
+            val feijao = loaded.items.first { it.name == "Feijão" }
+
+            vm.togglePicked(feijao).join()
+            val marked = awaitUntil { it.picked.size == 1 }
+            assertEquals(listOf("Arroz", "Café", "Leite"), marked.toPick.map { it.name })
+            assertEquals(listOf("Feijão"), marked.picked.map { it.name })
+
+            vm.togglePicked(marked.picked.single()).join()
+            val back = awaitUntil { it.picked.isEmpty() }
+            // Volta entre Arroz e Café, onde estava, não no fim da lista.
+            assertEquals(listOf("Arroz", "Feijão", "Café", "Leite"), back.toPick.map { it.name })
+        }
+    }
+
+    @Test
+    fun `adicao rapida cria cinco itens seguidos com quantidade 1 e ignora em branco`() = runTest {
+        val listId = repository.createList("Mercado")
+        val vm = viewModel(listId)
+        vm.uiState.test {
+            awaitUntil { it.list != null }
+            listOf("Pão", "  Ovos  ", "Queijo", "   ", "Manteiga", "Suco").forEach(vm::quickAdd)
+            val state = awaitUntil { it.items.size == 5 }
+            assertEquals(listOf("Pão", "Ovos", "Queijo", "Manteiga", "Suco"), state.items.map { it.name })
+            assertTrue(state.items.all { it.quantity == 1 && it.priceCents == null && !it.picked })
         }
     }
 

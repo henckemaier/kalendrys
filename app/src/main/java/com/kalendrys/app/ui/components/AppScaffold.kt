@@ -3,6 +3,8 @@ package com.kalendrys.app.ui.components
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +38,8 @@ val ContentMaxWidth: Dp = 640.dp
  * para o preenchimento lateral, dividido entre os dois lados. Com [hasFab], o fundo já inclui
  * [FabClearance], para a última linha nunca ficar sob o FAB. As margens da própria tela entram com
  * [plus]. Com o teclado aberto, a casca inteira encolhe acima dele (barra do topo fixa).
+ * [bottomBar] fica fixo no rodapé (ex.: o [QuickAddField] da tela da lista), logo acima do teclado,
+ * e cuida da barra do sistema e das laterais ([bottomBarInsets]); o conteúdo termina acima dele.
  */
 @Composable
 fun AppScaffold(
@@ -43,6 +47,7 @@ fun AppScaffold(
     topBar: @Composable () -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
     hasFab: Boolean = false,
+    bottomBar: @Composable () -> Unit = {},
     snackbarHostState: SnackbarHostState? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
@@ -53,6 +58,7 @@ fun AppScaffold(
         // abaixo não o soma de novo (o Scaffold desconta o que os ancestrais já consumiram).
         modifier = modifier.imePadding(),
         topBar = topBar,
+        bottomBar = bottomBar,
         floatingActionButton = floatingActionButton,
         snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } },
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -75,6 +81,13 @@ fun AppScaffold(
         }
     }
 }
+
+/**
+ * Insets de quem vai no [AppScaffold] `bottomBar`: barra do sistema e laterais. O teclado já foi
+ * consumido pelo AppScaffold (a casca encolhe acima dele), então não é somado de novo aqui.
+ */
+val bottomBarInsets: WindowInsets
+    @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
 
 /**
  * Soma as margens da própria tela ao preenchimento do [AppScaffold] (insets, excedente da largura

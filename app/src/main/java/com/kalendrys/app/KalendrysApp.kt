@@ -190,14 +190,20 @@ class KalendrysApp : Application() {
      * inclusive na primeira emissão: cobre quem atualizou e quem restaurou um backup. Único ponto que
      * chama o sistema (parecer do Esquadro); Configurações e o backup só gravam no DataStore. Fora do
      * caminho do primeiro quadro: a chamada roda aqui, no coletor, não no onCreate.
+     *
+     * Quando a Aparência MUDA (não na primeira emissão), redesenha os widgets (ADR-0002, 12.5): eles
+     * seguem a Aparência e são desenhados pelo launcher, que não recebe o espelho do modo noturno.
      */
     private fun keepAppearanceInSync() {
         val nightMode = AppNightMode(this)
         appScope.launch {
-            settingsRepository.settings.map { it.appearance() }.distinctUntilChanged().collect { appearance ->
-                _appearance.value = appearance
-                nightMode.apply(appearance.themeMode)
-            }
+            settingsRepository.settings.map { it.appearance() }.collectAppearance(
+                onEach = { appearance ->
+                    _appearance.value = appearance
+                    nightMode.apply(appearance.themeMode)
+                },
+                onChanged = { KalendrysWidgets.updateAll(this@KalendrysApp) },
+            )
         }
     }
 

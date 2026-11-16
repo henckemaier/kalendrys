@@ -128,10 +128,14 @@ class ShoppingRepository(private val database: AppDatabase) {
 
     fun observeItems(listId: Long): Flow<List<ShoppingItem>> = itemDao.observeByList(listId)
 
-    /** Novo item no fim da lista (position após o maior atual). Quantidade mínima 1. */
-    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long {
-        val nextPosition = (itemDao.byList(listId).maxOfOrNull { it.position } ?: -1) + 1
-        return itemDao.insert(
+    /**
+     * Novo item no fim da lista (position após a maior atual). Quantidade mínima 1. Ler a maior e
+     * inserir na mesma transação: duas inclusões ao mesmo tempo (adição rápida com Enter seguido) não
+     * pegam a mesma posição (parecer do Esquadro, E4).
+     */
+    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long = database.withTransaction {
+        val nextPosition = (itemDao.maxPosition(listId) ?: -1) + 1
+        itemDao.insert(
             ShoppingItem(
                 listId = listId,
                 name = name.trim(),

@@ -1,22 +1,33 @@
 package com.kalendrys.app.ui.shopping
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.settings.SettingsRepository
+import java.io.File
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -25,6 +36,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.Shadows.shadowOf
 
 /**
  * Casca da tela da lista (ADR-0002, 12.2; E3): barra com voltar, as ações raras no menu com rótulo
@@ -41,6 +53,7 @@ class ShoppingListScreenShellTest {
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var repository: ShoppingRepository
     private var backs = 0
+    private var listId = 0L
 
     @Before
     fun setup() {
@@ -48,7 +61,7 @@ class ShoppingListScreenShellTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         repository = ShoppingRepository(db)
-        val listId = runBlocking {
+        listId = runBlocking {
             repository.createList("Mercado").also { repository.add(it, "Leite", quantity = 1, priceCents = null) }
         }
         val viewModel = testDb.track(
@@ -56,6 +69,9 @@ class ShoppingListScreenShellTest {
                 SavedStateHandle(mapOf(SHOPPING_LIST_ID_ARG to listId)),
                 repository,
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
+                SettingsRepository(
+                    PreferenceDataStoreFactory.create { File(context.cacheDir, "lista-${System.nanoTime()}.preferences_pb") },
+                ),
             ),
         )
         compose.setContent {
@@ -90,11 +106,27 @@ class ShoppingListScreenShellTest {
     }
 
     @Test
-    fun `FAB Adicionar item abre o dialogo de novo item`() {
-        compose.onNodeWithContentDescription("Adicionar item").performClick()
-
-        compose.onNodeWithText("Novo item").assertIsDisplayed()
+    fun `adicao rapida no rodape adiciona cinco itens seguidos sem perder o foco`() {
+        val field = compose.onNode(hasSetTextAction())
+        listOf("Pão", "Ovos", "Queijo", "Manteiga", "Suco").forEach { name ->
+            field.performTextInput(name)
+            field.performImeAction()
+            compose.waitUntil(LOAD_TIMEOUT_MS) {
+                // A inclusão passa pelo Room; drena o looper principal do Robolectric (nota do Lince).
+                shadowOf(Looper.getMainLooper()).idle()
+                itemNames().contains(name)
+            }
+            // O campo volta vazio e continua focado: o teclado não fecha entre um item e outro.
+            field.assertIsFocused()
+            field.assert(hasText(""))
+        }
+        // Na ordem digitada, depois do Leite que já estava.
+        assertEquals(listOf("Leite", "Pão", "Ovos", "Queijo", "Manteiga", "Suco"), itemNames())
+        // Não há mais FAB nem diálogo de novo item (C1): a inclusão é só pelo campo.
+        assertEquals(0, compose.onAllNodesWithText("Novo item").fetchSemanticsNodes().size)
     }
+
+    private fun itemNames(): List<String> = runBlocking { repository.observeItems(listId).first().map { it.name } }
 
     private companion object {
         const val LOAD_TIMEOUT_MS = 5_000L
