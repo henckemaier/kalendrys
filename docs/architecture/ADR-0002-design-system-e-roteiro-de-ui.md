@@ -631,6 +631,35 @@ Vale a tabela da seção 4.2, com estes acréscimos:
 - Movimento (A5): só o que o Compose já oferece (animação de item de lista), respeitando a opção
   do sistema de remover animações. Retorno tátil pelo `Haptics`, sem permissão nova.
 
+Regras fixadas no aceite da E3 (2026-11-16):
+
+- **O teclado encolhe a casca.** A `MainActivity` declara `windowSoftInputMode="adjustResize"`
+  e o `AppScaffold` aplica o espaço do teclado na casca inteira: a barra de topo fica no lugar,
+  a área visível do conteúdo diminui (o campo focado rola sozinho para dentro dela) e a barra de
+  rodapé sobe junto. Nenhuma tela aplica espaço de teclado por conta própria, e o teclado
+  **não** entra como preenchimento do conteúdo. Motivo: como preenchimento, a área visível não
+  encolhia e o sistema deslocava a janela inteira, levando a barra de topo para fora da tela
+  (regressão B-1 da E3; o mesmo deslocamento já existia no editor de tarefa por falta do
+  atributo no manifesto). Painéis e diálogos são janelas próprias e cuidam do próprio teclado.
+- **Largura máxima sem faixas mortas.** O conteúdo ocupa a largura toda e o que passar de 640dp
+  vai para o preenchimento lateral que a tela recebe; a rolagem pega a tela inteira.
+- **FAB recolhido em janela baixa.** Em altura compacta (paisagem de celular) o `CollapsingFab`
+  já nasce só com o ícone, pela regra de `rememberFabExpanded`, para não cobrir elemento tocável
+  com fonte grande. O rótulo para o leitor de tela não muda.
+- **Ação de navegação da barra tem rótulo escrito.** "Hoje" é botão de texto, não ícone. Ícone
+  sozinho fica para ações universais (voltar, configurações, mais opções).
+- **A barra de topo é fixa**, não recolhe ao rolar. Decisão tomada com as capturas de paisagem:
+  as 4 abas mostram conteúdo no primeiro quadro com fonte 1.0.
+- **O clique mora na linha.** `GroupedCard` não tem toque próprio; o clique e o rótulo ficam no
+  `ListRow`, para cada cartão ser um nó só para o leitor de tela.
+- **`SwipeRow`:** o deslize só dispara depois de 40% da largura; o retorno tátil do deslize é do
+  componente; uma ação que tira o item da lista (`removesRow`) exige que quem chama garanta a
+  saída do item.
+
+Limites aceitos nesta versão: com fonte 2.0 em paisagem a aba Tarefas não mostra nenhuma tarefa
+no primeiro quadro, e o editor de rotina com teclado fica com área útil mínima. Os dois dependem
+do miolo das telas e são revistos na v1.8.0.
+
 Gestos por tela (U4). Decisão de arquitetura aceita pelo usuário; o produto pode rever.
 
 | Onde | Toque | Deslizar | Menu |
