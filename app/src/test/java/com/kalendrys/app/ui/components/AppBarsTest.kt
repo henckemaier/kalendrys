@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -139,4 +140,33 @@ class AppBarsTest {
 
         assertEquals(1, saves)
     }
+
+    @Test
+    fun `a engrenagem fica no mesmo lugar com e sem o Hoje`() {
+        var showToday by mutableStateOf(false)
+        compose.setContent {
+            KalendrysTheme {
+                AppTopBar(
+                    title = "Rotinas",
+                    actions = buildList {
+                        // Como nas abas: a ação que aparece e some vem antes da permanente (O-2).
+                        if (showToday) add(TopBarAction("Hoje", prominent = true) {})
+                        add(TopBarAction("Configurações", Icons.Outlined.Settings) {})
+                    },
+                )
+            }
+        }
+        val withoutToday = gearX()
+
+        showToday = true
+        compose.waitForIdle()
+        compose.onNodeWithText("Hoje").assertIsDisplayed()
+
+        assertEquals(withoutToday, gearX())
+        // E o Hoje fica à esquerda da engrenagem.
+        assertTrue(compose.onNodeWithText("Hoje").fetchSemanticsNode().positionInRoot.x < gearX())
+    }
+
+    private fun gearX(): Float =
+        compose.onNodeWithContentDescription("Configurações").fetchSemanticsNode().positionInRoot.x
 }
