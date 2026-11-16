@@ -126,6 +126,7 @@ private fun CalendarContent(overview: TodayOverview) {
 @Composable
 private fun MonthGrid(today: LocalDate) {
     val resources = LocalContext.current.resources
+    val palette = widgetPalette
     val firstDay = firstDayOfWeek()
     val weekend = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
     val cellStyle = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp, textAlign = TextAlign.Center)
@@ -150,13 +151,16 @@ private fun MonthGrid(today: LocalDate) {
                         when {
                             date == null -> Text(text = "", style = cellStyle)
                             date == today -> Box(
-                                modifier = GlanceModifier.size(20.dp).background(ImageProvider(R.drawable.widget_today_circle)),
+                                modifier = GlanceModifier.size(20.dp).background(
+                                    ImageProvider(R.drawable.widget_today_circle),
+                                    colorFilter = ColorFilter.tint(palette.today),
+                                ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = date.dayOfMonth.toString(),
                                     style = cellStyle.copy(
-                                        color = GlanceTheme.colors.onPrimary,
+                                        color = palette.onToday,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )

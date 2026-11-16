@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Destaque do dia de hoje no widget de calendário (primary da paleta escura). -->
+<!-- Forma do destaque do dia de hoje no widget de calendário. A cor vem por tint (primary do
+     esquema do widget, WidgetPalette.today); o branco é só a base para o tint. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#AAC7FF" />
+    <solid android:color="#FFFFFF" />
 </shape>
