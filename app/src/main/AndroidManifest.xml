@@ -38,6 +38,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Endereços kalendrys:// (AppLinks) por intent implícito, ex.:
+                 adb shell am start -a android.intent.action.VIEW -d kalendrys://new-task
+                 Sem BROWSABLE de propósito: navegadores e links da web não abrem estes endereços. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="kalendrys" />
+            </intent-filter>
+            <!-- Atalhos fixos do toque longo no ícone (ADR-0002, 12.6). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <receiver
