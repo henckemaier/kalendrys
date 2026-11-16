@@ -405,6 +405,29 @@ class BackupManagerTest {
     }
 
     @Test
+    fun `aparencia com tipo errado ou nome em minusculas no backup mantem a atual e o resto restaura`() = runTest {
+        val source = settingsRepo("source-wrong-type-theme")
+        source.setSummaryTime(LocalTime.of(6, 30))
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val root = JSONObject(json)
+        // "dark" em minúsculas, número no lugar do nome e texto no lugar do booleano.
+        root.getJSONObject("settings").put("themeMode", "dark").put("dynamicColor", "true")
+        val numeric = JSONObject(root.toString()).apply { getJSONObject("settings").put("themeMode", 2) }
+
+        listOf(root, numeric).forEachIndexed { i, backup ->
+            val dest = settingsRepo("dest-wrong-type-theme-$i")
+            dest.setThemeMode(ThemeMode.LIGHT)
+            dest.setDynamicColor(false)
+            BackupManager(destDb, context.contentResolver, dest).restore(backup.toString())
+
+            val restored = dest.settings.first()
+            assertEquals("backup $i", ThemeMode.LIGHT, restored.themeMode)
+            assertEquals("backup $i", false, restored.dynamicColor)
+            assertEquals("backup $i", LocalTime.of(6, 30), restored.summaryTime)
+        }
+    }
+
+    @Test
     fun `rejeita backup de versao mais nova`() = runTest {
         val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("src-new")).serialize()
         val root = JSONObject(json).put("schemaVersion", BackupManager.SCHEMA_VERSION + 1)

@@ -75,6 +75,30 @@ class AppLinksTest {
     }
 
     /**
+     * A MainActivity é exportada (lançador e atalhos): qualquer app pode mandar um intent explícito
+     * com um `kalendrys://`. Os endereços das ações de notificação (concluir, pular, adiar) existem só
+     * para dar unicidade aos PendingIntents e nunca podem virar pedido de navegação, muito menos de
+     * alteração de dados.
+     */
+    @Test
+    fun `enderecos das acoes de notificacao nunca viram pedido de abertura`() {
+        val actions = listOf(
+            AppLinks.reminderComplete(7),
+            AppLinks.reminderSnooze(7),
+            AppLinks.reminderSnoozeFire(7),
+            AppLinks.routineOccurrence(3, 20_000),
+            AppLinks.routineSkip(3, 20_000),
+            AppLinks.routineSnooze(3, 20_000),
+            AppLinks.routineSnoozeFire(3, 20_000),
+        )
+
+        actions.forEach { uri ->
+            assertNull("$uri não pode abrir nada", AppLinks.parse(Intent(Intent.ACTION_VIEW, uri)))
+            assertNull("$uri pela MainActivity", AppLinks.parse(Intent(context, MainActivity::class.java).setData(uri)))
+        }
+    }
+
+    /**
      * Lê o `res/xml/shortcuts.xml` de verdade: cada atalho aponta para a MainActivity deste pacote
      * com um endereço que o [AppLinks.parse] reconhece. Pega erro de digitação no XML (que o
      * build não confere) e classe renomeada sem atualizar o targetClass.
