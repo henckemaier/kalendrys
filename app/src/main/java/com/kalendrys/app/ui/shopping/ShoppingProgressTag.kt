@@ -19,25 +19,6 @@ import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.ShoppingProgress
 
-/**
- * Progresso a mostrar para o dono que aponta para [listId] (ADR-0001, P8): `null` sem lista, com
- * vínculo órfão (lista ausente do mapa) ou com lista vazia, igual ao widget e às notificações
- * ([ShoppingProgress.titleWithProgress]).
- */
-fun Map<Long, ShoppingProgress>.visibleProgressFor(listId: Long?): ShoppingProgress? =
-    listId?.let(::get)?.takeIf { it.total > 0 }
-
-/**
- * Quantidade para escolher o plural de "marcado(s)" (R.plurals.list_card_progress e
- * list_progress_description): concorda com o TOTAL de itens ("1 de 1 marcado", "0 de 1 marcado",
- * "1 de 3 marcados"). A regra CLDR do pt (pt-BR) põe 0 e 1 em "one", mas o total 0 nunca aparece
- * (lista vazia esconde o progresso) e, se aparecesse, levaria plural; então só o total 1 é singular.
- */
-val ShoppingProgress.pluralQuantity: Int get() = if (total == 1) 1 else PLURAL_OTHER
-
-/** Qualquer número que a regra do pt põe em "other". */
-private const val PLURAL_OTHER = 2
-
 /** Etiqueta compacta "🛒 3/8" para linhas de tarefa e blocos de rotina; o leitor de tela lê a frase inteira. */
 @Composable
 fun ShoppingProgressTag(

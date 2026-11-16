@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 
 /**
  * "N de M marcado(s)" em pt-BR: concorda com o TOTAL (só M = 1 fica no singular). A regra CLDR
- * do pt põe 0 em "one", por isso a quantidade passa por [pluralQuantity]; aqui os recursos são resolvidos de verdade.
+ * do pt põe 0 em "one", por isso a quantidade passa por [ShoppingProgress.pluralQuantity]; aqui os recursos são resolvidos de verdade.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "pt-rBR")
