@@ -1,6 +1,5 @@
 package com.kalendrys.app.ui.routines
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
@@ -43,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.ui.theme.LocalDarkTheme
 
 /** As três cores de um bloco: o preenchimento da pílula, o ícone sobre ela e o destaque (círculo, pontos). */
 @Immutable
@@ -77,9 +77,10 @@ object RoutinePalette {
     }
 }
 
+/** Variante do tema em uso no app (Aparência), não a do aparelho: com o tema forçado elas diferem. */
 @Composable
 fun routineTone(color: RoutineColor): RoutineTone =
-    if (isSystemInDarkTheme()) RoutinePalette.dark(color) else RoutinePalette.light(color)
+    if (LocalDarkTheme.current) RoutinePalette.dark(color) else RoutinePalette.light(color)
 
 val RoutineIcon.imageVector: ImageVector
     get() = when (this) {

@@ -34,6 +34,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -64,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.BuildConfig
 import com.kalendrys.app.R
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.reminder.canScheduleExactAlarms
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
 import com.kalendrys.app.ui.components.TimePickerDialog
@@ -71,6 +75,7 @@ import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.settings.SettingsViewModel.BackupEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.ExportEvent
 import com.kalendrys.app.ui.settings.SettingsViewModel.UpdateUi
+import com.kalendrys.app.ui.theme.supportsDynamicColor
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.collectLatest
 
@@ -164,6 +169,28 @@ fun SettingsScreen(
                 .padding(innerPadding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
+            item(key = "appearance_header") { SectionHeader(stringResource(R.string.settings_section_appearance)) }
+            // Material You só onde o sistema tem cor dinâmica (Android 12+).
+            val appearanceCount = if (supportsDynamicColor()) 2 else 1
+            item(key = "theme_mode") {
+                ThemeModeRow(
+                    selected = current.themeMode,
+                    onSelect = viewModel::setThemeMode,
+                    shape = groupedItemShape(0, appearanceCount),
+                )
+            }
+            if (supportsDynamicColor()) {
+                item(key = "dynamic_color") {
+                    SwitchRow(
+                        title = stringResource(R.string.settings_dynamic_color),
+                        supporting = stringResource(R.string.settings_dynamic_color_description),
+                        checked = current.dynamicColor,
+                        onCheckedChange = viewModel::setDynamicColor,
+                        shape = groupedItemShape(1, appearanceCount),
+                    )
+                }
+            }
+
             item(key = "summary_header") { SectionHeader(stringResource(R.string.settings_section_summary)) }
             item(key = "summary_enabled") {
                 SwitchRow(
@@ -373,6 +400,40 @@ fun SettingsScreen(
                 }
             },
         )
+    }
+}
+
+private val THEME_OPTIONS = listOf(
+    ThemeMode.SYSTEM to R.string.settings_theme_system,
+    ThemeMode.LIGHT to R.string.settings_theme_light,
+    ThemeMode.DARK to R.string.settings_theme_dark,
+)
+
+/** Tema: Sistema, Claro ou Escuro, num botão segmentado (escolha única, lida pelo leitor de tela). */
+@Composable
+private fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, shape: Shape) {
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(text = stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(8.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                THEME_OPTIONS.forEachIndexed { index, (mode, label) ->
+                    SegmentedButton(
+                        selected = mode == selected,
+                        onClick = { onSelect(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, THEME_OPTIONS.size),
+                    ) {
+                        Text(stringResource(label), maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 

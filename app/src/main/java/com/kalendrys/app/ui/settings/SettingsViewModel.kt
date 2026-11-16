@@ -12,6 +12,7 @@ import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.update.InstallOutcome
 import com.kalendrys.app.update.UpdateCheck
 import com.kalendrys.app.update.UpdateChecker
@@ -92,6 +93,15 @@ class SettingsViewModel(
     /** Guarda o APK que o usuário quis instalar, para re-disparar a instalação quando o
      * consentimento de "fontes desconhecidas" chega (ver [onResumed]). */
     private var pendingApkUrl: String? = null
+
+    /** Só grava: o KalendrysApp aplica o tema (e o espelho no sistema) a partir do DataStore. */
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { repository.setThemeMode(mode) }
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        viewModelScope.launch { repository.setDynamicColor(enabled) }
+    }
 
     fun setSummaryEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setSummaryEnabled(enabled) }

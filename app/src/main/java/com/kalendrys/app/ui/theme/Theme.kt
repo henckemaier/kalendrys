@@ -8,7 +8,10 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+import com.kalendrys.app.data.settings.ThemeMode
 
 // internal: os widgets (Glance) usam a paleta escura.
 internal val LightColors = lightColorScheme(
@@ -85,15 +88,26 @@ internal val DarkColors = darkColorScheme(
     surfaceContainerHighest = SurfaceContainerHighestDark,
 )
 
-/** Cores fixas da marca por padrão; [dynamicColor] = true usa as cores do papel de parede (Android 12+). */
+/**
+ * Escuro ou claro no tema em uso. Vem da escolha do usuário em Aparência, não do aparelho: quem
+ * desenha com cores próprias (paleta das rotinas) lê daqui em vez de `isSystemInDarkTheme()`.
+ */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
+/**
+ * Tema do app (ADR-0002, 12.3). [themeMode] decide claro ou escuro (em [ThemeMode.SYSTEM], o do
+ * aparelho), igual em todas as versões do Android; [dynamicColor] usa as cores do papel de parede
+ * onde houver suporte (Android 12+) e, sem ele, as cores fixas da marca.
+ */
 @Composable
 fun KalendrysTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = themeMode.isDark(isSystemInDarkTheme())
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        dynamicColor && supportsDynamicColor() -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -101,9 +115,15 @@ fun KalendrysTheme(
         else -> LightColors
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content,
-    )
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = KalendrysShapes,
+            content = content,
+        )
+    }
 }
+
+/** Cor dinâmica (Material You) só existe a partir do Android 12. */
+fun supportsDynamicColor(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

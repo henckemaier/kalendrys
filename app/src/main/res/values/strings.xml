@@ -301,6 +301,13 @@
 
     <!-- Configurações -->
     <string name="settings_title">Configurações</string>
+    <string name="settings_section_appearance">Aparência</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_theme_system">Sistema</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_dark">Escuro</string>
+    <string name="settings_dynamic_color">Material You</string>
+    <string name="settings_dynamic_color_description">Usa as cores do papel de parede</string>
     <string name="settings_section_summary">Resumo diário</string>
     <string name="settings_summary_enabled">Receber resumo diário</string>
     <string name="settings_summary_enabled_description">Notificação com as tarefas, os lembretes e as rotinas do dia.</string>

@@ -26,6 +26,9 @@ import com.kalendrys.app.summary.DailyScheduler
 import com.kalendrys.app.summary.DailySummaryNotifier
 import com.kalendrys.app.summary.summaryChanges
 import com.kalendrys.app.update.UpdateChecker
+import com.kalendrys.app.ui.theme.AppNightMode
+import com.kalendrys.app.ui.theme.Appearance
+import com.kalendrys.app.ui.theme.appearance
 import com.kalendrys.app.update.UpdateInstaller
 import com.kalendrys.app.widget.KalendrysWidgets
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +37,11 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
 
@@ -151,8 +158,19 @@ class KalendrysApp : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    private val _appearance = MutableStateFlow<Appearance?>(null)
+
+    /**
+     * Tema e cor dinâmica (ADR-0002, 12.3), lidos do DataStore a partir do início do processo.
+     * `null` até a primeira leitura: a MainActivity segura o primeiro quadro até o valor chegar, para
+     * o app não abrir num tema e trocar para outro (sem runBlocking).
+     */
+    val appearance: StateFlow<Appearance?> = _appearance.asStateFlow()
+
     override fun onCreate() {
         super.onCreate()
+        // Primeiro: a leitura do DataStore começa já, em paralelo com o resto da abertura.
+        keepAppearanceInSync()
         if (BuildConfig.DEBUG) enableStrictMode()
         createNotificationChannels()
         keepDailyAlarmsInSync()
@@ -164,6 +182,22 @@ class KalendrysApp : Application() {
         appScope.launch {
             reminderCatchUp.run()
             routineRepository.catchUp()
+        }
+    }
+
+    /**
+     * Publica a aparência e aplica o espelho no modo noturno do app (Android 12+, [AppNightMode]),
+     * inclusive na primeira emissão: cobre quem atualizou e quem restaurou um backup. Único ponto que
+     * chama o sistema (parecer do Esquadro); Configurações e o backup só gravam no DataStore. Fora do
+     * caminho do primeiro quadro: a chamada roda aqui, no coletor, não no onCreate.
+     */
+    private fun keepAppearanceInSync() {
+        val nightMode = AppNightMode(this)
+        appScope.launch {
+            settingsRepository.settings.map { it.appearance() }.distinctUntilChanged().collect { appearance ->
+                _appearance.value = appearance
+                nightMode.apply(appearance.themeMode)
+            }
         }
     }
 
