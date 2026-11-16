@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
@@ -22,13 +20,10 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,7 +41,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineOverrideType
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.TimePickerDialog
+import com.kalendrys.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -71,24 +69,17 @@ fun RoutineExceptionScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.routine_exception_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
+    AppScaffold(
+        topBar = { AppTopBar(title = stringResource(R.string.routine_exception_title), onBack = onBack) },
+    ) { padding ->
+        // O preenchimento do AppScaffold vai DENTRO da rolagem (como o contentPadding de uma lista):
+        // o conteúdo rola por baixo das barras do sistema.
         Column(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(padding)
+                .padding(horizontal = Spacing.l, vertical = Spacing.s),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             val routine = state.routine
@@ -96,13 +87,13 @@ fun RoutineExceptionScreen(
                 text = routine?.title?.ifBlank { stringResource(R.string.routine_new_title) }
                     ?: stringResource(R.string.routine_not_found_title),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                modifier = Modifier.padding(top = Spacing.s, bottom = 2.dp),
             )
             Text(
                 text = formatFullDate(state.date),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 12.dp),
+                modifier = Modifier.padding(bottom = Spacing.m),
             )
 
             if (state.currentType != null) {
@@ -113,7 +104,7 @@ fun RoutineExceptionScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                    modifier = Modifier.padding(start = Spacing.xs, bottom = Spacing.s),
                 )
             }
 
@@ -194,7 +185,7 @@ private fun ActionRow(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier
             .fillMaxWidth()
@@ -204,10 +195,10 @@ private fun ActionRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .heightIn(min = 64.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = Spacing.l, vertical = Spacing.m),
         ) {
             icon()
-            Column(modifier = Modifier.padding(start = 16.dp)) {
+            Column(modifier = Modifier.padding(start = Spacing.l)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge)
                 if (subtitle != null) {
                     Text(

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.ShoppingCart
@@ -27,6 +26,7 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.MoneyFormat
+import com.kalendrys.app.ui.theme.Spacing
 
 /**
  * Cartão-resumo de uma lista de compras (ADR-0001): nome, progresso, total e os outros donos.
@@ -47,7 +47,7 @@ fun ShoppingListCard(
     val progress = summary.progress
     Surface(
         onClick = onOpen,
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier
             .fillMaxWidth(),
@@ -56,7 +56,7 @@ fun ShoppingListCard(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .heightIn(min = 72.dp)
-                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                .padding(start = Spacing.l, end = Spacing.xs, top = Spacing.m, bottom = Spacing.m),
         ) {
             Icon(
                 Icons.Outlined.ShoppingCart,
@@ -67,7 +67,7 @@ fun ShoppingListCard(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 16.dp, end = 8.dp),
+                    .padding(start = Spacing.l, end = Spacing.s),
             ) {
                 Text(
                     text = summary.name,
@@ -92,7 +92,7 @@ fun ShoppingListCard(
                         progress = { progress.picked.toFloat() / progress.total },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(top = Spacing.s),
                     )
                 }
                 val others = summary.owners.filterNot(isCurrentOwner)
