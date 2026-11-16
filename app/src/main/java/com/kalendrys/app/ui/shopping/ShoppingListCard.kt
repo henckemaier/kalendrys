@@ -75,7 +75,7 @@ fun ShoppingListCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val status = if (progress.total == 0) {
+                val status = if (!progress.isVisible) {
                     stringResource(R.string.list_card_empty)
                 } else {
                     pluralStringResource(R.plurals.list_card_progress, progress.pluralQuantity, progress.picked, progress.total)
@@ -87,7 +87,7 @@ fun ShoppingListCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (progress.total > 0) {
+                if (progress.isVisible) {
                     LinearProgressIndicator(
                         progress = { progress.picked.toFloat() / progress.total },
                         modifier = Modifier
