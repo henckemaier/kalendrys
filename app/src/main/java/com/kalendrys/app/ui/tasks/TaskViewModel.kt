@@ -16,7 +16,7 @@ import com.kalendrys.app.domain.TaskFiltering
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskSchedule.Status
 import com.kalendrys.app.domain.TaskTiming
-import com.kalendrys.app.ui.shopping.visibleProgressFor
+import com.kalendrys.app.domain.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId

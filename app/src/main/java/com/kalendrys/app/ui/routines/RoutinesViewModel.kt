@@ -24,8 +24,8 @@ import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.visibleProgressFor
 import com.kalendrys.app.ui.components.firstDayOfWeek
-import com.kalendrys.app.ui.shopping.visibleProgressFor
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
