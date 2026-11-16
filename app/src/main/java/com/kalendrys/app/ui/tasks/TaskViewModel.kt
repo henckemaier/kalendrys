@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 class TaskViewModel(
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val draftStore: NewTaskDraftStore = NewTaskDraftStore(),
+    private val draftStore: NewTaskDraftStore,
 ) : ViewModel() {
 
     /**

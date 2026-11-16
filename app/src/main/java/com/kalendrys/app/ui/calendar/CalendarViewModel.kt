@@ -43,7 +43,7 @@ class CalendarViewModel(
     private val repository: TaskRepository,
     private val routineRepository: RoutineRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val draftStore: NewTaskDraftStore = NewTaskDraftStore(),
+    private val draftStore: NewTaskDraftStore,
 ) : ViewModel() {
 
     /** Um evento no dia: conclusão (do histórico) ou tarefa marcada para o dia. */
@@ -201,7 +201,7 @@ class CalendarViewModel(
     val lists: StateFlow<List<ShoppingListSummary>> =
         shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Rascunho único do painel de nova tarefa (compartilhado com o a aba Tarefas); null = sem rascunho. */
+    /** Rascunho único do painel de nova tarefa (compartilhado com a aba Tarefas); null = sem rascunho. */
     val newTaskDraft: StateFlow<NewTaskDraft?> = draftStore.draft
 
     init {

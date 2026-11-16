@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -56,7 +57,7 @@ class TaskViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository))
+    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, NewTaskDraftStore()))
 
     private suspend fun ReceiveTurbine<TaskViewModel.UiState>.awaitState(
         predicate: (TaskViewModel.UiState) -> Boolean,

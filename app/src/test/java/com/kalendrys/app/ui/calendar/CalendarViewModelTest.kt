@@ -71,7 +71,7 @@ class CalendarViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(CalendarViewModel(taskRepository, routineRepository, shoppingRepository))
+    private fun viewModel() = testDb.track(CalendarViewModel(taskRepository, routineRepository, shoppingRepository, NewTaskDraftStore()))
 
     private val day = TaskTiming(date = LocalDate.now().plusDays(1))
 
