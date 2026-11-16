@@ -945,6 +945,13 @@ com dados reais**.
   contra a v1.7.1 candidata, na ordem antes, depois, depois, antes. A v1.7.0 só é medida se a
   v1.7.1 passar de 10%, para saber de onde veio a diferença. Medição fora do protocolo não
   fecha a pendência.
+- **Protocolo em aparelho físico** (decisão de 2026-11-16): o limite de 4 GB livres no host da
+  11.8.3 existe porque o emulador roda no host. Em aparelho físico quem abre o app é o
+  aparelho, então esse limite **não se aplica**; a memória do host é só anotada. No lugar dele
+  valem as condições do aparelho: mesma faixa de bateria e de temperatura no início e no fim,
+  sem modo de economia, tela ligada, nada instalando ou atualizando, e nenhum Gradle rodando no
+  host durante as medidas. Os demais critérios não mudam: ordem antes, depois, depois, antes;
+  os dois "antes" a até 10% um do outro; p90 até 20% acima da mediana.
 
 ### 13.7 Etapas e aceite
 
