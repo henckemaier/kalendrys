@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -57,6 +60,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -409,9 +413,16 @@ private val THEME_OPTIONS = listOf(
     ThemeMode.DARK to R.string.settings_theme_dark,
 )
 
-/** Tema: Sistema, Claro ou Escuro, num botão segmentado (escolha única, lida pelo leitor de tela). */
+/** Acima disto o botão segmentado corta "Sistema" num telefone em retrato (D-1 da Coruja, fonte 2.0). */
+private const val SEGMENTED_MAX_FONT_SCALE = 1.3f
+
+/**
+ * Tema: Sistema, Claro ou Escuro. Escolha única, lida pelo leitor de tela como tal: num botão
+ * segmentado com a fonte normal e, com fonte grande, numa lista de opções de rádio, em que cada
+ * rótulo tem a largura toda e nunca é cortado. `internal` para o teste.
+ */
 @Composable
-private fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, shape: Shape) {
+internal fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, shape: Shape) {
     Surface(
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -422,14 +433,36 @@ private fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, sha
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(text = stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(8.dp))
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                THEME_OPTIONS.forEachIndexed { index, (mode, label) ->
-                    SegmentedButton(
-                        selected = mode == selected,
-                        onClick = { onSelect(mode) },
-                        shape = SegmentedButtonDefaults.itemShape(index, THEME_OPTIONS.size),
-                    ) {
-                        Text(stringResource(label), maxLines = 1)
+            if (LocalDensity.current.fontScale > SEGMENTED_MAX_FONT_SCALE) {
+                Column(modifier = Modifier.selectableGroup()) {
+                    THEME_OPTIONS.forEach { (mode, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .selectable(
+                                    selected = mode == selected,
+                                    onClick = { onSelect(mode) },
+                                    role = Role.RadioButton,
+                                ),
+                        ) {
+                            RadioButton(selected = mode == selected, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(label), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            } else {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    THEME_OPTIONS.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = mode == selected,
+                            onClick = { onSelect(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index, THEME_OPTIONS.size),
+                        ) {
+                            Text(stringResource(label), maxLines = 1)
+                        }
                     }
                 }
             }
