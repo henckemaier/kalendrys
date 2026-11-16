@@ -166,6 +166,11 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.junit) // AndroidJUnit4 para os testes de Room/Robolectric
+    // Testes de Compose na JVM (Robolectric + createComposeRule); versões pela compose-bom.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Registra a ComponentActivity vazia que o createComposeRule usa (só no manifest de debug).
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
