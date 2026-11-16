@@ -6,15 +6,20 @@ import android.net.Uri
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
-/** Pedido vindo de fora do app (widget ou notificação) para abrir uma tela específica. */
+/** Pedido vindo de fora do app (widget, notificação ou atalho) para abrir uma tela específica. */
 sealed interface LaunchRequest {
     data class OpenTask(val taskId: Long) : LaunchRequest
+
+    /** Aba Tarefas com o painel de nova tarefa aberto (widget e atalho "Nova tarefa"). */
     data object NewTask : LaunchRequest
     data class OpenRoutines(val date: LocalDate) : LaunchRequest
     data object OpenCalendar : LaunchRequest
 
     /** Aba Listas e, sobre ela, a tela da lista. [taskId] é a tarefa de origem (oferta P3), se houver. */
     data class OpenList(val listId: Long, val taskId: Long? = null) : LaunchRequest
+
+    /** A própria aba Listas, sem lista aberta por cima (atalho "Listas", ADR-0002, 12.6). */
+    data object OpenLists : LaunchRequest
 }
 
 /**
@@ -30,6 +35,7 @@ object AppLinks {
     private const val HOST_ROUTINE = "routine"
     private const val HOST_CALENDAR = "calendar"
     private const val HOST_LIST = "list"
+    private const val HOST_LISTS = "lists"
     private const val PARAM_TASK_ID = "taskId"
     private const val HOST_REMINDER_COMPLETE = "reminder-complete"
     private const val HOST_REMINDER_SNOOZE = "reminder-snooze"
@@ -60,6 +66,10 @@ object AppLinks {
      */
     fun openList(context: Context, listId: Long, taskId: Long? = null): Intent =
         baseIntent(context).setData(listUri(listId, taskId))
+
+    /** A aba Listas (atalho do app): `kalendrys://lists`. */
+    fun openLists(context: Context): Intent =
+        baseIntent(context).setData(Uri.parse("$SCHEME://$HOST_LISTS"))
 
     internal fun listUri(listId: Long, taskId: Long? = null): Uri =
         Uri.parse(
@@ -97,6 +107,7 @@ object AppLinks {
             HOST_LIST -> data.lastPathSegment?.toLongOrNull()?.let { listId ->
                 LaunchRequest.OpenList(listId, data.getQueryParameter(PARAM_TASK_ID)?.toLongOrNull())
             }
+            HOST_LISTS -> LaunchRequest.OpenLists
             else -> null
         }
     }

@@ -272,6 +272,11 @@ fun KalendrysNavHost(
                 navController.popBackStack(AppTab.Lists.route, inclusive = false)
                 navController.navigate(shoppingListRoute(launchRequest.listId, launchRequest.taskId))
             }
+            // Atalho "Listas" (ADR-0002, 12.6): a aba em si, mesmo que a pilha salva tenha uma lista aberta.
+            LaunchRequest.OpenLists -> {
+                navController.openTab(AppTab.Lists)
+                navController.popBackStack(AppTab.Lists.route, inclusive = false)
+            }
         }
         onLaunchRequestHandled()
     }
