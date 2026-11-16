@@ -12,11 +12,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -39,12 +40,16 @@ import kotlinx.coroutines.launch
  * @param label rótulo pt-BR da ação personalizada de acessibilidade (ex.: "Concluir", "Excluir").
  * @param event o que a ação faz: define o retorno tátil e a cor do fundo ([HapticEvent.Delete] sai
  *   na cor de erro).
+ * @param removesRow `true` quando a ação tira o item da lista (ex.: excluir com Desfazer): depois do
+ *   deslize a linha fica fora da tela até sair da composição, em vez de voltar deslizando e só
+ *   então sumir quando a lista atualizar. `false` (padrão): a linha volta ao lugar.
  */
 @Immutable
 class SwipeAction(
     val label: String,
     val icon: ImageVector,
     val event: HapticEvent,
+    val removesRow: Boolean = false,
     val onAction: () -> Unit,
 )
 
@@ -58,8 +63,10 @@ const val SWIPE_ROW_THRESHOLD_FRACTION = 0.4f
  * `null` desliga aquele lado. O deslize só dispara depois de [SWIPE_ROW_THRESHOLD_FRACTION] (40%)
  * da largura da linha, como na lista de tarefas; um deslize mais curto volta sem fazer nada.
  *
- * Sem estado além do do gesto: ao disparar, a linha volta à posição; sumir, riscar ou mostrar o
- * Desfazer é com quem chama. Cada ação tem a mesma [CustomAccessibilityAction], com o rótulo dado.
+ * Sem estado além do do gesto: ao disparar, a linha volta à posição (ou fica fora, com
+ * [SwipeAction.removesRow]); sumir, riscar ou mostrar o Desfazer é com quem chama. O estado do gesto
+ * usa `remember`, não `rememberSaveable`: numa `LazyColumn`, o Desfazer devolve o item com a mesma
+ * key e um estado salvo o traria de volta ainda "dispensado" (invisível). Cada ação tem a mesma [CustomAccessibilityAction], com o rótulo dado.
  *
  * Retorno tátil: no deslize, o próprio SwipeRow toca o [HapticEvent] da ação (via [Haptics]) antes
  * de chamar [SwipeAction.onAction]. O chamador NÃO repete o retorno tátil no `onAction`, senão
@@ -79,9 +86,12 @@ fun SwipeRow(
 ) {
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
-    val state = rememberSwipeToDismissBoxState(
-        positionalThreshold = { totalDistance -> totalDistance * SWIPE_ROW_THRESHOLD_FRACTION },
-    )
+    val state = remember {
+        SwipeToDismissBoxState(
+            initialValue = SwipeToDismissBoxValue.Settled,
+            positionalThreshold = { totalDistance -> totalDistance * SWIPE_ROW_THRESHOLD_FRACTION },
+        )
+    }
     val currentStart by rememberUpdatedState(startAction)
     val currentEnd by rememberUpdatedState(endAction)
 
@@ -109,8 +119,8 @@ fun SwipeRow(
                 haptics.perform(action.event)
                 action.onAction()
             }
-            // A linha volta ao lugar; se o item sumir da lista, a composição dele acaba junto.
-            scope.launch { state.reset() }
+            // A linha volta ao lugar, salvo se a ação tira o item da lista: aí fica fora até sair.
+            if (action?.removesRow != true) scope.launch { state.reset() }
         },
         backgroundContent = {
             val action = when (state.dismissDirection) {

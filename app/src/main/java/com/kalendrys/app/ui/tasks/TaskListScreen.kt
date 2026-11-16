@@ -2,13 +2,14 @@
 
 package com.kalendrys.app.ui.tasks
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -18,9 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Circle
@@ -32,49 +31,35 @@ import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,12 +70,19 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
-import com.kalendrys.app.ui.components.fabListContentPadding
+import com.kalendrys.app.ui.components.AppScaffold
+import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.EmptyState
-import com.kalendrys.app.ui.components.SettingsButton
+import com.kalendrys.app.ui.components.HapticEvent
+import com.kalendrys.app.ui.components.SwipeAction
+import com.kalendrys.app.ui.components.SwipeRow
+import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
+import com.kalendrys.app.ui.theme.Spacing
 import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
 import java.time.LocalTime
@@ -117,8 +109,7 @@ fun TaskListScreen(
     }
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    val fabExpanded by rememberFabExpanded(listState)
 
     val completedMessage = stringResource(R.string.task_completed)
     val deletedMessage = stringResource(R.string.task_deleted)
@@ -138,26 +129,24 @@ fun TaskListScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    val settingsLabel = stringResource(R.string.settings_title)
+    AppScaffold(
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.tab_tasks)) },
-                actions = { SettingsButton(onClick = onOpenSettings) },
-                scrollBehavior = scrollBehavior,
+            AppTopBar(
+                title = stringResource(R.string.tab_tasks),
+                actions = listOf(TopBarAction(settingsLabel, Icons.Outlined.Settings, onClick = onOpenSettings)),
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showNewTask = true },
+            CollapsingFab(
+                text = stringResource(R.string.new_task),
                 expanded = fabExpanded,
-                // O ExtendedFAB remove o texto da semântica; quem dá o rótulo acessível é o ícone.
-                icon = { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_task)) },
-                text = { Text(stringResource(R.string.new_task)) },
+                onClick = { showNewTask = true },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { innerPadding ->
+        hasFab = true,
+        snackbarHostState = snackbarHostState,
+    ) { padding ->
         when {
             !state.isLoaded -> Unit
             // Sem nenhuma tarefa criada: vazio "comece por aqui" (sem busca nem filtros).
@@ -165,18 +154,25 @@ fun TaskListScreen(
                 icon = Icons.Outlined.TaskAlt,
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(padding),
             )
-            else -> Column(modifier = Modifier.padding(innerPadding)) {
+            // Busca e chips ficam fixos acima da lista (como hoje): só o topo do preenchimento vai
+            // para a coluna; laterais e fundo (insets, largura máxima e folga do FAB) seguem para a
+            // busca, os chips e o contentPadding da lista, que rola por baixo da barra do sistema.
+            else -> Column(modifier = Modifier.padding(top = padding.calculateTopPadding())) {
+                val direction = LocalLayoutDirection.current
+                val start = padding.calculateStartPadding(direction) + Spacing.l
+                val end = padding.calculateEndPadding(direction) + Spacing.l
+                val listPadding = PaddingValues(start = start, end = end, bottom = padding.calculateBottomPadding())
                 TaskSearchBar(
                     query = query,
                     onQueryChange = viewModel::setQuery,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s),
                 )
                 TaskFilterChips(
                     selected = filters,
                     onToggle = viewModel::toggleFilter,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s, bottom = Spacing.s),
                 )
                 if (state.isEmpty) {
                     // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto.
@@ -199,7 +195,7 @@ fun TaskListScreen(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = fabListContentPadding(horizontal = 16.dp),
+                        contentPadding = listPadding,
                     ) {
                         item(key = "today_label", contentType = "today") {
                             Text(
@@ -265,7 +261,7 @@ private fun TaskSearchBar(
                 }
             }
         },
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = TextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -291,7 +287,7 @@ private fun TaskFilterChips(
     )
     FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
     ) {
         chips.forEach { (filter, label) ->
             val isSelected = filter in selected
@@ -354,7 +350,7 @@ private fun SectionHeader(title: String, count: Int, modifier: Modifier = Modifi
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 24.dp, bottom = 8.dp),
+            .padding(top = Spacing.xl, bottom = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -384,45 +380,21 @@ private fun SwipeableTaskRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val currentOnDelete by rememberUpdatedState(onDelete)
-    // remember (e não rememberSaveable): a LazyColumn restauraria o estado "dispensado"
-    // quando o "Desfazer" devolve um item com a mesma key.
-    val dismissState = remember {
-        SwipeToDismissBoxState(
-            initialValue = SwipeToDismissBoxValue.Settled,
-            density = density,
-            positionalThreshold = { totalDistance -> totalDistance * 0.4f },
-        )
-    }
-    LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) currentOnDelete()
-    }
-
-    SwipeToDismissBox(
-        state = dismissState,
+    // Só o lado de excluir (deslize para a esquerda), com Desfazer no snackbar, como antes do
+    // SwipeRow: a linha fica fora da tela até o item sair da lista (removesRow). O tátil é do SwipeRow.
+    val deleteAction = SwipeAction(
+        label = stringResource(R.string.delete_task),
+        icon = Icons.Outlined.Delete,
+        event = HapticEvent.Delete,
+        removesRow = true,
+        onAction = onDelete,
+    )
+    SwipeRow(
         modifier = modifier,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            val swiping = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(shape)
-                    .background(if (swiping) MaterialTheme.colorScheme.errorContainer else Color.Transparent)
-                    .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                if (swiping) {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                }
-            }
-        },
-    ) {
+        endAction = deleteAction,
+        shape = shape,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    ) { actionsModifier ->
         TaskRow(
             item = item,
             done = done,
@@ -432,7 +404,7 @@ private fun SwipeableTaskRow(
             shape = shape,
             onOpen = onOpen,
             onComplete = onComplete,
-            onDelete = onDelete,
+            modifier = actionsModifier,
         )
     }
 }
@@ -447,24 +419,20 @@ private fun TaskRow(
     shape: Shape,
     onOpen: () -> Unit,
     onComplete: () -> Unit,
-    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val task = item.task
-    val deleteLabel = stringResource(R.string.delete_task)
+    // [modifier] traz a ação "Excluir tarefa" do SwipeRow, no mesmo nó mesclado do toque.
     Surface(
         onClick = onOpen,
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                customActions = listOf(CustomAccessibilityAction(deleteLabel) { onDelete(); true })
-            },
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
                 .heightIn(min = 64.dp)
-                .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = Spacing.xs, end = Spacing.l, top = Spacing.s, bottom = Spacing.s),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora.
@@ -479,7 +447,7 @@ private fun TaskRow(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 4.dp),
+                    .padding(start = Spacing.xs),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
@@ -553,7 +521,7 @@ private fun TaskMeta(
 private fun MetaItem(icon: ImageVector, text: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
     ) {
         Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
         Text(

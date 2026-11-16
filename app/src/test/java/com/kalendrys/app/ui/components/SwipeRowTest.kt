@@ -1,10 +1,12 @@
 package com.kalendrys.app.ui.components
 
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -175,5 +177,66 @@ class SwipeRowTest {
         compose.waitForIdle()
 
         assertEquals(listOf("excluir", "concluir"), calls)
+    }
+
+    // --- removesRow: excluir com Desfazer (aba Tarefas) ------------------------------------------
+
+    private fun rowLeft(): Float =
+        compose.onNodeWithText("Linha", useUnmergedTree = true).fetchSemanticsNode().positionInRoot.x
+
+    @Test
+    fun `sem removesRow a linha volta ao lugar depois do deslize`() {
+        compose.setContent {
+            KalendrysTheme {
+                SwipeRow(
+                    modifier = Modifier.width(360.dp),
+                    endAction = SwipeAction("Excluir", Icons.Outlined.Delete, HapticEvent.Delete) { calls += "excluir" },
+                ) { actions -> ListRow(title = "Linha", modifier = actions) }
+            }
+        }
+        val atRest = rowLeft()
+
+        compose.onNodeWithText("Linha").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+
+        assertEquals(listOf("excluir"), calls)
+        assertEquals(atRest, rowLeft())
+    }
+
+    @Test
+    fun `com removesRow a linha fica fora ate sair e volta visivel quando o item e devolvido`() {
+        val present = mutableStateOf(true)
+        compose.setContent {
+            KalendrysTheme {
+                LazyColumn(modifier = Modifier.width(360.dp)) {
+                    if (present.value) {
+                        item(key = 1L) {
+                            SwipeRow(
+                                endAction = SwipeAction(
+                                    label = "Excluir",
+                                    icon = Icons.Outlined.Delete,
+                                    event = HapticEvent.Delete,
+                                    removesRow = true,
+                                ) { calls += "excluir" },
+                            ) { actions -> ListRow(title = "Linha", modifier = actions) }
+                        }
+                    }
+                }
+            }
+        }
+        val atRest = rowLeft()
+
+        compose.onNodeWithText("Linha").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        // Não volta deslizando: fica fora da tela até a lista tirar o item (sem "piscada").
+        assertEquals(listOf("excluir"), calls)
+        assertTrue(rowLeft() < 0f)
+
+        // A lista atualiza (item some) e o Desfazer o devolve com a mesma key: estado novo, visível.
+        compose.runOnIdle { present.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { present.value = true }
+        compose.waitForIdle()
+        assertEquals(atRest, rowLeft())
     }
 }
