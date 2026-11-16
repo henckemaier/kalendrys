@@ -113,7 +113,8 @@ class CalendarScreenShellTest {
     fun `FAB de nova tarefa abre o painel`() {
         compose.onAllNodesWithText("Título").assertCountEquals(0)
 
-        compose.onNodeWithContentDescription("Nova tarefa").performClick()
+        // A descrição traz o dia selecionado (new_task_on_day), como antes da casca.
+        compose.onNodeWithContentDescription("Nova tarefa em ", substring = true).performClick()
 
         compose.onNodeWithText("Título").assertIsDisplayed()
     }

@@ -129,6 +129,11 @@ fun CalendarScreen(
                     text = stringResource(R.string.new_task),
                     expanded = fabExpanded,
                     onClick = { newTaskEpochDay = state.selectedDate.toEpochDay() },
+                    // O leitor de tela ouve em que dia a tarefa nasce, como antes da casca.
+                    contentDescription = stringResource(
+                        R.string.new_task_on_day,
+                        weekdayDateLabel(state.selectedDate),
+                    ),
                 )
             }
         },
