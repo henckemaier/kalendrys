@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Scaffold
@@ -34,7 +35,7 @@ val ContentMaxWidth: Dp = 640.dp
  * a tela inteira, sem faixas mortas nas laterais em paisagem. O que passar de [ContentMaxWidth] vai
  * para o preenchimento lateral, dividido entre os dois lados. Com [hasFab], o fundo já inclui
  * [FabClearance], para a última linha nunca ficar sob o FAB. As margens da própria tela entram com
- * [plus].
+ * [plus]. Com o teclado aberto, a casca inteira encolhe acima dele (barra do topo fixa).
  */
 @Composable
 fun AppScaffold(
@@ -46,7 +47,11 @@ fun AppScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
-        modifier = modifier,
+        // O teclado ENCOLHE a casca inteira (parecer do Esquadro, B-1 da E3): a área de rolagem termina
+        // acima dele e o campo focado é trazido para cima dele dentro da lista, sem o sistema subir a
+        // janela (a Activity usa adjustResize). O teclado fica consumido aqui, então o safeDrawing
+        // abaixo não o soma de novo (o Scaffold desconta o que os ancestrais já consumiram).
+        modifier = modifier.imePadding(),
         topBar = topBar,
         floatingActionButton = floatingActionButton,
         snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } },
