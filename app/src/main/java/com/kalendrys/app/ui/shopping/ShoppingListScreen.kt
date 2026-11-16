@@ -2,19 +2,29 @@
 
 package com.kalendrys.app.ui.shopping
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,22 +32,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
-import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.ProgressLine
+import com.kalendrys.app.ui.components.QuickAddField
+import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.plus
-import com.kalendrys.app.ui.components.rememberFabExpanded
+import com.kalendrys.app.ui.components.bottomBarInsets
 import com.kalendrys.app.ui.shopping.ShoppingListViewModel.Event
 import com.kalendrys.app.ui.theme.Spacing
 import kotlinx.coroutines.flow.collectLatest
@@ -49,11 +62,14 @@ fun ShoppingListScreen(
     viewModel: ShoppingListViewModel = viewModel(factory = ShoppingListViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val showGestureHint by viewModel.showGestureHint.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
-    val fabExpanded by rememberFabExpanded(listState)
     var showRename by rememberSaveable { mutableStateOf(false) }
-    var showItemDialog by rememberSaveable { mutableStateOf(false) }
+    // Texto da adição rápida (C1): sobrevive à rotação; Enter adiciona e o campo segue focado.
+    var quickText by rememberSaveable { mutableStateOf("") }
+    // Grupo "Marcados (n)": aberto ou recolhido é estado da tela, não vai para o banco (12.4, U6).
+    var pickedExpanded by rememberSaveable { mutableStateOf(true) }
     // Só o id do item em edição: o item em si é lido do estado (fresco após rotação).
     var editingItemId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -64,8 +80,6 @@ fun ShoppingListScreen(
     val taskCompletedMessage = stringResource(R.string.task_completed)
     // A mensagem da oferta leva o título da tarefa, então é formatada na hora do evento.
     val res = LocalContext.current.resources
-    // Retorno tátil leve ao marcar (A5 parcial); o próprio sistema respeita a configuração de toque.
-    val haptic = LocalHapticFeedback.current
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.events.collectLatest { event ->
             when (event) {
@@ -125,19 +139,23 @@ fun ShoppingListScreen(
                 },
             )
         },
-        floatingActionButton = {
+        // C1: o campo de adição rápida substitui o FAB e o diálogo de novo item; quantidade e preço
+        // se ajustam pelo toque no item.
+        bottomBar = {
             if (state.list != null) {
-                CollapsingFab(
-                    text = stringResource(R.string.shopping_add_item),
-                    expanded = fabExpanded,
-                    onClick = {
-                        editingItemId = null
-                        showItemDialog = true
-                    },
+                QuickAddField(
+                    value = quickText,
+                    onValueChange = { quickText = it },
+                    onAdd = viewModel::quickAdd,
+                    placeholder = stringResource(R.string.shopping_add_item),
+                    addLabel = stringResource(R.string.shopping_quick_add_action),
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(bottomBarInsets)
+                        .padding(horizontal = Spacing.l, vertical = Spacing.s),
                 )
             }
         },
-        hasFab = state.list != null,
         snackbarHostState = snackbarHostState,
     ) { padding ->
         when {
@@ -154,62 +172,70 @@ fun ShoppingListScreen(
                 message = stringResource(R.string.shopping_empty),
                 modifier = Modifier.padding(padding),
             )
-            else -> LazyColumn(
-                state = listState,
-                contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s),
-            ) {
-                item(key = "progress") {
-                    Text(
-                        text = stringResource(
-                            R.string.shopping_list_progress,
-                            state.progress.picked,
-                            state.progress.total,
-                        ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-                    )
-                }
-                itemsIndexed(state.items, key = { _, it -> it.id }) { index, item ->
-                    ShoppingItemRow(
+            else -> {
+                // A mesma linha nos dois grupos (a marcar e marcados).
+                val itemRow: @Composable (ShoppingItem, Int, Int) -> Unit = { item, index, count ->
+                    // Gestos da 12.4: deslizar marca/desmarca e remove (com Desfazer); toque edita.
+                    // O retorno tátil do deslize é do próprio SwipeRow (não repetir aqui).
+                    ShoppingItemSwipeRow(
                         item = item,
                         index = index,
-                        count = state.items.size,
-                        onTogglePicked = {
-                            if (!item.picked) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.togglePicked(item)
-                        },
-                        onEdit = {
-                            editingItemId = item.id
-                            showItemDialog = true
-                        },
-                        onDelete = { viewModel.removeItem(item) },
+                        count = count,
+                        onToggle = { viewModel.togglePicked(item) },
+                        onRemove = { viewModel.removeItem(item) },
+                        onEdit = { editingItemId = item.id },
                     )
                 }
-                item(key = "total") {
-                    ShoppingTotalRow(totalCents = state.totalCents)
+                LazyColumn(
+                    state = listState,
+                    contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s),
+                ) {
+                    item(key = "progress") {
+                        ProgressLine(progress = state.progress, modifier = Modifier.padding(bottom = Spacing.s))
+                    }
+                    if (showGestureHint) {
+                        item(key = "gesture_hint") {
+                            ShoppingGestureHint(
+                                onDismiss = viewModel::dismissGestureHint,
+                                modifier = Modifier.padding(bottom = Spacing.s),
+                            )
+                        }
+                    }
+                    itemsIndexed(state.toPick, key = { _, it -> it.id }) { index, item ->
+                        Box(Modifier.animateItem()) { itemRow(item, index, state.toPick.size) }
+                    }
+                    if (state.picked.isNotEmpty()) {
+                        item(key = "picked_header") {
+                            PickedHeader(
+                                count = state.picked.size,
+                                expanded = pickedExpanded,
+                                onToggle = { pickedExpanded = !pickedExpanded },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        if (pickedExpanded) {
+                            itemsIndexed(state.picked, key = { _, it -> it.id }) { index, item ->
+                                Box(Modifier.animateItem()) { itemRow(item, index, state.picked.size) }
+                            }
+                        }
+                    }
+                    item(key = "total") {
+                        ShoppingTotalRow(totalCents = state.totalCents)
+                    }
                 }
             }
         }
     }
 
-    if (showItemDialog) {
-        val editing = editingItemId?.let { id -> state.items.firstOrNull { it.id == id } }
+    // Só edição: incluir é pela adição rápida (C1). Item que sumiu (removido em outro lugar) não abre.
+    editingItemId?.let { id -> state.items.firstOrNull { it.id == id } }?.let { editing ->
         ShoppingItemDialog(
             existing = editing,
             onConfirm = { name, quantity, priceCents ->
-                if (editing == null) {
-                    viewModel.addItem(name, quantity, priceCents)
-                } else {
-                    viewModel.updateItem(editing, name, quantity, priceCents)
-                }
-                showItemDialog = false
+                viewModel.updateItem(editing, name, quantity, priceCents)
                 editingItemId = null
             },
-            onDismiss = {
-                showItemDialog = false
-                editingItemId = null
-            },
+            onDismiss = { editingItemId = null },
         )
     }
 
@@ -225,5 +251,35 @@ fun ShoppingListScreen(
                 onDismiss = { showRename = false },
             )
         }
+    }
+}
+
+/**
+ * Cabeçalho do grupo "Marcados (n)" (ADR-0002, 12.4, U6): toca para recolher ou mostrar os itens
+ * marcados. Lido como cabeçalho, com a contagem e a ação de abrir/recolher no mesmo nó.
+ */
+@Composable
+private fun PickedHeader(count: Int, expanded: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val actionLabel = stringResource(
+        if (expanded) R.string.shopping_list_picked_collapse else R.string.shopping_list_picked_expand,
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(onClickLabel = actionLabel, role = Role.Button, onClick = onToggle),
+    ) {
+        SectionHeader(
+            title = stringResource(R.string.shopping_list_picked_group),
+            count = count,
+            contentPadding = PaddingValues(top = Spacing.m, bottom = Spacing.s),
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

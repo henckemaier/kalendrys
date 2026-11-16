@@ -13,6 +13,7 @@ import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.ShoppingTotals
@@ -23,9 +24,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Tela de uso de uma lista (ADR-0001, fatia 2). Só o `listId` vem da rota: listas e itens vêm do
@@ -36,6 +41,8 @@ class ShoppingListViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: ShoppingRepository,
     private val taskRepository: TaskRepository,
+    /** Registro da dica única do gesto (12.4); `null` (testes antigos) esconde a dica. */
+    private val settings: SettingsRepository? = null,
 ) : ViewModel() {
 
     private val listId: Long = checkNotNull(savedStateHandle[SHOPPING_LIST_ID_ARG])
@@ -53,6 +60,14 @@ class ShoppingListViewModel(
         val progress: ShoppingProgress get() = ShoppingProgress(picked = items.count { it.picked }, total = items.size)
         val totalCents: Long get() = ShoppingTotals.totalCents(items)
         val hasPicked: Boolean get() = items.any { it.picked }
+
+        /**
+         * Grupo "Marcados (n)" (ADR-0002, 12.4, U6): os itens a pegar em cima e os marcados embaixo,
+         * cada grupo na ordem de posição. Desmarcar devolve o item ao lugar dele entre os que faltam.
+         * Recolhido ou aberto é estado da tela, não vai para o banco.
+         */
+        val toPick: List<ShoppingItem> get() = items.filterNot { it.picked }
+        val picked: List<ShoppingItem> get() = items.filter { it.picked }
     }
 
     sealed interface Event {
@@ -77,10 +92,34 @@ class ShoppingListViewModel(
             UiState(isLoaded = true, list = list, items = if (list == null) emptyList() else items)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
+
+    /**
+     * Dica única do gesto (ADR-0002, 12.4): `true` enquanto a pessoa não dispensou. Começa `false`
+     * para não piscar a dica antes da leitura do DataStore.
+     */
+    val showGestureHint: StateFlow<Boolean> =
+        (settings?.shoppingGestureHintSeen?.map { seen -> !seen } ?: flowOf(false))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun dismissGestureHint() {
+        val store = settings ?: return
+        viewModelScope.launch { store.setShoppingGestureHintSeen() }
+    }
+
+    /**
+     * Uma inclusão por vez, na ordem pedida: o repositório calcula a posição lendo a maior atual, e a
+     * adição rápida (Enter seguido) dispararia inclusões em paralelo com a mesma posição. O Mutex é
+     * justo (fila), então os itens ficam na ordem em que foram digitados.
+     */
+    private val addLock = Mutex()
+
     fun addItem(name: String, quantity: Int, priceCents: Long?) {
         if (name.isBlank() || uiState.value.notFound) return
-        viewModelScope.launch { repository.add(listId, name, quantity, priceCents) }
+        viewModelScope.launch { addLock.withLock { repository.add(listId, name, quantity, priceCents) } }
     }
+
+    /** Adição rápida (C1, QuickAddField): só o nome, quantidade 1 e sem preço; o resto pelo toque. */
+    fun quickAdd(name: String) = addItem(name.trim(), quantity = 1, priceCents = null)
 
     fun updateItem(item: ShoppingItem, name: String, quantity: Int, priceCents: Long?) {
         if (name.isBlank()) return
@@ -159,7 +198,7 @@ class ShoppingListViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                ShoppingListViewModel(createSavedStateHandle(), app.shoppingRepository, app.repository)
+                ShoppingListViewModel(createSavedStateHandle(), app.shoppingRepository, app.repository, app.settingsRepository)
             }
         }
     }

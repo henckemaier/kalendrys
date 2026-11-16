@@ -215,6 +215,8 @@ fun RoutinesScreen(
                 icon = Icons.Outlined.EventRepeat,
                 title = stringResource(R.string.routines_empty_title),
                 message = stringResource(R.string.routines_empty_message),
+                actionLabel = stringResource(R.string.new_routine),
+                onAction = onNewRoutine,
                 modifier = Modifier.padding(padding),
             )
             else -> Timeline(

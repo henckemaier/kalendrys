@@ -96,6 +96,41 @@ class ShoppingListViewModelTest {
     }
 
     @Test
+    fun `marcar manda para Marcados e desmarcar devolve o item a posicao dele`() = runTest {
+        val listId = repository.createList("Mercado")
+        listOf("Arroz", "Feijão", "Café", "Leite").forEach { repository.add(listId, it, quantity = 1, priceCents = null) }
+
+        val vm = viewModel(listId)
+        vm.uiState.test {
+            val loaded = awaitUntil { it.items.size == 4 }
+            val feijao = loaded.items.first { it.name == "Feijão" }
+
+            vm.togglePicked(feijao).join()
+            val marked = awaitUntil { it.picked.size == 1 }
+            assertEquals(listOf("Arroz", "Café", "Leite"), marked.toPick.map { it.name })
+            assertEquals(listOf("Feijão"), marked.picked.map { it.name })
+
+            vm.togglePicked(marked.picked.single()).join()
+            val back = awaitUntil { it.picked.isEmpty() }
+            // Volta entre Arroz e Café, onde estava, não no fim da lista.
+            assertEquals(listOf("Arroz", "Feijão", "Café", "Leite"), back.toPick.map { it.name })
+        }
+    }
+
+    @Test
+    fun `adicao rapida cria cinco itens seguidos com quantidade 1 e ignora em branco`() = runTest {
+        val listId = repository.createList("Mercado")
+        val vm = viewModel(listId)
+        vm.uiState.test {
+            awaitUntil { it.list != null }
+            listOf("Pão", "  Ovos  ", "Queijo", "   ", "Manteiga", "Suco").forEach(vm::quickAdd)
+            val state = awaitUntil { it.items.size == 5 }
+            assertEquals(listOf("Pão", "Ovos", "Queijo", "Manteiga", "Suco"), state.items.map { it.name })
+            assertTrue(state.items.all { it.quantity == 1 && it.priceCents == null && !it.picked })
+        }
+    }
+
+    @Test
     fun `lista inexistente vira notFound sem itens`() = runTest {
         val vm = viewModel(listId = 999)
         vm.uiState.test {
