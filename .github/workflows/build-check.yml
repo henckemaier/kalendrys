@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '17'
@@ -58,6 +58,34 @@ jobs:
       # Uma so invocacao: testes, lint e o mesmo assembleRelease do release.yml.
       - name: Testes, lint e assembleRelease (sem secrets; assina com a chave de debug)
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon --stacktrace
+
+      # Só no build-check: prova no log quais suítes rodaram (inclusive as de GraphicsMode NATIVE,
+      # que dependem da biblioteca nativa do Robolectric no Linux) e o total do lint. Só shell, lendo
+      # os relatórios que o passo anterior gerou; roda mesmo se ele falhou, para mostrar onde.
+      - name: Resumo dos testes e do lint
+        if: always()
+        run: |
+          set -uo pipefail
+          DIR=app/build/test-results/testDebugUnitTest
+          attr() { sed -nE "0,/<testsuite /s/.*<testsuite [^>]*\b$1=\"([^\"]*)\".*/\1/p" "$2"; }
+          if ls "$DIR"/TEST-*.xml >/dev/null 2>&1; then
+            printf '%-80s %6s %6s %6s %6s\n' SUITE TESTES FALHAS ERROS PULADOS
+            T=0; F=0; E=0; S=0
+            for f in "$DIR"/TEST-*.xml; do
+              n=$(attr name "$f"); t=$(attr tests "$f"); fa=$(attr failures "$f"); e=$(attr errors "$f"); s=$(attr skipped "$f")
+              printf '%-80s %6s %6s %6s %6s\n' "$n" "$t" "$fa" "$e" "$s"
+              T=$((T + t)); F=$((F + fa)); E=$((E + e)); S=$((S + s))
+            done
+            echo "TOTAL: $(ls "$DIR"/TEST-*.xml | wc -l) suites, $T testes, $F falhas, $E erros, $S pulados"
+          else
+            echo "::warning::sem relatorios de teste em $DIR"
+          fi
+          LINT=app/build/reports/lint-results-debug.xml
+          if [ -f "$LINT" ]; then
+            echo "LINT: $(grep -cE 'severity="(Error|Fatal)"' "$LINT") erros, $(grep -c 'severity="Warning"' "$LINT") avisos"
+          else
+            echo "::warning::sem relatorio do lint em $LINT"
+          fi
 
       - name: Localizar APK e validar versionCode/versionName vs formula (aapt)
         run: |
