@@ -851,6 +851,11 @@ dependência nova e sem mudança no manifesto. Parte da 12.8. As decisões D1 a 
 - `NewTaskList` vai para `domain/` e a regra de qual lista gravar (`resolveListId`) vira método
   do `ShoppingRepository`; `ui/calendar` deixa de importar de `ui/tasks`. Criar lista e tarefa
   numa transação só fica para a v1.8.0, com a reforma do painel.
+- A data sugerida (hoje, ou o dia tocado no Calendário) vale enquanto o usuário não mexer na
+  data do rascunho; depois vale a dele. Um rascunho guardado e reaberto noutro dia acompanha a
+  data nova.
+- O store é parâmetro obrigatório dos dois ViewModels, sem valor padrão, para nenhuma tela
+  ficar com um rascunho próprio por engano.
 - Título cortado em paisagem: corrigido dentro do painel, sem trocar o tipo de painel.
 
 ### 13.2 Seletor de dias da semana
@@ -872,6 +877,18 @@ célula tem cerca de 44dp de largura. Com fonte grande a linha continua quebrand
   o despertador do sistema. Sem permissão exata, mostra o horário e avisa que pode atrasar.
 - A tela **não** tem lógica própria de horário: se o cálculo dos agendadores mudar, o
   diagnóstico muda junto. Um teste compara os dois caminhos.
+- **Fontes dos três candidatos** (decisão de 2026-11-16, na E3): o conjunto de tarefas com
+  lembrete pendente é uma função só do `TaskRepository`, usada pelo reagendamento e pelo
+  diagnóstico; nas rotinas, o candidato é o próximo início **que avisa** (rotinas com aviso
+  ligado), lido pelo `RoutineRepository` sem agendar nada; o resumo vem de uma função pura
+  usada também pelo `DailyScheduler`. O alarme da virada do dia e o alarme silencioso de
+  rotina sem aviso não entram: não avisam o usuário.
+- **O que a linha mostra é o próximo aviso previsto, não uma leitura do sistema.** O
+  agendamento das rotinas é em cadeia (cada alarme agenda o seguinte), então o horário mostrado
+  pode ainda não estar agendado.
+- **Limite aceito: adiamentos ficam fora.** "Adiar" agenda um alarme direto, sem gravar nos
+  dados; com um adiamento pendente, o diagnóstico pode mostrar um horário posterior ao do aviso
+  adiado. Gravar o adiamento seria mudança de dados e não cabe em PATCH.
 
 ### 13.4 Mensagens com "Desfazer"
 
@@ -915,7 +932,7 @@ com dados reais**.
 
 | Etapa | Conteúdo | Aceite |
 |-------|----------|--------|
-| E1 | Painel de nova tarefa (13.1) | Fechar pelo voltar e reabrir traz tudo de volta, também trocando de aba, girando a tela, pelo Calendário e pelo atalho; Cancelar e Salvar limpam; título inteiro em paisagem com fonte 1.0 e 2.0; nenhum import de `ui/tasks` em `ui/calendar`; testes do rascunho e do store |
+| E1 | Painel de nova tarefa (13.1) | Fechar pelo voltar e reabrir traz tudo de volta, também trocando de aba, girando a tela, pelo Calendário e pelo atalho; Cancelar e Salvar limpam; título inteiro em paisagem com fonte 1.0 e 2.0; `ui/calendar` não importa tipo de dado nem regra de `ui/tasks` (só o painel compartilhado); testes do rascunho e do store |
 | E2 | Seletor de dias (13.2) | Teste de semântica: 48dp de altura de toque nos 7 dias, sem vão; sem corte em 360dp e em fonte 2.0; nome do dia e estado continuam lidos |
 | E3 | Diagnóstico (13.3) | Mostra o mais próximo entre tarefa, rotina e resumo; "Nenhum" sem nada agendado; horário com aviso sem permissão exata; despertador do Relógio não aparece; relê ao voltar da tela do sistema |
 | E4 | Desfazer (13.4) | Nenhuma duração curta junto de "Desfazer" em `ui/`; duas ações seguidas mostram só a última; Desfazer desfaz a ação certa |
