@@ -565,6 +565,10 @@ private fun BlockRow(
                     text = routineTimeRange(block.startMinute, routine.durationMinutes),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // M-1: o horário cede espaço (reticências) para o sino e o 2/3 ficarem inteiros.
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (routine.remind) {
                     Icon(
