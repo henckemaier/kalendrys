@@ -103,6 +103,19 @@ class TaskListShellTest {
         assertTrue("linha devolvida fora da tela (left=$left)", left >= 0f)
     }
 
+    /** Mesmo limiar de antes (40% da largura): um deslize lento curto volta sem excluir. */
+    @Test
+    fun `deslize lento de 30 por cento para a esquerda nao exclui`() {
+        compose.onNodeWithText("Comprar pão").performTouchInput {
+            swipeLeft(startX = right, endX = right - width * 0.3f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+
+        assertEquals(0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        compose.onNodeWithText("Comprar pão").assertHasClickAction()
+        assertEquals(1, runBlocking { testDb.db.taskDao().all() }.size)
+    }
+
     @Test
     fun `deslizar para a direita nao faz nada, como antes`() {
         compose.onNodeWithText("Comprar pão").performTouchInput { swipeRight() }

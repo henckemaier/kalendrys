@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,13 +43,14 @@ class TaskDetailShellTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private var backs = 0
+    private var taskId = 0L
 
     @Before
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        val taskId = runBlocking { db.taskDao().insert(Task(title = "Comprar pão")) }
+        taskId = runBlocking { db.taskDao().insert(Task(title = "Comprar pão")) }
         val viewModel = testDb.track(
             TaskDetailViewModel(
                 SavedStateHandle(mapOf(TASK_ID_ARG to taskId)),
@@ -84,6 +86,25 @@ class TaskDetailShellTest {
         compose.onNodeWithText("Excluir tarefa").performClick()
 
         compose.onNodeWithText("Excluir tarefa?").assertIsDisplayed()
+    }
+
+    /** O "Salvar" agora é o TextButton da barra (TopBarAction.prominent): o toque tem de gravar. */
+    @Test
+    fun `tocar Salvar na barra grava a alteracao e o botao desliga de novo`() {
+        compose.onNodeWithText("Comprar pão").performTextReplacement("Comprar pão integral")
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Salvar").assertIsEnabled().performClick()
+
+        compose.waitUntil(TIMEOUT_MS) {
+            runBlocking { testDb.db.taskDao().byId(taskId)?.title } == "Comprar pão integral"
+        }
+        compose.waitUntil(TIMEOUT_MS) {
+            compose.onAllNodesWithText("Salvar").fetchSemanticsNodes().singleOrNull()
+                ?.config?.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) == true
+        }
+        compose.onNodeWithText("Salvar").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals("salvar não fecha o detalhe", 0, backs) }
     }
 
     @Test

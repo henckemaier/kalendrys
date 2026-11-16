@@ -1,7 +1,9 @@
 package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
+import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -34,6 +37,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -49,6 +53,8 @@ class RoutineEditorShellTest {
     val compose = createComposeRule()
 
     private lateinit var testDb: ViewModelTestDatabase
+    private var routineId = 0L
+    private var closed = 0
 
     @Before
     fun setup() {
@@ -65,6 +71,7 @@ class RoutineEditorShellTest {
             InMemoryRoutineCatchUpMark(),
         )
         val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
+        routineId = routine.id
         val viewModel = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
@@ -75,7 +82,7 @@ class RoutineEditorShellTest {
             ),
         )
         compose.setContent {
-            KalendrysTheme { RoutineEditorScreen(onBack = {}, viewModel = viewModel) }
+            KalendrysTheme { RoutineEditorScreen(onBack = { closed++ }, viewModel = viewModel) }
         }
         compose.waitUntil(TIMEOUT_MS) { compose.onAllNodesWithText("Treino").fetchSemanticsNodes().isNotEmpty() }
     }
@@ -98,6 +105,24 @@ class RoutineEditorShellTest {
         compose.onNodeWithText("Pausar rotina").assertIsDisplayed()
         compose.onNodeWithText("Excluir rotina").performClick()
         compose.onNodeWithText("Excluir rotina?").assertIsDisplayed()
+    }
+
+    /** "Salvar" é o TextButton da barra (TopBarAction.prominent): liga com a alteração, grava e fecha. */
+    @Test
+    fun `alterar liga o Salvar da barra e tocar nele grava e fecha o editor`() {
+        compose.onNode(hasSetTextAction() and hasText("Treino")).performTextReplacement("Treino leve")
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Salvar").assertIsEnabled().performClick()
+
+        // O save passa por várias consultas no executor do Room, e cada uma volta ao Main: o
+        // waitUntil sozinho não drena o looper principal do Robolectric entre elas, então drenamos aqui.
+        compose.waitUntil(TIMEOUT_MS) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+            closed == 1
+        }
+        assertEquals("Treino leve", runBlocking { testDb.db.routineDao().byId(routineId)?.title })
     }
 
     @Test
