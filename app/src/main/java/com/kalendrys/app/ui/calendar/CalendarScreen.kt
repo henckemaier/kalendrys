@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -116,7 +115,7 @@ fun CalendarScreen(
                 title = stringResource(R.string.tab_calendar),
                 actions = buildList {
                     if (state.isLoaded && !state.isShowingToday) {
-                        add(TopBarAction(todayLabel, Icons.Outlined.Today, onClick = viewModel::goToToday))
+                        add(TopBarAction(todayLabel, prominent = true, onClick = viewModel::goToToday))
                     }
                     add(TopBarAction(settingsLabel, Icons.Outlined.Settings, onClick = onOpenSettings))
                 },

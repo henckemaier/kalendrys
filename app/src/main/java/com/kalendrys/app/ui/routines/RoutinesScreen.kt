@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -181,7 +180,7 @@ fun RoutinesScreen(
                     title = stringResource(R.string.tab_routines),
                     actions = buildList {
                         if (state.isLoaded && !state.isShowingToday) {
-                            add(TopBarAction(todayLabel, Icons.Outlined.Today, onClick = viewModel::goToToday))
+                            add(TopBarAction(todayLabel, prominent = true, onClick = viewModel::goToToday))
                         }
                         add(TopBarAction(settingsLabel, Icons.Outlined.Settings, onClick = onOpenSettings))
                     },

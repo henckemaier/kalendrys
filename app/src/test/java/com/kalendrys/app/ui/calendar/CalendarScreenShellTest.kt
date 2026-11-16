@@ -3,6 +3,8 @@ package com.kalendrys.app.ui.calendar
 import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -29,13 +31,16 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Casca da aba Calendário (ADR-0002, 12.2; E3): barra pequena com "Hoje" e Configurações como
- * ícones e o FAB de nova tarefa. O comportamento é o de antes: "Hoje" só fora do dia de hoje e
- * volta para ele; o FAB abre o painel de nova tarefa.
+ * Casca da aba Calendário (ADR-0002, 12.2; E3): barra pequena com "Hoje" escrito (O-1) e
+ * Configurações como ícone, e o FAB de nova tarefa. O comportamento é o de antes: "Hoje" só fora
+ * do dia de hoje e volta para ele; o FAB abre o painel de nova tarefa.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class CalendarScreenShellTest {
+
+    /** "Hoje" é botão de texto na barra (TopBarAction prominent, O-1 da E3). */
+    private val todayButton = hasText("Hoje") and hasClickAction()
 
     @get:Rule
     val compose = createComposeRule()
@@ -87,7 +92,7 @@ class CalendarScreenShellTest {
     @Test
     fun `barra pequena com titulo e Configuracoes, sem Hoje no dia de hoje`() {
         compose.onNodeWithText("Calendário").assertIsDisplayed()
-        compose.onAllNodesWithContentDescription("Hoje").assertCountEquals(0)
+        compose.onAllNodes(todayButton).assertCountEquals(0)
 
         compose.onNodeWithContentDescription("Configurações").performClick()
         assertEquals(1, settingsOpened)
@@ -97,16 +102,16 @@ class CalendarScreenShellTest {
     fun `fora do dia de hoje aparece Hoje, que volta para ele e some`() {
         compose.onNodeWithContentDescription("Próximo mês").performClick()
         waitForToday(present = true)
-        compose.onNodeWithContentDescription("Hoje").assertIsDisplayed().performClick()
+        compose.onNode(todayButton).assertIsDisplayed().performClick()
 
         waitForToday(present = false)
-        compose.onAllNodesWithContentDescription("Hoje").assertCountEquals(0)
+        compose.onAllNodes(todayButton).assertCountEquals(0)
         assertEquals(true, viewModel.uiState.value.isShowingToday)
     }
 
     /** O estado passa pelos flows do ViewModel (com o Room no meio): espera a barra refletir. */
     private fun waitForToday(present: Boolean) = compose.waitUntil(LOAD_TIMEOUT_MS) {
-        compose.onAllNodesWithContentDescription("Hoje").fetchSemanticsNodes().isNotEmpty() == present
+        compose.onAllNodes(todayButton).fetchSemanticsNodes().isNotEmpty() == present
     }
 
     @Test
