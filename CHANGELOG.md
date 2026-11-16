@@ -3,6 +3,50 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.7.0 — Redesenho: fundação visual e fluxos rápidos (versionCode 10700)
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 12).
+Sem migração de banco (Room versão 10) e sem permissão nova; o backup continua no formato 6.
+
+### Novidades
+
+- **Aparência** (Configurações): tema Sistema, Claro ou Escuro e Material You (cor do papel de
+  parede) opcional. Padrão, inclusive para quem atualiza: **Sistema, com Material You
+  desligado**. A escolha vai no backup; restaurar um backup antigo mantém a aparência atual.
+- **Visual novo em todas as telas**: barra superior compacta e fixa, botão "+" que recolhe ao
+  rolar, cantos e espaçamentos do tema, paisagem utilizável e largura máxima em telas largas.
+- **Listas**:
+  - adição rápida pelo campo no rodapé, vários itens seguidos sem fechar o teclado;
+  - itens marcados vão para o grupo **Marcados**, que recolhe;
+  - deslizar o item marca ou remove (com "Desfazer") e o toque edita; uma dica única, na
+    primeira vez, explica o gesto;
+  - cartões e categorias: o toque abre e o menu de três pontos tem as ações, com confirmação;
+  - estados vazios com a ação de criar.
+- **Atalhos do ícone** (toque longo no ícone do app): *Nova tarefa* e *Listas*.
+
+### Mudanças de comportamento
+
+- **Widgets seguem a Aparência do app.** Quem usa o aparelho em tema claro passa a ver os
+  widgets claros (antes eram sempre escuros). Com Material You ligado, os widgets também usam
+  a cor do papel de parede.
+- **Datas abreviadas padronizadas** em todo o app e nos widgets (ex.: "Seg, 16 nov"), iguais em
+  qualquer versão do Android.
+
+### Correções
+
+- **Teclado**: abrir o teclado não empurra mais a tela para cima; ela encolhe acima dele.
+- **Leitor de tela**: o item da lista anuncia se está marcado, os cabeçalhos são lidos como
+  cabeçalhos e toda ação de gesto (deslizar) tem uma ação equivalente.
+- **Listas**: corrigido um defeito latente em que dois itens adicionados ao mesmo tempo podiam
+  ficar com a mesma posição.
+
+### Interno
+
+- Testes de interface do Compose na JVM (`ui-test-junit4` e `ui-test-manifest`, pela BOM, só
+  nos testes; nada vai para o APK de release).
+- O build-check passa a rodar também os testes unitários e o lint em todo PR.
+- Baseline Profile regerado com as jornadas ajustadas à interface nova.
+
 ## v1.6.2 — Toolchain atualizada (versionCode 10602)
 
 Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 11).

@@ -55,8 +55,8 @@ app/src/main/java/com/kalendrys/app/
 │   ├── AppLocale.kt          # idioma fixo do app (pt-BR, semana começando no domingo)
 │   └── TodayOverview.kt      # retrato do dia: pendentes, rotinas de hoje, "a seguir"
 ├── ui/
-│   ├── theme/               # Paleta azul-ardósia fixa (Material 3) + tipografia
-│   ├── components/          # EmptyState, lista agrupada, TimePickerDialog, swipe paginado, pontos, relógio
+│   ├── theme/               # Paleta azul-ardósia (Material 3), Aparência (Sistema/Claro/Escuro, Material You), formas, tipografia
+│   ├── components/          # Design system: AppScaffold, AppTopBar, CollapsingFab, SwipeRow, ListRow, QuickAddField, GroupedCard, EmptyState...
 │   ├── navigation/          # Bottom bar: Tarefas | Rotinas | Calendário | Listas
 │   ├── tasks/               # Lista em seções, arrastar p/ excluir, desfazer, NewTaskSheet, ReminderPicker
 │   ├── taskdetail/          # Detalhe/edição: título, observações, lembrete, status do dia, histórico
@@ -132,9 +132,13 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
 A 4ª aba, **Listas**, reúne as listas de compras, com progresso (3/8), total e a etiqueta de quem
 usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
 
-- **Tela da lista**: marcar, adicionar, editar e remover itens (com "Desfazer"), total calculado
-  na leitura, "Desmarcar todos" (com "Desfazer") e renomear. Tudo é salvo na hora. Marcar um
-  item dá um retorno tátil leve.
+- **Tela da lista**: adição rápida pelo campo no rodapé (vários itens seguidos sem fechar o
+  teclado); os itens marcados vão para o grupo **Marcados (n)**, que recolhe. Deslizar marca ou
+  remove (com "Desfazer") e o toque edita; uma dica única explica o gesto. Total calculado na
+  leitura, "Desmarcar todos" (com "Desfazer") e renomear. Tudo é salvo na hora. Marcar um item dá
+  um retorno tátil leve.
+- **Cartões da aba**: o toque abre a lista; o menu de três pontos renomeia e exclui (com
+  confirmação). Estados vazios trazem a ação de criar.
 - **Oferta "Concluir tarefa"**: ao marcar o último item, se a lista tem uma tarefa pendente
   (a de origem, quando se chegou pela tarefa, senão a única vinculada pendente), aparece a oferta
   de concluí-la, com "Desfazer". Conta como pendente a tarefa atrasada, de hoje, sem data ou
@@ -156,14 +160,17 @@ usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
   vez de WorkManager, que pode atrasar em economia de bateria. Tem canal próprio ("Resumo
   diário"), que pode ser desligado nas configurações de notificação do Android. Dias sem
   pendências não geram notificação.
-- **Widgets** (Jetpack Glance, paleta escura do app sobre fundo 75% opaco, em qualquer tema
-  do sistema): *Calendário* (4×2, o mês com hoje marcado e, ao lado, as tarefas e rotinas do dia),
+- **Widgets** (Jetpack Glance; seguem a **Aparência** do app, claros ou escuros, e o Material
+  You quando ligado; no tema claro o fundo é opaco): *Calendário* (4×2, o mês com hoje marcado e, ao lado, as tarefas e rotinas do dia),
   *Hoje* (4×2, tarefas e rotinas pendentes com conclusão direto no widget, toque
   abre a tarefa ou as rotinas, "+" cria uma tarefa) e *Resumo do dia* (2×2, quanto falta e o
   que vem a seguir). Atualizam a cada mudança no banco, quando um bloco começa e na virada do dia.
-- **Configurações** (engrenagem na barra das abas): ligar/desligar o resumo e escolher o
+- **Configurações** (engrenagem na barra das abas): **Aparência** (tema Sistema, Claro ou Escuro
+  e Material You opcional; padrão Sistema com Material You desligado, inclusive para quem
+  atualiza; vai no backup como campos opcionais), ligar/desligar o resumo e escolher o
   horário (guardado no DataStore; os alarmes se reajustam sozinhos), atalho para as
   notificações do sistema e versão do app.
+- **Atalhos do ícone** (toque longo no ícone do app): *Nova tarefa* e *Listas*.
 - **Exportar histórico** (Configurações → Dados): salva um CSV com todas as conclusões de
   tarefas e rotinas onde o usuário escolher (Downloads, Drive...), pelo seletor de arquivos do
   sistema, sem permissão de armazenamento. Colunas: `Dia;Tipo;Título;Horário;Concluída em;Situação`
