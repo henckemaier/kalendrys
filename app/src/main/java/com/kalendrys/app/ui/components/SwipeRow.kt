@@ -48,14 +48,22 @@ class SwipeAction(
     val onAction: () -> Unit,
 )
 
+/** Fração da largura da linha que o deslize precisa passar para disparar a ação (A2). */
+const val SWIPE_ROW_THRESHOLD_FRACTION = 0.4f
+
 /**
  * Linha com deslize (ADR-0002, 4.2 e 12.4), na API de deslizar da material3 1.4
  * (`SwipeToDismissBox` com `onDismiss`): deslizar para o fim (para a direita, em LTR) dispara
  * [startAction] (concluir/marcar); para o início (para a esquerda) dispara [endAction] (excluir).
- * `null` desliga aquele lado.
+ * `null` desliga aquele lado. O deslize só dispara depois de [SWIPE_ROW_THRESHOLD_FRACTION] (40%)
+ * da largura da linha, como na lista de tarefas; um deslize mais curto volta sem fazer nada.
  *
  * Sem estado além do do gesto: ao disparar, a linha volta à posição; sumir, riscar ou mostrar o
  * Desfazer é com quem chama. Cada ação tem a mesma [CustomAccessibilityAction], com o rótulo dado.
+ *
+ * Retorno tátil: no deslize, o próprio SwipeRow toca o [HapticEvent] da ação (via [Haptics]) antes
+ * de chamar [SwipeAction.onAction]. O chamador NÃO repete o retorno tátil no `onAction`, senão
+ * vibra duas vezes. Pela ação de acessibilidade não há retorno tátil (o leitor de tela já anuncia).
  *
  * O [content] recebe o `Modifier` com essas ações: aplique-o no nó que mescla a semântica da linha
  * (o `modifier` da [ListRow]), para o leitor de tela oferecer as ações no item que ele foca.
@@ -71,7 +79,9 @@ fun SwipeRow(
 ) {
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
-    val state = rememberSwipeToDismissBoxState()
+    val state = rememberSwipeToDismissBoxState(
+        positionalThreshold = { totalDistance -> totalDistance * SWIPE_ROW_THRESHOLD_FRACTION },
+    )
     val currentStart by rememberUpdatedState(startAction)
     val currentEnd by rememberUpdatedState(endAction)
 

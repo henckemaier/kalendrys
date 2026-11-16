@@ -140,4 +140,40 @@ class SwipeRowTest {
         assertTrue(calls.isEmpty())
         assertTrue(haptics.isEmpty())
     }
+
+    // --- A2: limiar de 40% da largura ------------------------------------------------------------
+    // Deslizes lentos (2 s): abaixo da velocidade de "arremesso", quem decide é só a posição.
+
+    @Test
+    fun `deslize lento abaixo de 40 por cento da largura nao dispara`() {
+        setRow()
+
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeLeft(startX = right, endX = right - width * 0.3f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeRight(startX = left, endX = left + width * 0.3f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+
+        assertTrue(calls.isEmpty())
+        assertTrue(haptics.isEmpty())
+    }
+
+    @Test
+    fun `deslize lento acima de 40 por cento da largura dispara`() {
+        setRow()
+
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeLeft(startX = right, endX = right - width * 0.6f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Pagar o aluguel").performTouchInput {
+            swipeRight(startX = left, endX = left + width * 0.6f, durationMillis = 2_000)
+        }
+        compose.waitForIdle()
+
+        assertEquals(listOf("excluir", "concluir"), calls)
+    }
 }

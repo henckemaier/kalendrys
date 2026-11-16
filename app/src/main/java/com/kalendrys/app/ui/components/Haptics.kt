@@ -26,6 +26,15 @@ enum class HapticEvent {
  * Retorno tátil do app, pelo [LocalHapticFeedback] do Compose: não pede permissão (VIBRATE) e
  * respeita a opção do sistema de desligar a vibração ao toque. Sem estado; obtenha com
  * [rememberHaptics].
+ *
+ * Versões do Android (o Compose repassa ao `ViewCompat.performHapticFeedback` do androidx.core,
+ * que troca o tipo pelo mais próximo que a versão tem):
+ * - [HapticFeedbackType.Confirm] (concluir): nativo a partir do API 30 (Android 11); abaixo vira
+ *   `VIRTUAL_KEY`, o toque curto padrão.
+ * - [HapticFeedbackType.ToggleOn]/[HapticFeedbackType.ToggleOff] (marcar/desmarcar): nativos a
+ *   partir do API 34 (Android 14); abaixo viram `CONTEXT_CLICK` e `CLOCK_TICK`, toques mais leves.
+ * - [HapticFeedbackType.LongPress] (excluir): igual em todas as versões do app (minSdk 26).
+ * Em qualquer versão, sem motor de vibração ou com a vibração ao toque desligada, nada acontece.
  */
 @Stable
 class Haptics(private val feedback: HapticFeedback) {
