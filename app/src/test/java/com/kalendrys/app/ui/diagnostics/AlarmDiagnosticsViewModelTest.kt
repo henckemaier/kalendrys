@@ -18,6 +18,7 @@ import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.AppAlarmKind
 import com.kalendrys.app.domain.NextAppAlarm
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarmReceiver
@@ -30,6 +31,7 @@ import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.io.File
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -81,7 +83,10 @@ class AlarmDiagnosticsViewModelTest {
         TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
-    private fun routineRepository(alarms: RoutineAlarms = FakeRoutineAlarms(context)) = testDb.db.let { db ->
+    private fun routineRepository(
+        alarms: RoutineAlarms = FakeRoutineAlarms(context),
+        deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
+    ) = testDb.db.let { db ->
         RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -90,6 +95,7 @@ class AlarmDiagnosticsViewModelTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            deliverDueBlocks = deliverDueBlocks,
             clock = { now },
         )
     }
@@ -375,6 +381,46 @@ class AlarmDiagnosticsViewModelTest {
         }
 
         assertEquals(NextAppAlarm(at(16, 10), AppAlarmKind.ROUTINE), nextAlarm(routines = routines))
+    }
+
+    /**
+     * Rotina só de segunda (16/11) às 10:00, com aviso, remarcada para terça 17/11 às 11:00 e
+     * concluída em [doneOn]. Devolve o que o diagnóstico mostra e o que a entrega (catch-up às 11:00
+     * de 17/11, como o alarme do início faria) avisou: (dia, id).
+     */
+    private fun rescheduledAndCompleted(doneOn: LocalDate): Pair<NextAppAlarm?, List<Pair<LocalDate, Long>>> {
+        disableSummary()
+        val delivered = mutableListOf<Pair<LocalDate, Long>>()
+        val routines = routineRepository(deliverDueBlocks = { blocks, date -> blocks.forEach { delivered += date to it.id } })
+        val today = LocalDate.of(2026, 11, 16)
+        val tomorrow = today.plusDays(1)
+        runBlocking {
+            val treino = routines.add(
+                Routine(title = "Treino", startMinute = 10 * 60, remind = true, createdAt = 0, daysOfWeek = RoutineDays.bit(DayOfWeek.MONDAY)),
+            )
+            routines.rescheduleOccurrence(treino.id, today.toEpochDay(), newStartMinute = 11 * 60, newEpochDay = tomorrow.toEpochDay())
+            routines.complete(treino.id, doneOn, today = today)
+        }
+        val shown = nextAlarm(routines = routines)
+        runBlocking { routines.catchUp(nowOverride = at(17, 11)) }
+        return shown to delivered
+    }
+
+    @Test
+    fun `remarcada de hoje para amanha e concluida no dia novo - diagnostico e entrega concordam que nao avisa`() {
+        val (shown, delivered) = rescheduledAndCompleted(doneOn = LocalDate.of(2026, 11, 17))
+
+        // A entrega não avisa às 11:00 de 17/11; o diagnóstico pula esse início e vai à segunda seguinte.
+        assertEquals(emptyList<Pair<LocalDate, Long>>(), delivered)
+        assertEquals(NextAppAlarm(at(23, 10), AppAlarmKind.ROUTINE), shown)
+    }
+
+    @Test
+    fun `remarcada de hoje para amanha e concluida no dia original - diagnostico e entrega concordam que avisa`() {
+        val (shown, delivered) = rescheduledAndCompleted(doneOn = LocalDate.of(2026, 11, 16))
+
+        assertEquals(listOf(LocalDate.of(2026, 11, 17)), delivered.map { it.first })
+        assertEquals(NextAppAlarm(at(17, 11), AppAlarmKind.ROUTINE), shown)
     }
 
     private companion object {
