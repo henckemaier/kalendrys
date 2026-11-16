@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.shopping
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -10,6 +11,8 @@ import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.settings.SettingsRepository
+import java.io.File
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -43,6 +46,7 @@ class ShoppingListViewModelTest {
     private lateinit var repository: ShoppingRepository
     private lateinit var taskRepository: TaskRepository
     private lateinit var scheduler: FakeReminderScheduler
+    private lateinit var settings: SettingsRepository
 
     @Before
     fun setup() {
@@ -52,6 +56,9 @@ class ShoppingListViewModelTest {
         db = testDb.db
         repository = ShoppingRepository(db)
         scheduler = FakeReminderScheduler(context)
+        settings = SettingsRepository(
+            PreferenceDataStoreFactory.create { File(context.cacheDir, "lista-${System.nanoTime()}.preferences_pb") },
+        )
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
     }
 
@@ -66,7 +73,7 @@ class ShoppingListViewModelTest {
             put(SHOPPING_LIST_ID_ARG, listId)
             if (taskId != null) put(SHOPPING_LIST_TASK_ID_ARG, taskId)
         }
-        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository, taskRepository))
+        return testDb.track(ShoppingListViewModel(SavedStateHandle(args), repository, taskRepository, settings))
     }
 
     private suspend fun ReceiveTurbine<ShoppingListViewModel.UiState>.awaitUntil(

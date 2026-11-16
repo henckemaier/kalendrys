@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -41,8 +40,8 @@ class ShoppingListViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: ShoppingRepository,
     private val taskRepository: TaskRepository,
-    /** Registro da dica única do gesto (12.4); `null` (testes antigos) esconde a dica. */
-    private val settings: SettingsRepository? = null,
+    /** Registro da dica única do gesto (12.4). */
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val listId: Long = checkNotNull(savedStateHandle[SHOPPING_LIST_ID_ARG])
@@ -98,18 +97,17 @@ class ShoppingListViewModel(
      * para não piscar a dica antes da leitura do DataStore.
      */
     val showGestureHint: StateFlow<Boolean> =
-        (settings?.shoppingGestureHintSeen?.map { seen -> !seen } ?: flowOf(false))
+        settings.shoppingGestureHintSeen.map { seen -> !seen }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun dismissGestureHint() {
-        val store = settings ?: return
-        viewModelScope.launch { store.setShoppingGestureHintSeen() }
+        viewModelScope.launch { settings.setShoppingGestureHintSeen() }
     }
 
     /**
-     * Uma inclusão por vez, na ordem pedida: o repositório calcula a posição lendo a maior atual, e a
-     * adição rápida (Enter seguido) dispararia inclusões em paralelo com a mesma posição. O Mutex é
-     * justo (fila), então os itens ficam na ordem em que foram digitados.
+     * Uma inclusão por vez, na ORDEM de digitação (o Mutex é justo, em fila): com Enter seguido as
+     * inclusões poderiam terminar fora de ordem. A posição única não depende disto: o repositório lê
+     * a maior e insere na mesma transação.
      */
     private val addLock = Mutex()
 

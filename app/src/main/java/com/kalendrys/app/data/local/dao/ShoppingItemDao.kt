@@ -20,6 +20,10 @@ interface ShoppingItemDao {
     @Query("SELECT * FROM shopping_item WHERE listId = :listId ORDER BY position, id")
     suspend fun byList(listId: Long): List<ShoppingItem>
 
+    /** Maior posição da lista, ou `null` se vazia (a inclusão soma 1, dentro de uma transação). */
+    @Query("SELECT MAX(position) FROM shopping_item WHERE listId = :listId")
+    suspend fun maxPosition(listId: Long): Int?
+
     /** Progresso e total de cada lista que tem itens (lista vazia não aparece: vale 0/0, total 0). */
     @Query(
         "SELECT listId, COUNT(*) AS total, COALESCE(SUM(picked), 0) AS picked, " +

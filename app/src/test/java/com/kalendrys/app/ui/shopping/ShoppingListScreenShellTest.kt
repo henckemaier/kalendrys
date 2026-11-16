@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.shopping
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assert
@@ -21,6 +22,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.settings.SettingsRepository
+import java.io.File
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -66,6 +69,9 @@ class ShoppingListScreenShellTest {
                 SavedStateHandle(mapOf(SHOPPING_LIST_ID_ARG to listId)),
                 repository,
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
+                SettingsRepository(
+                    PreferenceDataStoreFactory.create { File(context.cacheDir, "lista-${System.nanoTime()}.preferences_pb") },
+                ),
             ),
         )
         compose.setContent {
