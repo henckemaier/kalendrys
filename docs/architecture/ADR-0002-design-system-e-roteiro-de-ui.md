@@ -587,6 +587,30 @@ Limites da versão: **sem migração de Room** (banco na versão 10), **sem subi
 - **Sem piscar na abertura.** As configurações vêm do DataStore, que é assíncrono. `KalendrysApp`
   expõe a aparência num `StateFlow` carregado no início do processo e a `MainActivity` segura o
   primeiro quadro até o valor chegar. Sem `runBlocking` e sem biblioteca de splash.
+- **Janela inicial (acréscimo de 2026-11-16, consulta do Forja na E1).** Segurar o primeiro
+  quadro não cobre a splash do sistema nem o fundo da janela, que o Android desenha com o tema
+  do aparelho antes de o processo rodar. No Android 12 ou mais (API 31+) o app também informa
+  ao sistema o modo noturno escolhido (`UiModeManager.setApplicationNightMode`, API da
+  plataforma, sem permissão nem dependência), e o sistema o guarda por app. Regras:
+  - O DataStore continua sendo a única fonte da verdade; o modo noturno no sistema é um
+    **espelho**. Um único ponto o aplica: um coletor em `KalendrysApp` sobre a aparência,
+    inclusive na primeira emissão (cobre atualização e restauro). A tela de Configurações e o
+    `BackupManager` só gravam no `SettingsRepository`.
+  - A chamada da plataforma fica numa classe pequena fora de `data/`, com a guarda de versão
+    dentro dela.
+  - O tema do Compose continua decidido pelo `themeMode`, igual em todas as versões do Android;
+    não depende de a configuração do processo estar forçada.
+  - Segurar o primeiro quadro continua valendo em todas as versões.
+  - Trocar o tema recria a Activity, como já acontece ao trocar o tema do aparelho. A
+    `MainActivity` não passa a tratar essa mudança por conta própria nesta versão.
+  - Os widgets **não** contam com o espelho: são desenhados no processo da tela inicial. O
+    `WidgetTheme` (12.5) continua responsável por aplicar o tema escolhido.
+  - **Limite aceito:** no Android 8 a 11 (API 26 a 30) a janela inicial segue o tema do
+    aparelho; com tema forçado diferente, a splash sai num tema e o app no outro.
+  - "Sem piscar" significa: depois do primeiro quadro do app nunca há troca de tema, em
+    qualquer versão; e, no API 31+, da segunda abertura a frio em diante a splash já sai no
+    tema escolhido. Na primeira abertura depois de uma atualização ou restauro que mude o tema
+    pode haver uma recriação.
 - A marca do resumo diário (ADR-0003, 4.3.2) não pode reagir à troca de tema. O código já
   observa só os dois campos do resumo (`summaryChanges`); a v1.7.0 acrescenta o teste que prova
   isso com os campos novos.
