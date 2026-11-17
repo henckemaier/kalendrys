@@ -513,4 +513,74 @@ class TaskRepositoryTest {
         repository.logCompletion(task.id, completedAt = LocalDate.now().plusDays(3).atTime(10, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
         assertEquals(2, db.completionLogDao().all().size)
     }
+
+    // --- Lince (revisão da E0): toque duplo + Desfazer, corrida concluir × desfazer, tarefa excluída ---
+
+    @Test
+    fun `toque duplo na conclusao adiantada e Desfazer pelo id do segundo toque devolve data e lembrete`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val original = db.taskDao().byId(task.id)!!
+        val first = repository.logCompletion(task.id)
+        // O segundo toque (ou o widget/notificação) devolve o MESMO registro: a snackbar dele desfaz a conclusão.
+        val second = repository.logCompletion(task.id)
+        assertEquals(first, second)
+
+        repository.undoCompletion(second)
+
+        val after = db.taskDao().byId(task.id)!!
+        assertEquals(original.dueDate, after.dueDate)
+        assertEquals(original.reminderAt, after.reminderAt)
+        assertTrue(db.completionLogDao().all().isEmpty())
+        // O Desfazer do primeiro toque, que chega depois, não acha mais o registro e não mexe em nada.
+        repository.undoCompletion(first)
+        assertEquals(after, db.taskDao().byId(task.id))
+    }
+
+    @Test
+    fun `concluir e desfazer ao mesmo tempo nunca deixam a data reescrita sem registro`() = runTest {
+        val tomorrow = LocalDate.now().plusDays(1).toEpochDay()
+        val today = LocalDate.now().toEpochDay()
+        repeat(15) { round ->
+            val task = repository.addTask("Corrida $round", timing = tomorrowAtNine())
+            val original = db.taskDao().byId(task.id)!!
+            val logId = repository.logCompletion(task.id)
+
+            listOf(
+                async(Dispatchers.Default) { repository.undoCompletion(logId) },
+                async(Dispatchers.Default) { repository.logCompletion(task.id) },
+            ).awaitAll()
+
+            val after = db.taskDao().byId(task.id)!!
+            val logs = db.completionLogDao().all().filter { it.taskId == task.id }
+            when (logs.size) {
+                // Concluir chegou antes (devolveu o mesmo registro) e o desfazer o apagou: tarefa como antes.
+                0 -> {
+                    assertEquals("rodada $round", tomorrow, after.dueDate)
+                    assertEquals("rodada $round", original.reminderAt, after.reminderAt)
+                }
+                // Desfazer chegou antes e concluir adiantou de novo: um registro com o que ele sobrescreveu.
+                1 -> {
+                    assertEquals("rodada $round", today, after.dueDate)
+                    assertNull("rodada $round", after.reminderAt)
+                    assertEquals("rodada $round", tomorrow, logs.single().previousDueDate)
+                    assertEquals("rodada $round", original.reminderAt, logs.single().previousReminderAt)
+                }
+                else -> throw AssertionError("rodada $round: ${logs.size} registros")
+            }
+        }
+    }
+
+    @Test
+    fun `desfazer a conclusao de uma tarefa ja excluida so apaga o registro e nao agenda nada`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        repository.deleteTask(db.taskDao().byId(task.id)!!)
+        scheduler.reset()
+
+        repository.undoCompletion(logId)
+
+        assertNull(db.taskDao().byId(task.id))
+        assertNull(db.completionLogDao().byId(logId))
+        assertTrue(scheduler.scheduled.isEmpty())
+    }
 }

@@ -9,6 +9,10 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.FakeReminderScheduler
+import java.time.LocalDate
+import java.time.LocalTime
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
@@ -122,5 +126,31 @@ class BackupCompletionFieldsTest {
         val restored = destDb.completionLogDao().all().sortedBy { it.id }
         assertEquals(listOf(early, plain, third), restored)
         assertTrue(restored[2].previousReminderAt == null && restored[2].previousDueDate == 20_405L)
+    }
+
+    /**
+     * Caminho inteiro (Lince, revisão da E0): concluir ADIANTADO no aparelho velho, fazer backup,
+     * restaurar no novo e desfazer lá. Data e lembrete voltam a partir do registro restaurado.
+     */
+    @Test
+    fun `restaurar no aparelho novo e desfazer a conclusao adiantada devolve data e lembrete`() = runTest {
+        val source = TaskRepository(sourceDb.taskDao(), sourceDb.completionLogDao(), FakeReminderScheduler(context), sourceDb.shoppingItemDao())
+        val task = source.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
+        val original = sourceDb.taskDao().byId(task.id)!!
+        val logId = source.logCompletion(task.id)
+        assertEquals(LocalDate.now().toEpochDay(), sourceDb.taskDao().byId(task.id)!!.dueDate)
+
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src")).serialize()
+        BackupManager(destDb, context.contentResolver, settings("dst")).restore(json)
+        val scheduler = FakeReminderScheduler(context)
+        val dest = TaskRepository(destDb.taskDao(), destDb.completionLogDao(), scheduler, destDb.shoppingItemDao())
+
+        dest.undoCompletion(logId)
+
+        val after = destDb.taskDao().byId(task.id)!!
+        assertEquals(original.dueDate, after.dueDate)
+        assertEquals(original.reminderAt, after.reminderAt)
+        assertTrue(destDb.completionLogDao().all().isEmpty())
+        assertEquals(listOf(after), scheduler.scheduled.map { it.task })
     }
 }
