@@ -1130,6 +1130,17 @@ da navegação; ele é entregue ao `AppScaffold` por um valor de composição co
 cobri-lo. Só a tela que está à frente desenha, para a mensagem não aparecer em dobro durante a
 transição. Consequência: toda tela de destino precisa usar o `AppScaffold`.
 
+**A oferta é um estado, não um evento** (decisão depois da revisão do tester): o objeto do app
+guarda a oferta pendente até a mensagem terminar (Desfazer, tempo esgotado ou dispensada) ou
+até outra oferta substituí-la. Se a tela for recriada com a mensagem visível (girar o aparelho),
+a mensagem volta com o tempo reiniciado, em vez de o Desfazer sumir com a tarefa excluída.
+A oferta tem **validade curta** a partir da criação: vencida, é descartada sem ser mostrada,
+para a mensagem não reaparecer do nada quando o app é reaberto muito depois.
+
+**Qual conclusão desfazer:** quando uma tarefa tem mais de uma conclusão no mesmo dia, desmarcar
+desfaz a **mais recente**. Desfazer a mais antiga devolvia a data errada e deixava um registro
+solto.
+
 ### 14.3 Agendador alinhado à entrega
 
 Fecha o item deixado na 13.3 (D-71-1).
@@ -1141,7 +1152,11 @@ Fecha o item deixado na 13.3 (D-71-1).
   e o teste dos dois caminhos volta a exigir igualdade.
 - **Rotinas:** o início concluído **não** é pulado, porque o alarme de início também redesenha
   os widgets. Só muda o tipo: exato se alguma rotina que avisa ainda não foi concluída naquele
-  dia, silencioso se todas foram.
+  dia, silencioso se todas foram. **Limite aceito:** o alarme silencioso é aproximado e não
+  acorda o aparelho, então o widget de um bloco já concluído pode avançar alguns minutos depois
+  do horário; é o mesmo comportamento que as rotinas sem aviso sempre tiveram.
+- **O alarme no sistema é sempre o resultado da conta.** Se a conta não devolve ocorrência, o
+  alarme da tarefa é cancelado, não deixado como estava.
 - Motivo: uma tarefa concluída de manhã deixava um despertador marcado para a tarde, visível no
   sistema, que não avisava nada.
 - As regras do ADR-0003 (catch-up) não mudam. Os testes dele seguem sem asserção alterada.
@@ -1200,7 +1215,7 @@ arquiteto na E0, na E1 e na E2 antes de seguir; na E3 e na E6 ao fim.
 | E0 | Dados e Desfazer (14.2) | Migração 10 para 11 e 1 para 11 testadas; concluir tarefa única adiantada, encerrar o processo, desfazer: data e lembrete voltam; toque duplo gera um registro; backup antigo e novo, ida e volta; excluir pelo detalhe com Desfazer a partir das três telas de origem |
 | E1 | Agendador (14.3) | Tarefa diária concluída antes do horário não tem alarme hoje (conferido no sistema) e desfazer devolve; rotina concluída vira alarme silencioso e o widget avança; teste dos dois caminhos com igualdade; testes do ADR-0003 sem asserção mudada |
 | E2 | Navegação, casca da Hoje e "Todas as rotinas" (14.4) | App abre na Hoje; endereço antigo abre a Hoje na data; notificações e widgets já emitidos funcionam; atualizar por cima da v1.7.1 com a aba Rotinas aberta não quebra |
-| E3 | Conteúdo da Hoje (14.4) | Números iguais aos do widget Resumo no mesmo instante; paisagem com fonte 1.0 e 2.0 mostra conteúdo e rola até o fim; Pular e Desfazer |
+| E3 | Conteúdo da Hoje (14.4) | Números iguais aos do widget Resumo no mesmo instante; paisagem com fonte 1.0 e 2.0 mostra conteúdo e rola até o fim; Pular e Desfazer; desmarcar uma tarefa concluída no dia dela, inclusive em dia passado e depois de reabrir o app |
 | E4 | Timeline (14.5) | Fonte 2.0 sem corte nem sobreposição em blocos de 15, 30 e 60 min e títulos de 60 caracteres |
 | E5 | Lista de tarefas (14.6) | Paisagem com fonte 2.0 mostra tarefas, e a busca aparece inteira com o teclado |
 | E6 | Painel único (14.7) | Os critérios da E1 da 13.7 repetidos; widget e atalho por cima de qualquer tela; "Salvar" alcançável em paisagem com teclado |
@@ -1228,6 +1243,21 @@ Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
   com editor aberto perdendo o rascunho (some com o salvar na hora); repetição personalizada;
   entrega do catch-up com título antigo ou aviso que pisca; editor de rotina em paisagem com
   teclado.
+- **v1.9.0, com o salvar na hora:** concluir e desfazer regravam a linha inteira da tarefa a
+  partir de uma leitura anterior, e uma edição simultânea pode se perder. A janela é pequena e
+  antiga, mas o salvar na hora multiplica as gravações. Desenho: a conclusão adiantada e o
+  desfazer passam a alterar **só** data e lembrete, com a guarda dentro do próprio comando, em
+  vez de regravar a tarefa.
+- **Limite aceito:** o reinício das marcações da lista fica fora da transação de concluir e de
+  desfazer. Se o processo morrer entre os dois, as marcações de uma tarefa repetida podem não
+  voltar; o histórico e a tarefa ficam corretos.
+- **v1.9.0, no detalhe da tarefa:** ação de desfazer a conclusão, para quem chega pelo
+  Calendário. Na v1.8.0 o caminho é a Hoje, no dia da conclusão.
+- **Comportamento desejado, só registro:** mudar a data de uma tarefa única já concluída a
+  reabre, e a conclusão continua no histórico do dia em que aconteceu. A tarefa pode aparecer
+  como concluída hoje e pendente na data nova ao mesmo tempo; as duas informações estão certas.
+- **Limitação conhecida:** conclusões adiantadas gravadas antes do banco 11 não têm a data e o
+  lembrete anteriores; desfazê-las reabre a tarefa na data da conclusão e sem lembrete.
 - **Adiamento no diagnóstico:** continua fora. Exige gravar o adiamento, que é dado novo com
   regras de reinício e de limpeza, para uma janela de 10 minutos. Candidato para a v1.9.0,
   junto com o adiamento que se perde ao reiniciar o aparelho, que é o ganho real.
