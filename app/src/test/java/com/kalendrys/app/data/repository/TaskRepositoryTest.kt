@@ -12,6 +12,9 @@ import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -346,7 +349,7 @@ class TaskRepositoryTest {
         assertEquals(listOf(false), repository.linkedTasks(listId).map { it.pending })
     }
 
-    // --- Desfazer conclusão adiantada devolve data e lembrete (v1.6.0, item 5, melhor esforço) ---
+    // --- Desfazer conclusão adiantada devolve data e lembrete (v1.6.0; definitivo no banco 11, v1.8.0) ---
 
     private fun tomorrowAtNine() = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0))
 
@@ -364,7 +367,6 @@ class TaskRepositoryTest {
         assertEquals(original.dueDate, restored.dueDate)
         assertEquals(original.reminderAt, restored.reminderAt)
         assertEquals(listOf(restored), scheduler.scheduled.map { it.task })
-        assertEquals(0, repository.earlyCompletionCount())
     }
 
     @Test
@@ -396,7 +398,6 @@ class TaskRepositoryTest {
         val after = db.taskDao().byId(task.id)!!
         assertEquals(LocalDate.now().toEpochDay(), after.dueDate)
         assertEquals(newReminder, after.reminderAt)
-        assertEquals(0, repository.earlyCompletionCount())
     }
 
     @Test
@@ -417,42 +418,99 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun `repositorio novo desfaz sem restaurar e sem falhar`() = runTest {
+    fun `processo novo ainda desfaz a conclusao adiantada com data e lembrete de volta`() = runTest {
         val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val original = db.taskDao().byId(task.id)!!
         val logId = repository.logCompletion(task.id)
-        // Simula o processo morto: o mapa em memória se perdeu.
+        val log = db.completionLogDao().byId(logId)!!
+        assertEquals(original.dueDate, log.previousDueDate)
+        assertEquals(original.reminderAt, log.previousReminderAt)
+        assertEquals(LocalDate.now().toEpochDay(), log.rewrittenDueDate)
+        // Simula o processo morto: um repositório novo, sem nada em memória, só o banco.
+        scheduler.reset()
         val fresh = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
 
         fresh.undoCompletion(logId)
 
         val after = db.taskDao().byId(task.id)!!
-        assertEquals(LocalDate.now().toEpochDay(), after.dueDate)
-        assertNull(after.reminderAt)
+        assertEquals(original.dueDate, after.dueDate)
+        assertEquals(original.reminderAt, after.reminderAt)
+        assertEquals(listOf(after), scheduler.scheduled.map { it.task })
         assertTrue(db.completionLogDao().all().isEmpty())
     }
 
     @Test
-    fun `tarefa repetida e tarefa de hoje nao criam entrada`() = runTest {
+    fun `tarefa repetida e tarefa de hoje nao guardam data anterior no registro`() = runTest {
         val daily = repository.addTask("Diária", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0), repeat = ReminderRepeat.DAILY))
         val today = repository.addTask("Hoje", timing = todayTiming())
-        repository.logCompletion(daily.id)
-        repository.logCompletion(today.id)
-        assertEquals(0, repository.earlyCompletionCount())
+        val logs = listOf(repository.logCompletion(daily.id), repository.logCompletion(today.id))
+            .map { db.completionLogDao().byId(it)!! }
+        assertTrue(logs.all { it.previousDueDate == null && it.previousReminderAt == null && it.rewrittenDueDate == null })
+    }
+
+
+    @Test
+    fun `falha depois de apagar o registro nao deixa a tarefa com a data reescrita`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        val rewritten = db.taskDao().byId(task.id)!!
+        // Falha simulada na gravação da tarefa, que vem DEPOIS de apagar o registro na transação.
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER falha_no_desfazer BEFORE UPDATE ON tasks BEGIN SELECT RAISE(ABORT, 'falha simulada'); END",
+        )
+
+        val error = runCatching { repository.undoCompletion(logId) }.exceptionOrNull()
+
+        assertTrue("esperava a falha simulada, veio $error", error != null)
+        // A transação inteira voltou: o registro continua lá para restaurar depois.
+        assertEquals(logId, db.completionLogDao().byId(logId)?.id)
+        assertEquals(rewritten, db.taskDao().byId(task.id))
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER falha_no_desfazer")
+        repository.undoCompletion(logId)
+        assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
+        assertTrue(db.completionLogDao().all().isEmpty())
+    }
+
+    // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
+
+    @Test
+    fun `toque duplo em tarefa unica gera um registro so`() = runTest {
+        val task = repository.addTask("Ligar", timing = todayTiming())
+        val first = repository.logCompletion(task.id)
+        val second = repository.logCompletion(task.id)
+
+        assertEquals(first, second)
+        assertEquals(1, db.completionLogDao().all().size)
     }
 
     @Test
-    fun `mapa guarda so as 20 conclusoes adiantadas mais recentes`() = runTest {
-        val logs = (1..25).map { n ->
-            val task = repository.addTask("Amanhã $n", timing = tomorrowAtNine())
-            task.id to repository.logCompletion(task.id)
-        }
-        assertEquals(20, repository.earlyCompletionCount())
+    fun `duas conclusoes simultaneas da mesma tarefa unica geram um registro so`() = runTest {
+        val task = repository.addTask("Ligar", timing = tomorrowAtNine())
+        val ids = (1..2).map { async(Dispatchers.Default) { repository.logCompletion(task.id) } }.awaitAll()
 
-        // A mais antiga saiu do mapa: desfaz sem restaurar; a mais recente restaura.
-        repository.undoCompletion(logs.first().second)
-        assertEquals(LocalDate.now().toEpochDay(), db.taskDao().byId(logs.first().first)!!.dueDate)
-        repository.undoCompletion(logs.last().second)
-        assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(logs.last().first)!!.dueDate)
-        assertEquals(19, repository.earlyCompletionCount())
+        assertEquals(ids[0], ids[1])
+        assertEquals(1, db.completionLogDao().all().size)
+        // A conclusão adiantada continua desfazível com data e lembrete de volta.
+        repository.undoCompletion(ids[0])
+        assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
+    }
+
+    @Test
+    fun `tarefa repetida concluida duas vezes continua gerando dois registros`() = runTest {
+        val daily = repository.addTask("Diária", timing = TaskTiming(date = LocalDate.now(), time = LocalTime.of(9, 0), repeat = ReminderRepeat.DAILY))
+        repository.logCompletion(daily.id)
+        repository.logCompletion(daily.id)
+        assertEquals(2, db.completionLogDao().all().size)
+    }
+
+    @Test
+    fun `tarefa unica reaberta pela data pode ser concluida de novo`() = runTest {
+        val task = repository.addTask("Ligar", timing = todayTiming())
+        repository.logCompletion(task.id)
+        // Mudar a data para frente reabre a tarefa: a próxima conclusão é um registro novo.
+        repository.updateTask(db.taskDao().byId(task.id)!!.copy(dueDate = LocalDate.now().plusDays(3).toEpochDay(), reminderAt = null))
+        repository.logCompletion(task.id, completedAt = LocalDate.now().plusDays(3).atTime(10, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+        assertEquals(2, db.completionLogDao().all().size)
     }
 }

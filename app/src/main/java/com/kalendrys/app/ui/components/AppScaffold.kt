@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.components
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -18,7 +19,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,7 +67,7 @@ fun AppScaffold(
         topBar = topBar,
         bottomBar = bottomBar,
         floatingActionButton = floatingActionButton,
-        snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } },
+        snackbarHost = { ScreenSnackbars(own = snackbarHostState) },
         contentWindowInsets = WindowInsets.safeDrawing,
     ) { innerPadding ->
         val direction = LocalLayoutDirection.current
@@ -84,6 +89,24 @@ fun AppScaffold(
             )
             content(contentPadding)
         }
+    }
+}
+
+/**
+ * Slot de mensagens da tela: a do app ([LocalAppSnackbarHostState]) em cima e a da própria tela
+ * ([own]) embaixo, uma acima da outra, e o slot inteiro acima do FAB (Material3). A do app só é desenhada
+ * com a tela à frente (RESUMED): na transição de volta o detalhe e a origem ficam compostos juntos e,
+ * sem isso, os dois desenhariam a mesma mensagem.
+ */
+@Composable
+private fun ScreenSnackbars(own: SnackbarHostState?) {
+    val app = LocalAppSnackbarHostState.current
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val showApp = app != null && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    if (!showApp && own == null) return
+    Column {
+        if (showApp) SnackbarHost(app!!)
+        own?.let { SnackbarHost(it) }
     }
 }
 

@@ -129,7 +129,12 @@ class TaskRepository(
     /**
      * Devolve o id do evento, usado para desfazer a conclusão. Uma tarefa sem repetição fica
      * encerrada: o lembrete dela, se ainda não tocou, é cancelado. Concluída antes do dia dela,
-     * ela passa a ser de hoje (foi feita hoje) e perde o lembrete futuro.
+     * ela passa a ser de hoje (foi feita hoje) e perde o lembrete futuro; a data e o lembrete que
+     * isso sobrescreveu ficam no PRÓPRIO registro (banco 11), para o [undoCompletion].
+     *
+     * Tarefa única JÁ ENCERRADA (toque duplo, widget e notificação ao mesmo tempo): devolve o
+     * registro existente e não cria outro (NB-3 da v1.8.0). As conclusões passam por [completionLock]
+     * para duas chamadas simultâneas não lerem a tarefa ainda aberta e gravarem dois registros.
      *
      * Tarefa que se REPETE com lista anexada zera as marcações da lista (ADR-0001, P4), de forma
      * reversível pelo [undoCompletion]. Ordem: grava o log e depois reinicia com o id dele (uma falha
@@ -140,27 +145,32 @@ class TaskRepository(
      * notificação de lembrete já exibida da tarefa some. O alarme da próxima ocorrência de uma
      * tarefa repetida não é tocado.
      */
-    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long {
+    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = completionLock.withLock {
         scheduler.dismissNotification(taskId)
         val task = taskDao.byId(taskId)
-        var early: EarlyCompletion? = null
+        if (task != null && task.repeat == ReminderRepeat.NONE && isFinished(task)) {
+            completionLogDao.latestForTask(taskId)?.let { return@withLock it.id }
+        }
+        val log = CompletionLog(taskId = taskId, completedAt = completedAt)
+        var logId: Long? = null
         if (task != null && task.repeat == ReminderRepeat.NONE) {
             scheduler.cancel(taskId)
             val zone = ZoneId.systemDefault()
             val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate().toEpochDay()
             if (task.dueDate != null && task.dueDate > day) {
-                taskDao.update(task.copy(dueDate = day, reminderAt = null))
-                early = EarlyCompletion(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = day)
+                // Data e lembrete sobrescritos vão no próprio registro, na mesma transação da tarefa.
+                logId = completionLogDao.rewriteAndInsert(
+                    task.copy(dueDate = day, reminderAt = null),
+                    log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = day),
+                )
             }
         }
-        val logId = completionLogDao.insert(CompletionLog(taskId = taskId, completedAt = completedAt))
-        // Só entra no mapa quando a conclusão DE FATO reescreveu data e lembrete (tarefa única adiantada).
-        if (early != null) earlyLock.withLock { earlyCompletions[logId] = early }
+        val id = logId ?: completionLogDao.insert(log)
         val listId = task?.shoppingListId
         if (listId != null && ShoppingReset.taskResets(task.repeat)) {
-            shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(logId))
+            shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(id))
         }
-        return logId
+        id
     }
 
     /**
@@ -169,48 +179,33 @@ class TaskRepository(
      * Só reagenda o alarme: a notificação que já tinha sido exibida NÃO é recriada.
      *
      * Tarefa única concluída ADIANTADA (o [logCompletion] trouxe a data para hoje e tirou o lembrete):
-     * a data e o lembrete originais voltam, e SÓ DEPOIS o alarme é reagendado, desde que a tarefa
-     * ainda esteja como a conclusão a deixou (mesma data, sem lembrete). Se o usuário editou a data
-     * no meio, a edição dele vence e nada é restaurado. É MELHOR ESFORÇO: a informação fica em
-     * memória ([earlyCompletions]); com o processo morto não há o que restaurar, e o desfazer segue
-     * como antes. A solução definitiva (colunas no CompletionLog) vem na v1.8.0.
+     * a data e o lembrete originais voltam a partir do próprio registro, a qualquer momento (mesmo
+     * depois de o processo morrer), e SÓ DEPOIS o alarme é reagendado, desde que a tarefa ainda
+     * esteja como a conclusão a deixou (mesma data, sem lembrete). Se o usuário editou a data ou pôs
+     * lembrete no meio, a edição dele vence e nada é restaurado.
      */
     suspend fun undoCompletion(logId: Long) {
         // Fecha a janela do catch-up antes de reabrir a tarefa (ADR-0003): o lembrete que venceu
         // enquanto ela estava concluída não vira atrasado nem perdido.
         closeReminderWindow()
-        val log = completionLogDao.byId(logId) ?: return
-        completionLogDao.deleteById(logId)
-        shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
-        val early = earlyLock.withLock { earlyCompletions.remove(logId) }
-        var task = taskDao.byId(log.taskId) ?: return
-        if (early != null && task.dueDate == early.rewrittenDueDate && task.reminderAt == null) {
-            task = task.copy(dueDate = early.previousDueDate, reminderAt = early.previousReminderAt)
-            taskDao.update(task)
+        completionLock.withLock {
+            val log = completionLogDao.byId(logId) ?: return@withLock
+            val current = taskDao.byId(log.taskId)
+            val previousDue = log.previousDueDate
+            // Devolve data e lembrete só se a tarefa ainda está como a conclusão a deixou.
+            val restored = current?.takeIf {
+                previousDue != null && it.dueDate == log.rewrittenDueDate && it.reminderAt == null
+            }?.copy(dueDate = previousDue, reminderAt = log.previousReminderAt)
+            // Apagar o registro e devolver a data numa transação só (A1 da revisão da E0).
+            completionLogDao.deleteAndRestore(logId, restored)
+            shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
+            val task = restored ?: current ?: return@withLock
+            if (!isFinished(task)) scheduler.schedule(task)
         }
-        if (!isFinished(task)) scheduler.schedule(task)
     }
 
-    /** Data e lembrete que uma conclusão adiantada sobrescreveu (ver [undoCompletion]). */
-    private data class EarlyCompletion(
-        val previousDueDate: Long,
-        val previousReminderAt: Long?,
-        /** Data que o [logCompletion] gravou (o dia da conclusão). */
-        val rewrittenDueDate: Long,
-    )
-
-    /**
-     * logId → conclusão adiantada, só as [MAX_EARLY_COMPLETIONS] mais recentes (o "Desfazer" é uma
-     * snackbar curta). Acessado de tela, widget e receivers: sempre sob [earlyLock].
-     */
-    private val earlyCompletions = object : LinkedHashMap<Long, EarlyCompletion>() {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, EarlyCompletion>?): Boolean =
-            size > MAX_EARLY_COMPLETIONS
-    }
-    private val earlyLock = Mutex()
-
-    /** Para testes: quantas conclusões adiantadas ainda podem ser desfeitas com restauração. */
-    internal suspend fun earlyCompletionCount(): Int = earlyLock.withLock { earlyCompletions.size }
+    /** Serializa concluir e desfazer (ver [logCompletion]): o registro é a fonte única, sem estado em memória. */
+    private val completionLock = Mutex()
 
     /**
      * Tarefas vinculadas à lista [listId] e se cada uma está pendente agora (atrasada, de hoje ou
@@ -326,8 +321,6 @@ class TaskRepository(
 
     private companion object {
         const val TAG = "TaskRepository"
-        const val MAX_EARLY_COMPLETIONS = 20
-
         /**
          * Limite de ocorrências puladas por tarefa no [nextReminderToDeliver]. Cada uma é um dia com
          * conclusão a partir de hoje; na prática é uma (a de hoje).

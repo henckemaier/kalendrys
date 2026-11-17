@@ -41,6 +41,7 @@ interface TaskDao {
     @Update
     suspend fun update(task: Task)
 
+
     @Delete
     suspend fun delete(task: Task)
 
