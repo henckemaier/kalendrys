@@ -189,4 +189,22 @@ class TaskUndoOfferBackgroundTest {
         }
         assertNull(offers.pending.value)
     }
+
+    @Test
+    fun `oferta feita com a Activity fora da frente aparece ao voltar dentro do prazo`() {
+        // Excluir e apertar Home no mesmo instante: a oferta chega com o coletor já parado.
+        lifecycle(Lifecycle.State.CREATED)
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance(5_000)
+        assertEquals("fora da frente ninguém mostra nem limpa", 0, shown())
+        assertEquals(task, offers.pending.value?.task)
+
+        now += 10_000
+        lifecycle(Lifecycle.State.RESUMED)
+
+        // O coletor de dentro nasce com a oferta já pendente e a mostra (dentro dos 30 s).
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        assertEquals(task, offers.pending.value?.task)
+    }
 }
