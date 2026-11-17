@@ -13,12 +13,18 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -125,5 +131,65 @@ class RoutinesViewModelTest {
             assertNull(state.progressFor(state.block("Órfã").routine.shoppingListId))
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- NB-1 (v1.8.0): desmarcar na trilha desfaz a conclusão MAIS RECENTE do dia ---
+
+    /**
+     * (1) única para amanhã concluída hoje (A); (2) data mudada para +3, o que a reabre; (3)
+     * concluída de novo hoje (B); (4) desmarcada na trilha de hoje. Devolve (id da tarefa, A, B).
+     */
+    private fun twoEarlyCompletionsThenUncheck(aAt: Long, bAt: Long): Triple<Long, Long, Long> = runBlocking {
+        val today = LocalDate.now()
+        val timing = TaskTiming(date = today.plusDays(1), time = LocalTime.of(9, 0))
+        val id = taskRepository.addTask("Levar o carro", timing = timing).id
+        val a = taskRepository.logCompletion(id, completedAt = aAt)
+        assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)
+        taskRepository.updateTask(db.taskDao().byId(id)!!.copy(dueDate = today.plusDays(3).toEpochDay()))
+        val b = taskRepository.logCompletion(id, completedAt = bAt)
+        assertEquals("B é outro registro (a tarefa estava reaberta)", true, b != a)
+        assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)
+
+        val viewModel = viewModel()
+        viewModel.uiState.test {
+            // Espera a trilha de hoje com a tarefa concluída (as duas conclusões já carregadas).
+            val state = awaitState { s -> s.untimedTasks.any { it.task.id == id && it.done } }
+            viewModel.toggleTask(state.untimedTasks.single { it.task.id == id }.task, done = true)
+            // Desfeita a B, a tarefa volta para +3 e sai da trilha de hoje.
+            awaitState { s -> s.untimedTasks.none { it.task.id == id } }
+            cancelAndIgnoreRemainingEvents()
+        }
+        Triple(id, a, b)
+    }
+
+    private fun assertBackToPlusThreeWithOnlyA(id: Long, a: Long) = runBlocking {
+        val today = LocalDate.now()
+        val task = db.taskDao().byId(id)!!
+        assertEquals("a data volta para +3", today.plusDays(3).toEpochDay(), task.dueDate)
+        assertEquals("sobra só o A", listOf(a), db.completionLogDao().observeForTask(id).first().map { it.id })
+        val last = db.completionLogDao().lastCompletion(id)
+        assertEquals("pendente na data certa", false, TaskSchedule.isFinished(task, last, ZoneId.systemDefault()))
+        assertEquals(
+            TaskSchedule.Status.UPCOMING,
+            TaskSchedule.status(task, today, doneEver = TaskSchedule.isFinished(task, last, ZoneId.systemDefault()), doneToday = false),
+        )
+    }
+
+    private fun startOfToday(): Long = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test
+    fun `duas conclusoes adiantadas no dia - desmarcar na trilha desfaz a mais recente`() {
+        val (id, a, _) = twoEarlyCompletionsThenUncheck(aAt = startOfToday() + 1_000, bAt = startOfToday() + 2_000)
+
+        assertBackToPlusThreeWithOnlyA(id, a)
+    }
+
+    @Test
+    fun `duas conclusoes no mesmo horario - desmarcar desfaz a de maior id`() {
+        val at = startOfToday() + 1_000
+        val (id, a, b) = twoEarlyCompletionsThenUncheck(aAt = at, bAt = at)
+
+        assertEquals(true, b > a)
+        assertBackToPlusThreeWithOnlyA(id, a)
     }
 }

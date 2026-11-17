@@ -251,12 +251,19 @@ class RoutinesViewModel(
         viewModelScope.launch { taskRepository.undoCompletion(logId) }
     }
 
-    /** O id do log de conclusão da tarefa [taskId] no dia [date], se houver, para desfazer. */
+    /**
+     * O id do log de conclusão da tarefa [taskId] no dia [date] a desfazer, se houver: o MAIS RECENTE
+     * (maior horário; empate pelo maior id). Com duas conclusões no dia (única adiantada, reaberta e
+     * concluída de novo), desfazer a primeira devolveria a data errada (NB-1 da v1.8.0).
+     */
     private fun taskLogFor(taskId: Long, date: LocalDate): Long? {
         val zone = ZoneId.systemDefault()
         val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
         val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        return taskLogs.firstOrNull { it.taskId == taskId && it.completedAt in start until end }?.id
+        return taskLogs
+            .filter { it.taskId == taskId && it.completedAt in start until end }
+            .maxWithOrNull(compareBy<CompletionLog>({ it.completedAt }, { it.id }))
+            ?.id
     }
 
     private fun epochDayOf(epochMillis: Long, zone: ZoneId): Long =
