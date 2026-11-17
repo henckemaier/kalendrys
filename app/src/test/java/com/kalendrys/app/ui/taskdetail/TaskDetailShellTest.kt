@@ -21,6 +21,9 @@ import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
+import com.kalendrys.app.TaskUndoOffers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -51,11 +54,13 @@ class TaskDetailShellTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         taskId = runBlocking { db.taskDao().insert(Task(title = "Comprar pão")) }
+        val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         val viewModel = testDb.track(
             TaskDetailViewModel(
                 SavedStateHandle(mapOf(TASK_ID_ARG to taskId)),
-                TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
+                repository,
                 ShoppingRepository(db),
+                TaskUndoOffers(repository, CoroutineScope(Dispatchers.Unconfined)),
             ),
         )
         compose.setContent {
