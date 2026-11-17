@@ -3,7 +3,10 @@ package com.kalendrys.app.data.local.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.local.entity.Task
 import kotlinx.coroutines.flow.Flow
 
 /** Linha de [CompletionLogDao.observeLastCompletions]. */
@@ -63,4 +66,33 @@ interface CompletionLogDao {
 
     @Query("SELECT COUNT(*) FROM completion_log")
     suspend fun count(): Int
+
+    /**
+     * Grava a tarefa SÓ dentro das transações abaixo (concluir adiantado e desfazer). Fora delas a
+     * tarefa se grava pelo TaskDao; não chame daqui.
+     */
+    @Update
+    suspend fun updateTaskInCompletion(task: Task)
+
+    /**
+     * Conclusão ADIANTADA de tarefa única (banco 11): grava a data reescrita da tarefa e o registro
+     * com o que ela sobrescreveu numa transação só. Sem ela, uma falha entre os dois deixaria a data
+     * trocada sem registro para o Desfazer devolver.
+     */
+    @Transaction
+    suspend fun rewriteAndInsert(task: Task, log: CompletionLog): Long {
+        updateTaskInCompletion(task)
+        return insert(log)
+    }
+
+    /**
+     * Desfazer: apaga o registro e, se for o caso, devolve a data e o lembrete da tarefa
+     * ([restored] não nulo) numa transação só. Sem ela, morrer entre as duas gravações deixaria a
+     * tarefa com a data reescrita e sem o registro para restaurar.
+     */
+    @Transaction
+    suspend fun deleteAndRestore(logId: Long, restored: Task?) {
+        deleteById(logId)
+        restored?.let { updateTaskInCompletion(it) }
+    }
 }

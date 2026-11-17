@@ -159,7 +159,7 @@ class TaskRepository(
             val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate().toEpochDay()
             if (task.dueDate != null && task.dueDate > day) {
                 // Data e lembrete sobrescritos vão no próprio registro, na mesma transação da tarefa.
-                logId = taskDao.rewriteAndLogCompletion(
+                logId = completionLogDao.rewriteAndInsert(
                     task.copy(dueDate = day, reminderAt = null),
                     log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = day),
                 )
@@ -190,14 +190,16 @@ class TaskRepository(
         closeReminderWindow()
         completionLock.withLock {
             val log = completionLogDao.byId(logId) ?: return@withLock
-            completionLogDao.deleteById(logId)
-            shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
-            var task = taskDao.byId(log.taskId) ?: return@withLock
+            val current = taskDao.byId(log.taskId)
             val previousDue = log.previousDueDate
-            if (previousDue != null && task.dueDate == log.rewrittenDueDate && task.reminderAt == null) {
-                task = task.copy(dueDate = previousDue, reminderAt = log.previousReminderAt)
-                taskDao.update(task)
-            }
+            // Devolve data e lembrete só se a tarefa ainda está como a conclusão a deixou.
+            val restored = current?.takeIf {
+                previousDue != null && it.dueDate == log.rewrittenDueDate && it.reminderAt == null
+            }?.copy(dueDate = previousDue, reminderAt = log.previousReminderAt)
+            // Apagar o registro e devolver a data numa transação só (A1 da revisão da E0).
+            completionLogDao.deleteAndRestore(logId, restored)
+            shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
+            val task = restored ?: current ?: return@withLock
             if (!isFinished(task)) scheduler.schedule(task)
         }
     }

@@ -448,6 +448,30 @@ class TaskRepositoryTest {
         assertTrue(logs.all { it.previousDueDate == null && it.previousReminderAt == null && it.rewrittenDueDate == null })
     }
 
+
+    @Test
+    fun `falha depois de apagar o registro nao deixa a tarefa com a data reescrita`() = runTest {
+        val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
+        val logId = repository.logCompletion(task.id)
+        val rewritten = db.taskDao().byId(task.id)!!
+        // Falha simulada na gravação da tarefa, que vem DEPOIS de apagar o registro na transação.
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER falha_no_desfazer BEFORE UPDATE ON tasks BEGIN SELECT RAISE(ABORT, 'falha simulada'); END",
+        )
+
+        val error = runCatching { repository.undoCompletion(logId) }.exceptionOrNull()
+
+        assertTrue("esperava a falha simulada, veio $error", error != null)
+        // A transação inteira voltou: o registro continua lá para restaurar depois.
+        assertEquals(logId, db.completionLogDao().byId(logId)?.id)
+        assertEquals(rewritten, db.taskDao().byId(task.id))
+
+        db.openHelper.writableDatabase.execSQL("DROP TRIGGER falha_no_desfazer")
+        repository.undoCompletion(logId)
+        assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
+        assertTrue(db.completionLogDao().all().isEmpty())
+    }
+
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
 
     @Test
