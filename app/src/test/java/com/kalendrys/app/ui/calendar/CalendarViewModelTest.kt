@@ -20,6 +20,7 @@ import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -194,7 +195,11 @@ class CalendarViewModelTest {
 
         shoppingRepository.deleteList(listId)
 
-        withTimeout(5_000) { store.draft.first { it?.list == null } }
+        // A remocao chega do Room por outra thread (executor do banco -> Flow do VM). Esperar em
+        // TEMPO REAL: dentro do runTest o withTimeout usa o relogio virtual, que avanca os 5 s na
+        // hora quando o agendador de teste fica ocioso, e o teste falhava quando o Room demorava
+        // (intermitente no CI, run 44147716119).
+        withContext(Dispatchers.Default) { withTimeout(5_000) { store.draft.first { it?.list == null } } }
         assertEquals("Mercado", store.draft.value!!.title)
     }
 }
