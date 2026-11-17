@@ -11,18 +11,17 @@ import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** Ofertas de Desfazer da exclusão pelo detalhe (v1.8.0, E0-D): entregues em ordem; restaurar devolve tudo. */
+/** Oferta de Desfazer da exclusão pelo detalhe (v1.8.0, E0-D; estado desde o NB-4): pendente até terminar; Desfazer devolve tudo. */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class TaskUndoOffersTest {
@@ -56,15 +55,43 @@ class TaskUndoOffersTest {
     }
 
     @Test
-    fun `ofertas sao entregues em ordem, cada uma uma vez`() = runTest {
+    fun `oferta fica pendente ate terminar e a nova substitui a anterior`() = runTest {
         val offers = TaskUndoOffers(repository, backgroundScope)
         val a = repository.addTask("A")
         val b = repository.addTask("B")
+        assertNull(offers.pending.value)
 
         offers.offer(a)
-        offers.offer(b)
+        val first = offers.pending.value!!
+        assertEquals(a, first.task)
+        // Ler não consome: continua pendente (girar a tela mostra de novo).
+        assertEquals(first, offers.pending.value)
 
-        assertEquals(listOf(a, b), offers.offers.take(2).toList())
+        offers.offer(b)
+        val second = offers.pending.value!!
+        assertEquals(b, second.task)
+        assertNotEquals("cada oferta tem identidade própria", first.id, second.id)
+
+        // A mensagem da antiga terminando não apaga a nova.
+        offers.finish(first)
+        assertEquals(second, offers.pending.value)
+
+        offers.finish(second)
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `a mesma tarefa oferecida duas vezes sao ofertas diferentes`() = runTest {
+        val offers = TaskUndoOffers(repository, backgroundScope)
+        val a = repository.addTask("A")
+
+        offers.offer(a)
+        val first = offers.pending.value!!
+        offers.offer(a)
+        val second = offers.pending.value!!
+
+        offers.finish(first)
+        assertEquals(second, offers.pending.value)
     }
 
     @Test
@@ -80,8 +107,10 @@ class TaskUndoOffersTest {
         // Sem Desfazer a tarefa fica excluída, mas o histórico de conclusões continua lá.
         assertEquals(history, repository.observeCompletions(id).first())
 
-        offers.restore(task).join()
+        offers.offer(task)
+        offers.undo(offers.pending.value!!).join()
 
+        assertNull("Desfazer limpa a oferta", offers.pending.value)
         val restored = repository.observeTask(id).first()!!
         assertEquals(task, restored)
         assertEquals(task.shoppingListId, restored.shoppingListId)
@@ -96,7 +125,8 @@ class TaskUndoOffersTest {
         repository.deleteTask(task)
         scheduler.reset()
 
-        offers.restore(task).join()
+        offers.offer(task)
+        offers.undo(offers.pending.value!!).join()
 
         assertEquals(task, repository.observeTask(id).first())
         assertEquals(listOf(id), scheduler.scheduled.map { it.task.id })

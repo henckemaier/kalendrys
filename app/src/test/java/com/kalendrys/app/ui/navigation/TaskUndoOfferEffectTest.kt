@@ -4,7 +4,13 @@ import android.content.Context
 import android.os.Looper
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -25,7 +31,9 @@ import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -39,8 +47,9 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * Coletor das ofertas no NavHost (v1.8.0, E0-D), com a tela de origem num AppScaffold: a mensagem
- * aparece na tela, Desfazer restaura a tarefa certa e convive com a mensagem da própria tela.
+ * Coletor da oferta no NavHost (v1.8.0, E0-D), com a tela de origem num AppScaffold: a mensagem
+ * aparece na tela, Desfazer restaura a tarefa certa e convive com a mensagem da própria tela. NB-4:
+ * a oferta é estado; recriar o coletor (girar a tela) com oferta pendente mostra a mensagem de novo.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w360dp-h800dp-port")
@@ -52,6 +61,11 @@ class TaskUndoOfferEffectTest {
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var repository: TaskRepository
     private lateinit var offers: TaskUndoOffers
+
+    // Escopo do "app" para o restauro: próprio, fora do Dispatchers.Main (que outros testes trocam).
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var generation by mutableIntStateOf(0)
+    private var present by mutableStateOf(true)
     private val own = SnackbarHostState()
 
     // Escopo da composição (no relógio do teste), como o da tela que mostra a mensagem dela.
@@ -63,15 +77,19 @@ class TaskUndoOfferEffectTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        offers = TaskUndoOffers(repository, CoroutineScope(Dispatchers.Main))
+        offers = TaskUndoOffers(repository, appScope)
         compose.setContent {
             KalendrysTheme {
-                // Como o KalendrysNavHost: um estado do app, fornecido, e o coletor único.
-                val app = remember { SnackbarHostState() }
-                screenScope = rememberCoroutineScope()
-                TaskUndoOfferEffect(offers, app)
-                CompositionLocalProvider(LocalAppSnackbarHostState provides app) {
-                    AppScaffold(snackbarHostState = own) {}
+                // Tirar e pôr de volta (com geração nova) descarta o coletor, o estado da mensagem e a tela,
+                // como girar: o antigo some antes de o novo nascer.
+                if (present) key(generation) {
+                    // Como o KalendrysNavHost: um estado do app, fornecido, e o coletor único.
+                    val app = remember { SnackbarHostState() }
+                    screenScope = rememberCoroutineScope()
+                    TaskUndoOfferEffect(offers, app)
+                    CompositionLocalProvider(LocalAppSnackbarHostState provides app) {
+                        AppScaffold(snackbarHostState = own) {}
+                    }
                 }
             }
         }
@@ -79,7 +97,10 @@ class TaskUndoOfferEffectTest {
     }
 
     @After
-    fun tearDown() = testDb.close()
+    fun tearDown() {
+        appScope.cancel()
+        testDb.close()
+    }
 
     // Relógio parado (a mensagem longa não vence sozinha). Escrita de estado fora do quadro (corrotina no
     // Main) só recompõe no quadro seguinte: drena o looper e avança de novo.
@@ -106,9 +127,38 @@ class TaskUndoOfferEffectTest {
             .sortedBy { it.fetchSemanticsNode().boundsInRoot.top }
     }
 
+    /** Como girar a tela: o coletor e o estado da mensagem saem da composição e voltam novos. */
+    private fun recreate() {
+        // Com o relógio parado, a escrita só entra na composição depois de avisada (sendApplyNotifications)
+        // e de um quadro; sem isso a troca atrasava ~1 s e a mensagem antiga podia vencer no meio.
+        compose.runOnUiThread {
+            present = false
+            Snapshot.sendApplyNotifications()
+        }
+        frames(3)
+        assertEquals("o coletor antigo saiu", 0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        compose.runOnUiThread {
+            generation++
+            present = true
+            Snapshot.sendApplyNotifications()
+        }
+        frames(3)
+        advance()
+    }
+
+    private fun frames(count: Int) = repeat(count) {
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.mainClock.advanceTimeByFrame()
+    }
+
+    /**
+     * Espera o restauro avançando quadros: com o relógio parado, a continuação do coletor depois do
+     * toque em Desfazer só roda quando o relógio anda.
+     */
     private fun waitRestored(id: Long) {
         compose.waitUntil(5_000) {
             shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
             stored(id) != null
         }
     }
@@ -124,6 +174,7 @@ class TaskUndoOfferEffectTest {
         compose.onNodeWithText("Desfazer").performClick()
         waitRestored(task.id)
         assertEquals(task, stored(task.id))
+        assertNull("Desfazer limpa a oferta", offers.pending.value)
     }
 
     @Test
@@ -137,22 +188,78 @@ class TaskUndoOfferEffectTest {
 
         assertEquals(0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
         assertNull(stored(task.id))
+        assertNull("tempo esgotado limpa a oferta", offers.pending.value)
+    }
+
+    // --- NB-4: girar a tela com a mensagem visível -------------------------------------------------
+
+    @Test
+    fun `girar com a mensagem visivel mostra de novo e Desfazer depois restaura`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+
+        recreate()
+
+        assertEquals(task, offers.pending.value?.task)
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        compose.onNodeWithText("Desfazer").performClick()
+        waitRestored(task.id)
+        assertEquals(task, stored(task.id))
+        assertNull(offers.pending.value)
     }
 
     @Test
-    fun `oferta nova substitui a anterior, que fica excluida`() {
+    fun `ao voltar o tempo da mensagem recomeca`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+        advance(5_000) // ~6 s dos 10 s
+
+        recreate()
+        advance(7_000) // ~8 s da nova; sem recomeçar seriam ~14 s, já vencida
+
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        assertEquals(task, offers.pending.value?.task)
+    }
+
+    @Test
+    fun `tempo esgotado limpa e nao reaparece ao girar de novo`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+        advance(11_000)
+        assertNull(offers.pending.value)
+
+        recreate()
+        advance(1_000)
+
+        assertEquals(0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        assertNull(stored(task.id))
+    }
+
+    @Test
+    fun `oferta nova durante a mensagem troca a mensagem e limpar a antiga nao apaga a nova`() {
         val first = deleted("Primeira")
         val second = deleted("Segunda")
 
         offers.offer(first)
         advance()
+        val firstOffer = offers.pending.value!!
         offers.offer(second)
         advance()
+        val secondOffer = offers.pending.value!!
 
         assertEquals(1, compose.onAllNodesWithText("Desfazer").fetchSemanticsNodes().size)
+        // A mensagem da antiga terminando (ex.: um coletor atrasado) não apaga a nova.
+        offers.finish(firstOffer)
+        assertEquals(secondOffer, offers.pending.value)
+
         compose.onNodeWithText("Desfazer").performClick()
         waitRestored(second.id)
         assertNull(stored(first.id))
+        assertNull(offers.pending.value)
     }
 
     @Test
