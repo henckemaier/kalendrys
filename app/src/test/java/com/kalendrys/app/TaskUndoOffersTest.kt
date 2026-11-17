@@ -145,4 +145,18 @@ class TaskUndoOffersTest {
         now += 1
         assertEquals(true, offers.isExpired(offer))
     }
+
+    @Test
+    fun `remainingMs e o que resta do prazo e nunca negativo`() = runTest {
+        var now = 1_000L
+        val offers = TaskUndoOffers(repository, backgroundScope) { now }
+        offers.offer(com.kalendrys.app.data.local.entity.Task(id = 1, title = "T"))
+        val offer = offers.pending.value!!
+
+        assertEquals(TaskUndoOffers.VALIDITY_MS, offers.remainingMs(offer))
+        now += 12_000
+        assertEquals(TaskUndoOffers.VALIDITY_MS - 12_000, offers.remainingMs(offer))
+        now += 60 * 60 * 1_000L
+        assertEquals(0L, offers.remainingMs(offer))
+    }
 }

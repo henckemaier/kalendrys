@@ -312,9 +312,42 @@ class TaskUndoOfferEffectTest {
         offers.offer(task)
         advance()
 
-        recreate { now += TaskUndoOffers.VALIDITY_MS - 1_000 }
+        // Faltando 5 s (NB-E1-A: a mensagem recriada vive só o que resta do prazo, e o recriar avança 1 s).
+        recreate { now += TaskUndoOffers.VALIDITY_MS - 5_000 }
 
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
         assertEquals(task, offers.pending.value?.task)
+    }
+
+    @Test
+    fun `recriada perto do fim do prazo, a mensagem dura so o que resta e limpa a oferta`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+
+        recreate { now += TaskUndoOffers.VALIDITY_MS - 5_000 }
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        // ~4 s depois de reaparecer (sem o limite, a mensagem longa de 10 s ainda estaria na tela).
+        advance(4_500)
+
+        assertEquals(0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        assertNull(offers.pending.value)
+        assertNull(stored(task.id))
+    }
+
+    @Test
+    fun `Desfazer tocado com a mensagem visivel restaura, sem conferir o prazo no toque`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+
+        // O relógio da oferta já passou do prazo, mas a mensagem ainda está na tela: o toque vale.
+        now += TaskUndoOffers.VALIDITY_MS + 1
+        compose.onNodeWithText("Desfazer").performClick()
+
+        waitRestored(task.id)
+        assertEquals(task, stored(task.id))
+        assertNull(offers.pending.value)
     }
 }

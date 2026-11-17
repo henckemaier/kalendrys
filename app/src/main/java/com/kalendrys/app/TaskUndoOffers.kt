@@ -51,7 +51,10 @@ class TaskUndoOffers(
     }
 
     /** [offer] passou do prazo de validade e não deve mais ser mostrada. */
-    fun isExpired(offer: TaskUndoOffer): Boolean = clock() - offer.createdAt >= VALIDITY_MS
+    fun isExpired(offer: TaskUndoOffer): Boolean = remainingMs(offer) == 0L
+
+    /** Quanto ainda resta do prazo de [offer], em ms (0 se já venceu): o limite da espera da mensagem. */
+    fun remainingMs(offer: TaskUndoOffer): Long = (VALIDITY_MS - (clock() - offer.createdAt)).coerceAtLeast(0L)
 
     /**
      * A mensagem de [offer] terminou sem Desfazer (tempo esgotado ou dispensada): a tarefa fica

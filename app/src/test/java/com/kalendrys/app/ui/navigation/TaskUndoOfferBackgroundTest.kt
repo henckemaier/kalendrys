@@ -32,7 +32,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -112,7 +111,6 @@ class TaskUndoOfferBackgroundTest {
         task
     }
 
-    @Ignore("Achado da E1 (v1.8.0): a validade so e conferida antes de mostrar; remover o @Ignore com a correcao")
     @Test
     fun `sair pelo Home com a mensagem na tela e voltar depois do prazo nao oferece Desfazer`() {
         val task = deleted("Pagar conta")
@@ -143,5 +141,22 @@ class TaskUndoOfferBackgroundTest {
 
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
         assertEquals(task, offers.pending.value?.task)
+    }
+
+    @Test
+    fun `mensagem pendurada no fundo some ao fim do prazo, sem a tela a frente`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+
+        lifecycle(Lifecycle.State.CREATED)
+        // Ainda no fundo: o prazo (30 s desde a oferta) passa sem nenhuma tela desenhar a mensagem.
+        now += TaskUndoOffers.VALIDITY_MS
+        advance(TaskUndoOffers.VALIDITY_MS)
+
+        assertNull("o fim do prazo limpa a oferta mesmo no fundo", offers.pending.value)
+        assertNull("sem Desfazer a tarefa continua excluída", runBlocking { testDb.db.taskDao().byId(task.id) })
+        lifecycle(Lifecycle.State.RESUMED)
+        assertEquals(0, shown())
     }
 }
