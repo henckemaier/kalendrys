@@ -6,8 +6,9 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.domain.TaskSchedule
-import java.time.ZoneId
+
+/** Alarme de lembrete já calculado: a tarefa e o instante em que ele deve tocar. */
+data class ReminderAlarm(val task: Task, val triggerAt: Long)
 
 /**
  * Mantém no AlarmManager só a próxima ocorrência de cada lembrete.
@@ -19,9 +20,12 @@ open class ReminderScheduler(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    /** Agenda a próxima ocorrência depois de [after]; não faz nada se o lembrete já acabou. */
-    open fun schedule(task: Task, after: Long = System.currentTimeMillis()) {
-        val triggerAt = TaskSchedule.nextReminderMillis(task, now = after, zone = ZoneId.systemDefault()) ?: return
+    /**
+     * Marca o alarme do lembrete de [task] no instante [triggerAt] (epoch millis). Quem decide o
+     * instante é o TaskRepository (ADR-0002, 14.3): a próxima ocorrência que será ENTREGUE, a mesma
+     * conta do diagnóstico de alarmes. Aqui só se marca; o mesmo PendingIntent substitui o anterior.
+     */
+    open fun schedule(task: Task, triggerAt: Long) {
         alarmManager.setAlarmClockOrInexact(context, triggerAt, pendingIntent(task.id))
     }
 
@@ -38,8 +42,9 @@ open class ReminderScheduler(private val context: Context) {
         NotificationManagerCompat.from(context).cancel(taskId.toInt())
     }
 
-    open fun rescheduleAll(tasks: List<Task>) {
-        tasks.forEach { schedule(it) }
+    /** Marca de uma vez os alarmes já calculados pelo TaskRepository (catch-up e restauro). */
+    open fun rescheduleAll(alarms: List<ReminderAlarm>) {
+        alarms.forEach { schedule(it.task, it.triggerAt) }
     }
 
     // O título e a recorrência são lidos do banco quando o alarme toca, então o intent só leva o id.

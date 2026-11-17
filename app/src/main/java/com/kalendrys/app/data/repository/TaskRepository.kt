@@ -12,6 +12,7 @@ import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.reminder.ReminderAlarm
 import com.kalendrys.app.reminder.ReminderScheduler
 import java.time.Instant
 import java.time.LocalDate
@@ -78,7 +79,7 @@ class TaskRepository(
             ZoneId.systemDefault(),
         )
         val saved = task.copy(id = taskDao.insert(task))
-        scheduler.schedule(saved)
+        scheduleNext(saved)
         return saved
     }
 
@@ -105,7 +106,7 @@ class TaskRepository(
         closeReminderWindow()
         taskDao.update(task)
         scheduler.cancel(task.id)
-        if (!isFinished(task)) scheduler.schedule(task)
+        if (!isFinished(task)) scheduleNext(task)
     }
 
     /** Exclui a tarefa: cancela o alarme e tira da tela o lembrete já exibido dela. */
@@ -123,7 +124,7 @@ class TaskRepository(
     suspend fun restoreTask(task: Task) {
         closeReminderWindow()
         taskDao.insert(task)
-        if (!isFinished(task)) scheduler.schedule(task)
+        if (!isFinished(task)) scheduleNext(task)
     }
 
     /**
@@ -142,8 +143,8 @@ class TaskRepository(
      * marcações. Mora aqui, e não na tela, para valer também no widget e na notificação.
      *
      * Por qualquer caminho (tela, lista de tarefas, oferta da lista, widget, ação da notificação), a
-     * notificação de lembrete já exibida da tarefa some. O alarme da próxima ocorrência de uma
-     * tarefa repetida não é tocado.
+     * notificação de lembrete já exibida da tarefa some. Tarefa repetida tem o alarme refeito para a
+     * próxima ocorrência que será entregue (v1.8.0, E1: concluída hoje, o alarme de hoje sai).
      */
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = completionLock.withLock {
         scheduler.dismissNotification(taskId)
@@ -166,6 +167,9 @@ class TaskRepository(
             }
         }
         val id = logId ?: completionLogDao.insert(log)
+        // Repetida: o alarme passa para a próxima ocorrência que será ENTREGUE (a de hoje, concluída,
+        // a entrega descartaria). Única: já foi cancelada acima e fica encerrada.
+        if (task != null && task.repeat != ReminderRepeat.NONE) scheduleNext(task)
         val listId = task?.shoppingListId
         if (listId != null && ShoppingReset.taskResets(task.repeat)) {
             shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(id))
@@ -200,7 +204,7 @@ class TaskRepository(
             completionLogDao.deleteAndRestore(logId, restored)
             shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
             val task = restored ?: current ?: return@withLock
-            if (!isFinished(task)) scheduler.schedule(task)
+            if (!isFinished(task)) scheduleNext(task)
         }
     }
 
@@ -259,7 +263,30 @@ class TaskRepository(
      * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
      */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
-        scheduler.rescheduleAll(tasksToRemind(now))
+        val zone = ZoneId.systemDefault()
+        val tasks = tasksToRemind(now)
+        val doneDays = completionDaysFrom(now, zone)
+        scheduler.rescheduleAll(
+            tasks.mapNotNull { task -> nextDelivered(task, now, zone, doneDays[task.id].orEmpty())?.let { ReminderAlarm(task, it) } },
+        )
+    }
+
+    /**
+     * Marca o alarme de [task] na próxima ocorrência que será ENTREGUE depois de [now] (ADR-0002,
+     * 14.3): a mesma conta do [nextReminderToDeliver]. Sem ocorrência, não marca nada (como antes).
+     */
+    private suspend fun scheduleNext(task: Task, now: Long = System.currentTimeMillis()) {
+        val zone = ZoneId.systemDefault()
+        val doneDays = completionDaysFrom(now, zone)[task.id].orEmpty()
+        nextDelivered(task, now, zone, doneDays)?.let { scheduler.schedule(task, it) }
+    }
+
+    /** Dias com conclusão de cada tarefa, de hoje em diante (as ocorrências candidatas são depois de [now]). */
+    private suspend fun completionDaysFrom(now: Long, zone: ZoneId): Map<Long, Set<LocalDate>> {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        return completionLogDao.between(start = today, end = Long.MAX_VALUE)
+            .groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
+            .mapValues { (_, days) -> days.toSet() }
     }
 
     /**
@@ -275,20 +302,15 @@ class TaskRepository(
 
     /**
      * Próximo lembrete de tarefa que de fato CHEGA depois de [now] (epoch millis), para o diagnóstico
-     * de alarmes; `null` sem nenhum. Parte do mesmo instante que o agendador marca
-     * ([TaskSchedule.nextReminderMillis]), mas pula a ocorrência que o catch-up descartaria
+     * de alarmes; `null` sem nenhum. Pula a ocorrência que o catch-up descartaria
      * ([ReminderCatchUp.isDiscarded]: repetida já concluída no dia), avançando no máximo
-     * [MAX_DISCARDED_OCCURRENCES] vezes por tarefa. Por isso pode diferir do alarme no AlarmManager:
-     * o agendador não muda, ele marca a ocorrência e a entrega a descarta. Só leitura.
+     * [MAX_DISCARDED_OCCURRENCES] vezes por tarefa. Desde a v1.8.0 (E1) é a MESMA conta que o
+     * agendador usa ([scheduleNext], [rescheduleReminders]): o diagnóstico mostra o alarme marcado. Só leitura.
      */
     suspend fun nextReminderToDeliver(now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): Long? {
         val tasks = tasksToRemind(now)
         if (tasks.isEmpty()) return null
-        // As ocorrências candidatas são depois de [now]: bastam as conclusões a partir de hoje.
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
-        val doneDays = completionLogDao.between(start = today, end = Long.MAX_VALUE)
-            .groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
-            .mapValues { (_, days) -> days.toSet() }
+        val doneDays = completionDaysFrom(now, zone)
         return tasks.mapNotNull { nextDelivered(it, now, zone, doneDays[it.id].orEmpty()) }.minOrNull()
     }
 

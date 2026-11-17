@@ -23,7 +23,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -274,8 +273,8 @@ class TaskDetailViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
 
-        // Quando o fechar chega, a oferta já está no canal (sem esperar), com lembrete e vínculo de lista.
-        val offered = withTimeout(1_000) { undoOffers.offers.first() }
+        // Quando o fechar chega, a oferta já está pendente, com lembrete e vínculo de lista.
+        val offered = undoOffers.pending.value!!.task
         assertEquals(before, offered)
         assertEquals(listId, offered.shoppingListId)
         assertTrue(offered.reminderAt != null)

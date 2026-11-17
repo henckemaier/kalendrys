@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.domain.RoutineCatchUp
 import com.kalendrys.app.domain.RoutineSchedule
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -14,8 +15,10 @@ import java.time.ZoneId
  * Um único alarme para todas as rotinas: o próximo horário em que algum bloco começa. Reagendar
  * é idempotente (mesmo PendingIntent), como no [com.kalendrys.app.summary.DailyScheduler].
  *
- * Se algum bloco daquele horário avisa, o alarme é exato e acorda o aparelho; senão ele só serve
- * para redesenhar os widgets ("a seguir") e espera o aparelho acordar.
+ * Se algum bloco daquele horário AVISA e ainda não foi concluído no dia, o alarme é exato e acorda o
+ * aparelho; senão (sem aviso, ou todos os que avisam já concluídos) ele não é pulado, só fica
+ * silencioso: serve para redesenhar os widgets ("a seguir") e espera o aparelho acordar. A regra de
+ * "concluída não avisa" é a mesma do catch-up ([RoutineCatchUp.isDiscarded]; ADR-0002, 14.3).
  */
 open class RoutineAlarms(private val context: Context) {
 
@@ -24,7 +27,9 @@ open class RoutineAlarms(private val context: Context) {
     open fun scheduleNext(
         routines: List<Routine>,
         after: LocalDateTime,
-        overridesByRoutine: Map<Long, List<RoutineOverride>> = emptyMap(),
+        overridesByRoutine: Map<Long, List<RoutineOverride>>,
+        /** Ids das rotinas concluídas no dia do próximo início (o repositório lê e passa). */
+        doneOnStartDay: Set<Long>,
     ) {
         val zone = ZoneId.systemDefault()
         val next = RoutineSchedule.nextStart(routines, after, zone, overridesByRoutine)
@@ -37,7 +42,7 @@ open class RoutineAlarms(private val context: Context) {
             epochDay = next.at.toLocalDate().toEpochDay(),
             minute = next.at.hour * 60 + next.at.minute,
         )
-        if (next.routines.any { it.remind }) {
+        if (next.routines.any { !RoutineCatchUp.isDiscarded(it, doneOnStartDay) }) {
             alarmManager.setAlarmClockOrInexact(context, triggerAt, operation)
         } else {
             alarmManager.set(AlarmManager.RTC, triggerAt, operation)
