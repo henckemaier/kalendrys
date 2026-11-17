@@ -623,4 +623,70 @@ class TaskRepositoryTest {
         assertNull(db.completionLogDao().byId(logId))
         assertTrue(scheduler.scheduled.isEmpty())
     }
+
+    // --- E1, corrida: o reagendamento geral (catch-up) lê as conclusões, o desfazer entra no meio ---
+
+    @org.junit.Ignore("Achado da E1 (v1.8.0): rescheduleReminders fora do completionLock; remover o @Ignore com a correcao")
+    @Test
+    fun `desfazer no meio do reagendamento geral nao perde o alarme do dia desfeito`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val marked = mutableMapOf<Long, Long>()
+        var undoInTheMiddle: (() -> Unit)? = null
+        // Marca no "sistema" o último alarme de cada tarefa. O primeiro rescheduleAll já recebeu o que o
+        // catch-up calculou (com a conclusão ainda no banco) e, antes de marcar, o desfazer acontece.
+        val racing = object : ReminderScheduler(context) {
+            override fun schedule(task: com.kalendrys.app.data.local.entity.Task, triggerAt: Long) {
+                marked[task.id] = triggerAt
+            }
+            override fun cancel(taskId: Long) {
+                marked.remove(taskId)
+            }
+            override fun dismissNotification(taskId: Long) = Unit
+            override fun rescheduleAll(alarms: List<com.kalendrys.app.reminder.ReminderAlarm>) {
+                undoInTheMiddle?.also { undoInTheMiddle = null }?.invoke()
+                super.rescheduleAll(alarms)
+            }
+        }
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao())
+        val day = LocalDate.now().plusDays(2)
+        val task = repo.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        val logId = repo.logCompletion(task.id, completedAt = at(day, 7))
+        assertEquals(at(day.plusDays(1), 10), marked[task.id])
+
+        undoInTheMiddle = { kotlinx.coroutines.runBlocking { repo.undoCompletion(logId) } }
+        repo.rescheduleReminders(System.currentTimeMillis())
+
+        assertNull(db.completionLogDao().byId(logId))
+        assertEquals("desfeita, a ocorrência do dia volta a ter alarme", at(day, 10), marked[task.id])
+    }
+
+    // --- E1: editar e restaurar (excluída com Desfazer) também pulam a ocorrência já concluída ---
+
+    @Test
+    fun `editar a diaria ja concluida no dia marca o alarme do dia seguinte`() = runTest {
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        repository.logCompletion(task.id, completedAt = at(day, 7))
+        scheduler.reset()
+
+        repository.updateTask(task.copy(title = "Remédio da manhã"))
+
+        assertEquals(listOf(task.id), scheduler.cancelled)
+        assertEquals(listOf(at(day.plusDays(1), 10)), scheduler.scheduled.map { it.triggerAt })
+    }
+
+    @Test
+    fun `excluir e desfazer a exclusao da diaria ja concluida no dia marca o alarme do dia seguinte`() = runTest {
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        repository.logCompletion(task.id, completedAt = at(day, 7))
+        val stored = db.taskDao().byId(task.id)!!
+        repository.deleteTask(stored)
+        scheduler.reset()
+
+        repository.restoreTask(stored)
+
+        assertEquals(listOf(at(day.plusDays(1), 10)), scheduler.scheduled.map { it.triggerAt })
+        assertEquals(at(day.plusDays(1), 10), repository.nextReminderToDeliver())
+    }
 }
