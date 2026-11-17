@@ -69,6 +69,19 @@
     <string name="routines_empty_title">Nenhuma rotina</string>
     <string name="routines_empty_message">Crie blocos de horário que se repetem, como treino, leitura ou skincare.</string>
     <string name="routines_empty_day">Nenhuma rotina neste dia.</string>
+    <!-- Todas as rotinas (v1.8.0, E2) -->
+    <string name="all_routines_title">Todas as rotinas</string>
+    <string name="all_routines_section_active">Ativas</string>
+    <string name="all_routines_section_paused">Pausadas</string>
+    <string name="all_routines_paused_state">Pausada</string>
+    <string name="all_routines_empty_filter">Nenhuma rotina nesta categoria.</string>
+    <string name="all_routines_edit">Editar %1$s</string>
+    <string name="all_routines_more">Mais opções para %1$s</string>
+    <string name="all_routines_pause">Pausar</string>
+    <string name="all_routines_resume">Retomar</string>
+    <string name="all_routines_archive">Arquivar</string>
+    <string name="all_routines_archived">Rotina arquivada</string>
+    <string name="all_routines_days_none">Sem dias</string>
     <string name="routine_free_time">Tempo livre · %1$s</string>
     <string name="routine_time_range">%1$s–%2$s (%3$s)</string>
     <string name="routine_now">Agora</string>

@@ -103,6 +103,17 @@ class RoutineRepository(
     }
 
     /**
+     * Desfaz o [archive] (Desfazer de "Todas as rotinas", v1.8.0, E2): a rotina volta como está no
+     * banco, só sem a data de arquivamento, e os alarmes são refeitos pelo mesmo [change]. O
+     * catch-up antes de gravar impede que devolver às 9:20 o bloco das 9:00 o avise. O aviso que o
+     * arquivamento tirou da tela não volta. Rotina inexistente ou já ativa: nada muda.
+     */
+    suspend fun unarchive(routineId: Long): Unit = change {
+        val current = routineDao.byId(routineId) ?: return@change
+        if (current.archivedAt != null) routineDao.update(current.copy(archivedAt = null))
+    }
+
+    /**
      * "Pausar": a rotina para de agendar e avisar, mas a configuração e o histórico ficam
      * intactos. Distinta de arquivar (excluir): dá pra retomar depois. Reagenda sem ela e tira
      * da tela qualquer aviso já mostrado.
