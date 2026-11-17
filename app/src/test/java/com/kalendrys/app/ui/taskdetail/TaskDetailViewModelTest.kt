@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.TaskUndoOffers
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
@@ -13,6 +14,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
@@ -21,6 +23,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +47,7 @@ class TaskDetailViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var taskRepository: TaskRepository
     private lateinit var shoppingRepository: ShoppingRepository
+    private lateinit var undoOffers: TaskUndoOffers
 
     @Before
     fun setup() {
@@ -53,6 +57,7 @@ class TaskDetailViewModelTest {
         db = testDb.db
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
+        undoOffers = TaskUndoOffers(taskRepository, CoroutineScope(Dispatchers.Unconfined))
     }
 
     @After
@@ -62,7 +67,7 @@ class TaskDetailViewModelTest {
     }
 
     private fun viewModel(taskId: Long) = testDb.track(
-        TaskDetailViewModel(SavedStateHandle(mapOf(TASK_ID_ARG to taskId)), taskRepository, shoppingRepository),
+        TaskDetailViewModel(SavedStateHandle(mapOf(TASK_ID_ARG to taskId)), taskRepository, shoppingRepository, undoOffers),
     )
 
     private suspend fun ReceiveTurbine<TaskDetailViewModel.UiState>.awaitState(
@@ -252,5 +257,28 @@ class TaskDetailViewModelTest {
             assertFalse(after.hasChanges)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- Excluir pelo detalhe com Desfazer na origem (v1.8.0, E0-D) -------------------------------
+
+    @Test
+    fun `excluir apaga, oferece o Desfazer com a tarefa como estava e so entao fecha`() = runTest {
+        val listId = shoppingRepository.createList("Feira")
+        val id = tomorrowTask(listId)
+        val before = stored(id)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.task != null }
+            vm.delete()
+            assertEquals(TaskDetailViewModel.Event.Deleted, vm.events.first())
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Quando o fechar chega, a oferta já está no canal (sem esperar), com lembrete e vínculo de lista.
+        val offered = withTimeout(1_000) { undoOffers.offers.first() }
+        assertEquals(before, offered)
+        assertEquals(listId, offered.shoppingListId)
+        assertTrue(offered.reminderAt != null)
+        assertNull(db.taskDao().byId(id))
     }
 }
