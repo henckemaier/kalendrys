@@ -4,7 +4,9 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
+import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import kotlinx.coroutines.flow.Flow
 
@@ -40,6 +42,20 @@ interface TaskDao {
 
     @Update
     suspend fun update(task: Task)
+
+    @Insert
+    suspend fun insertCompletionLog(log: CompletionLog): Long
+
+    /**
+     * Conclusão ADIANTADA de tarefa única (banco 11): grava a data reescrita da tarefa e o registro
+     * com o que ela sobrescreveu numa transação só. Sem ela, uma falha entre os dois deixaria a data
+     * trocada sem registro para o Desfazer devolver.
+     */
+    @Transaction
+    suspend fun rewriteAndLogCompletion(task: Task, log: CompletionLog): Long {
+        update(task)
+        return insertCompletionLog(log)
+    }
 
     @Delete
     suspend fun delete(task: Task)

@@ -20,4 +20,12 @@ data class CompletionLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val taskId: Long,
     val completedAt: Long,
+    /**
+     * Conclusão ADIANTADA de tarefa única (v11): data e lembrete que o concluir sobrescreveu e a data
+     * que ele gravou (o dia da conclusão). O Desfazer os devolve a partir daqui, mesmo depois de o
+     * processo morrer. `null` nas outras conclusões (e nas gravadas antes do banco 11).
+     */
+    val previousDueDate: Long? = null,
+    val previousReminderAt: Long? = null,
+    val rewrittenDueDate: Long? = null,
 )

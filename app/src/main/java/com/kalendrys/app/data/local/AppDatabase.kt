@@ -42,7 +42,7 @@ import java.time.ZoneId
         ExerciseItem::class,
         ShoppingList::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
     // v4: rotinas (só tabelas novas). v5: data e local das tarefas. v6: recorrência custom
     // (intervalEvery/intervalUnit/byWeekdays em tasks — aditivo com default). v7: fundação de
@@ -51,6 +51,8 @@ import java.time.ZoneId
     // tabela nova shopping_item (lista de compras da rotina). v9: fundação de exercícios — só a
     // tabela nova exercise_item (lista de exercícios da rotina). Até aqui tudo aditivo (sem SQL
     // manual). v10: listas de compras independentes (ADR-0001) — MIGRATION_9_10 manual, com backfill.
+    // v11: conclusão adiantada no próprio registro (completion_log ganha previousDueDate,
+    // previousReminderAt e rewrittenDueDate, anuláveis) — automática, sem SQL manual.
     // O Room confere o SQL gerado contra os arquivos de schemas/.
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
@@ -59,6 +61,7 @@ import java.time.ZoneId
         AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8),
         AutoMigration(from = 8, to = 9),
+        AutoMigration(from = 10, to = 11),
     ],
 )
 abstract class AppDatabase : RoomDatabase() {

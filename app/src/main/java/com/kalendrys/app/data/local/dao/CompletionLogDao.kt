@@ -50,6 +50,10 @@ interface CompletionLogDao {
     @Query("SELECT * FROM completion_log WHERE id = :id")
     suspend fun byId(id: Long): CompletionLog?
 
+    /** Registro mais recente da tarefa (concluir de novo uma tarefa única encerrada o devolve, NB-3). */
+    @Query("SELECT * FROM completion_log WHERE taskId = :taskId ORDER BY completedAt DESC, id DESC LIMIT 1")
+    suspend fun latestForTask(taskId: Long): CompletionLog?
+
     @Query("SELECT EXISTS(SELECT 1 FROM completion_log WHERE taskId = :taskId AND completedAt >= :start AND completedAt < :end)")
     suspend fun isCompletedBetween(taskId: Long, start: Long, end: Long): Boolean
 
