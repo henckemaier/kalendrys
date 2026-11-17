@@ -1,13 +1,13 @@
-package com.kalendrys.app.ui.routines
+package com.kalendrys.app.ui.today
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -40,11 +40,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** Progresso 3/8 da lista no bloco da trilha (ADR-0001, P8). */
+/** Tela Hoje (ex-aba Rotinas): progresso 3/8 da lista no bloco da trilha (ADR-0001, P8) e o NB-1. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
-class RoutinesViewModelTest {
+class TodayViewModelTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
@@ -78,24 +78,24 @@ class RoutinesViewModelTest {
     }
 
     private fun viewModel() = testDb.track(
-        RoutinesViewModel(
+        TodayViewModel(
             routineRepository,
             taskRepository,
-            RoutineCategoryRepository(db),
             DayOfWeek.MONDAY,
             shoppingRepository,
+            NewTaskDraftStore(),
         ),
     )
 
-    private suspend fun ReceiveTurbine<RoutinesViewModel.UiState>.awaitState(
-        predicate: (RoutinesViewModel.UiState) -> Boolean,
-    ): RoutinesViewModel.UiState {
+    private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(
+        predicate: (TodayViewModel.UiState) -> Boolean,
+    ): TodayViewModel.UiState {
         var state = awaitItem()
         while (!predicate(state)) state = awaitItem()
         return state
     }
 
-    private fun RoutinesViewModel.UiState.block(title: String): DayTimeline.Block =
+    private fun TodayViewModel.UiState.block(title: String): DayTimeline.Block =
         timeline.filterIsInstance<DayTimeline.Block>().single { it.routine.title == title }
 
     @Test
