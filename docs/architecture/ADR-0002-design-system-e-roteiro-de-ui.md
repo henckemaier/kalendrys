@@ -965,7 +965,7 @@ com dados reais**.
 | E6 | Fechamento | Roteiro de leitor de tela executado; abertura a frio pelo protocolo; perfil regerado com o passo manual; tamanho do APK; testes de emulador no APK de release |
 
 Revisão do arquiteto na E1 e na E3. O resultado da abertura a frio e da passada de leitor de
-tela é registrado nesta seção no fechamento.
+tela é registrado na 13.9.
 
 ### 13.8 Riscos
 
@@ -975,3 +975,61 @@ tela é registrado nesta seção no fechamento.
 | Diagnóstico calculado diverge do que está agendado | Mesmas funções dos agendadores; teste comparando os dois caminhos |
 | Perda dos dados reais do usuário na medição | Regra da 13.6: nada no aparelho antes do backup confirmado |
 | Primeira execução do `release.yml` com a action nova é a própria publicação | Configuração idêntica à do build-check, que roda no PR |
+
+### 13.9 Fechamento da v1.7.1
+
+#### Abertura a frio (2026-11-16): MEDIDA, critério cumprido
+
+Fecha a pendência da 12.7 e a da 11.8.3. Medida em aparelho físico (Android 16), pelo protocolo
+da 11.8.3 com a regra de aparelho da 13.6: `StartupBenchmark`, 10 aberturas a frio por rodada,
+tempo até o primeiro quadro, ordem antes, depois, depois, antes, sem Gradle no host durante as
+medidas. Números do time; o arquiteto conferiu as contas, não refez a medição.
+
+| Rodada | Versão | Mediana (ms) | p90 (ms) | p90 sobre a mediana |
+|--------|--------|--------------|----------|---------------------|
+| A1 | v1.6.2 (563137e) | 235,4 | 247,5 | +5,1% |
+| D1 | v1.7.1 | 227,3 | 236,5 | +4,1% |
+| D2 | v1.7.1 | 227,4 | 241,6 | +6,2% |
+| A2 | v1.6.2 (563137e) | 225,7 | 246,3 | +9,1% |
+
+- **Validade:** p90 dentro de 20% nas quatro rodadas; os dois "antes" diferem 4,3%.
+- **Resultado:** média dos "antes" 230,6 ms contra 227,4 ms dos "depois": **-1,4%**. Por par,
+  -3,4% e +0,8%. A v1.7.1 não é mais lenta que a v1.6.2; a leitura da Aparência antes do
+  primeiro quadro (12.3) não custou tempo mensurável. Como ficou abaixo de 10%, a v1.7.0 não
+  foi medida, e a regra dos 10% da 12.7 não gera defeito.
+- **Condições do aparelho:** USB, bateria em 100% nas quatro, sem modo de economia, sem
+  limitação térmica, nada instalando. **Desvio anotado:** a A1 começou cerca de 4 °C mais fria
+  (29,8 °C, contra 33,8 a 34,5 °C nas outras) e foi a mais lenta. Não invalida a sessão: os
+  dois "antes" concordam dentro do limite e a conclusão vale mesmo no pior par. Nas próximas
+  medições, uma rodada de aquecimento descartada antes da A1.
+- **Sem perfil (informativo):** só a A1, v1.6.2 sem compilação: 278,5 ms (p90 289,3). Não há
+  o par da v1.7.1, então não mede o ganho do perfil nesta versão.
+- **Host:** 3,25 a 3,84 GB livres, só anotado (13.6).
+- **Perfil e tamanho:** Baseline Profile regerado com 34.362 linhas, 4.125 do app; APK de
+  release com 3.308.867 bytes (+0,08% sobre a v1.7.0).
+
+#### Leitor de tela com fala real: NÃO VERIFICADO, por decisão do usuário (2026-11-17)
+
+A passada de leitor de tela em aparelho físico prevista na 13.6 **não foi feita**: o usuário a
+tirou do escopo da v1.7.1. O critério correspondente da E6 (13.7) fica **não cumprido**, não
+dispensado.
+
+- **O que cobre a acessibilidade nesta versão:** os testes de semântica do Compose (estado do
+  item no nó da linha, cabeçalho "Marcados" num nó só, ações de deslize com ação equivalente,
+  seletor de dias com papel, nome e estado) e a verificação da tester no emulador.
+- **O que ninguém verificou:** o que o TalkBack de fato **fala**, e a ordem do foco, nas telas
+  migradas na v1.7.0 e nos pontos mexidos na v1.7.1. O emulador não exporta a descrição de
+  estado, o papel de cabeçalho nem as ações personalizadas, e o TalkBack não aceita gesto
+  injetado; por isso essa parte só se prova com uma pessoa ouvindo.
+- **Limite conhecido da v1.7.1:** a acessibilidade por leitor de tela está garantida pela
+  estrutura (semântica), não pelo uso real. Pode haver rótulo lido duas vezes, ordem de foco
+  ruim ou frase estranha sem que nenhum teste acuse.
+- **Backlog:** a passada com fala real continua pendente, sem versão marcada. Deve ser feita
+  antes ou junto da v1.8.0, que reescreve o miolo das telas principais: verificar depois da
+  reescrita evita conferir duas vezes as mesmas telas. O roteiro da tester fica guardado.
+
+#### Aparelho do usuário
+
+Depois da medição, o aparelho físico voltou para o usuário. Não será usado pelo time sem um
+novo pedido dele; a regra de segurança dos dados da 13.6 continua valendo para qualquer uso
+futuro.
