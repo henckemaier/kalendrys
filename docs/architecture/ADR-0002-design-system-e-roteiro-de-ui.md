@@ -1052,8 +1052,10 @@ reproduziu.
 
 #### Teste intermitente
 
-O `CalendarViewModelTest` falhava de vez em quando. Corrigido **no teste** (espera com limite
-no relógio virtual), sem mudança no código do app.
+O `CalendarViewModelTest` falhava de vez em quando. **Causa:** o tempo limite da espera era
+contado no relógio virtual do teste, que avança sem esperar o trabalho real terminar.
+**Correção, só no teste:** o limite passou a ser contado em tempo real. Nenhuma mudança no
+código do app.
 
 #### Situação dos critérios da E6
 
