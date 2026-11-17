@@ -12,6 +12,7 @@ import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
@@ -191,5 +192,47 @@ class TodayViewModelTest {
 
         assertEquals(true, b > a)
         assertBackToPlusThreeWithOnlyA(id, a)
+    }
+
+    // --- P5 (v1.8.0, E3): Pular com Desfazer ---
+
+    @Test
+    fun `pular mantem o bloco na trilha marcado, avisa para Desfazer e desfazer o devolve`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.skip(treino.id, today)
+            val skipped = awaitState { it.block("Treino").skipped }
+            assertEquals(false, skipped.block("Treino").isActive)
+            assertEquals(TodayViewModel.Skipped(treino.id, today), vm.skipped.first())
+            assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, today.toEpochDay())?.type)
+
+            vm.undoSkip(treino.id, today)
+            val back = awaitState { !it.block("Treino").skipped }
+            assertEquals(true, back.block("Treino").isActive)
+            assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `bloco pulado nao se conclui pelo circulo`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.skipOccurrence(treino.id, today.toEpochDay())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.toggle(state.block("Treino"))
+            // As alterações do repositório passam uma por vez: depois desta, um concluir pedido acima já teria gravado.
+            routineRepository.add(Routine(title = "Depois", startMinute = 700))
+            // O toggle ignora o pulado: nenhuma conclusão gravada.
+            assertEquals(false, treino.id in db.routineCompletionDao().doneOn(today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

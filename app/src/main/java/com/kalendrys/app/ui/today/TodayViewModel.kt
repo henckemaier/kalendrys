@@ -145,7 +145,17 @@ class TodayViewModel(
                     val date = weekStart.plusDays(offset)
                     weekDay(date, scheduled, routineDone[date.toEpochDay()].orEmpty(), zone, overrides)
                 },
-                timeline = DayTimeline.build(scheduled, routineDoneToday, selected, zone, tasks, taskDoneToday, overrides),
+                // Pulados ficam visíveis, marcados (P5): a tela os esmaece com a ação de desfazer.
+                timeline = DayTimeline.build(
+                    scheduled,
+                    routineDoneToday,
+                    selected,
+                    zone,
+                    tasks,
+                    taskDoneToday,
+                    overrides,
+                    includeSkipped = true,
+                ),
                 untimedTasks = tasks
                     .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
                     .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
@@ -163,6 +173,12 @@ class TodayViewModel(
 
     private val completedEvents = Channel<Completed>(Channel.BUFFERED)
     val completed: Flow<Completed> = completedEvents.receiveAsFlow()
+
+    /** Ocorrência pulada que o snackbar oferece desfazer (P5). */
+    data class Skipped(val routineId: Long, val date: LocalDate)
+
+    private val skippedEvents = Channel<Skipped>(Channel.BUFFERED)
+    val skipped: Flow<Skipped> = skippedEvents.receiveAsFlow()
 
     /** Conclusão de tarefa (id do log) que o snackbar oferece desfazer. */
     private val taskCompletedEvents = Channel<Long>(Channel.BUFFERED)
@@ -246,7 +262,8 @@ class TodayViewModel(
     /** Marca como feito (com "Desfazer" no snackbar) ou, se já estava feito, desmarca. */
     fun toggle(block: DayTimeline.Block) {
         val date = selectedDate.value
-        if (date.isAfter(LocalDate.now())) return
+        // Pulado não se conclui: primeiro desfaz o pular.
+        if (block.skipped || date.isAfter(LocalDate.now())) return
         viewModelScope.launch {
             if (block.done) {
                 repository.uncomplete(block.routine.id, date)
@@ -259,6 +276,23 @@ class TodayViewModel(
 
     fun undo(completed: Completed) {
         viewModelScope.launch { repository.uncomplete(completed.routineId, completed.date) }
+    }
+
+    /**
+     * Pular a ocorrência de [routineId] em [date] (P5): grava o `SKIP` pelo repositório, que reagenda
+     * os alarmes, e avisa a tela para oferecer Desfazer ([skipped]). O bloco continua na trilha,
+     * marcado ([DayTimeline.Block.skipped]).
+     */
+    fun skip(routineId: Long, date: LocalDate) {
+        viewModelScope.launch {
+            repository.skipOccurrence(routineId, date.toEpochDay())
+            skippedEvents.send(Skipped(routineId, date))
+        }
+    }
+
+    /** Desfaz o pular (pelo Desfazer da mensagem ou pela ação do bloco esmaecido): tira a exceção do dia. */
+    fun undoSkip(routineId: Long, date: LocalDate) {
+        viewModelScope.launch { repository.clearOccurrenceException(routineId, date.toEpochDay()) }
     }
 
     /**
