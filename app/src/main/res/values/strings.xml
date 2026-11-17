@@ -4,7 +4,6 @@
 
     <!-- Navegação -->
     <string name="tab_tasks">Tarefas</string>
-    <string name="tab_routines">Rotinas</string>
     <string name="tab_today">Hoje</string>
     <!-- Tela Hoje (ADR-0002, 14.4; v1.8.0): menu da barra e semântica das linhas da timeline. -->
     <string name="today_all_routines">Todas as rotinas</string>

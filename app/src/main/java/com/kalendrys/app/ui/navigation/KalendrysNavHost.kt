@@ -12,11 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.EventRepeat
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -78,6 +78,8 @@ import com.kalendrys.app.ui.taskdetail.TaskDetailScreen
 import com.kalendrys.app.ui.taskdetail.taskDetailRoute
 import com.kalendrys.app.ui.tasks.TaskListScreen
 import com.kalendrys.app.ui.today.TodayScreen
+import com.kalendrys.app.ui.routines.ALL_ROUTINES_ROUTE
+import com.kalendrys.app.ui.routines.AllRoutinesScreen
 import java.time.LocalDate
 
 enum class AppTab(
@@ -86,8 +88,14 @@ enum class AppTab(
     val selectedIcon: ImageVector,
     val icon: ImageVector,
 ) {
+    /**
+     * Hoje (v1.8.0, ADR-0002 14.4): substitui a aba Rotinas e é o destino inicial. A rota continua
+     * "routines" DE PROPÓSITO: o estado salvo pela v1.7.1 com a aba Rotinas aberta (pilha com essa
+     * rota) é restaurado direto na Hoje; com outra rota o Navigation não acharia o destino ao
+     * restaurar e o app quebraria ao abrir por cima da versão anterior.
+     */
+    Today("routines", R.string.tab_today, Icons.Filled.Today, Icons.Outlined.Today),
     Tasks("tasks", R.string.tab_tasks, Icons.Filled.TaskAlt, Icons.Outlined.TaskAlt),
-    Routines("routines", R.string.tab_routines, Icons.Filled.EventRepeat, Icons.Outlined.EventRepeat),
     Calendar("calendar", R.string.tab_calendar, Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
     Lists("lists", R.string.tab_lists, Icons.Filled.Checklist, Icons.Outlined.Checklist),
 }
@@ -117,7 +125,7 @@ fun KalendrysNavHost(
     }
     // Pedido de "nova tarefa" vindo do widget, entregue à tela de tarefas uma única vez.
     var newTaskRequested by rememberSaveable { mutableStateOf(false) }
-    // Dia pedido por uma notificação ou widget de rotina, entregue à aba de rotinas uma única vez.
+    // Dia pedido por uma notificação ou widget de rotina (kalendrys://routines/{data}), entregue à Hoje uma única vez.
     var routinesDateRequested by rememberSaveable { mutableStateOf<LocalDate?>(null) }
 
     CompositionLocalProvider(LocalAppSnackbarHostState provides appSnackbar) {
@@ -150,7 +158,7 @@ fun KalendrysNavHost(
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = AppTab.Tasks.route,
+                startDestination = AppTab.Today.route,
                 // Sem consumir, o Scaffold de cada tela aplicaria de novo o inset da barra de navegação.
                 modifier = Modifier
                     .padding(innerPadding)
@@ -164,12 +172,11 @@ fun KalendrysNavHost(
                         onNewTaskOpened = { newTaskRequested = false },
                     )
                 }
-                composable(AppTab.Routines.route) {
+                composable(AppTab.Today.route) {
                     TodayScreen(
                         onOpenRoutine = openRoutine,
                         onNewRoutine = { navController.navigate(routineEditorRoute()) },
-                        // Forja liga Todas as rotinas na E2.
-                        onOpenAllRoutines = {},
+                        onOpenAllRoutines = { navController.navigate(ALL_ROUTINES_ROUTE) { launchSingleTop = true } },
                         onOpenSettings = openSettings,
                         onOpenTask = openTask,
                         onOpenException = openRoutineException,
@@ -197,6 +204,18 @@ fun KalendrysNavHost(
                     popExitTransition = { slideOutOfContainer(SlideDirection.End) },
                 ) {
                     ShoppingListScreen(onBack = { navController.popIfCurrent(SHOPPING_LIST_ROUTE) })
+                }
+                // "Todas as rotinas" (14.4): gestão das rotinas, fora do retrato do dia; a barra de abas some.
+                composable(
+                    route = ALL_ROUTINES_ROUTE,
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    AllRoutinesScreen(
+                        onBack = { navController.popIfCurrent(ALL_ROUTINES_ROUTE) },
+                        onOpenRoutine = openRoutine,
+                        onNewRoutine = { navController.navigate(routineEditorRoute()) },
+                    )
                 }
                 composable(
                     route = ROUTINE_EDITOR_ROUTE,
@@ -276,7 +295,7 @@ fun KalendrysNavHost(
             // pedido só vale ao sair do editor.
             LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)
             is LaunchRequest.OpenRoutines -> {
-                navController.openTab(AppTab.Routines)
+                navController.openTab(AppTab.Today)
                 routinesDateRequested = launchRequest.date
             }
             // ADR-0002, E-1: aba Listas e, sobre ela, SÓ a lista pedida (voltar cai na aba). O openTab
