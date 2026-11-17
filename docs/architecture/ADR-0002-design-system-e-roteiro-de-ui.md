@@ -1033,3 +1033,28 @@ dispensado.
 Depois da medição, o aparelho físico voltou para o usuário. Não será usado pelo time sem um
 novo pedido dele; a regra de segurança dos dados da 13.6 continua valendo para qualquer uso
 futuro.
+
+#### Busca da aba Tarefas (E5): causa registrada, correção na v1.8.0
+
+O defeito registrado na v1.7.0 ("busca meio sob a barra de topo com o teclado") **não é o que
+acontece**. Causa achada pelo dev sênior, com capturas no emulador (2026-11-16); o arquiteto não
+reproduziu.
+
+- Com o teclado aberto, a barra de topo e a janela **não se deslocam**: a barra fica no mesmo
+  lugar. A busca nunca fica sob a barra. A regra do teclado da 12.4 está funcionando.
+- Retrato com fonte 1.0 e 2.0, e paisagem com fonte 1.0: busca inteira.
+- **Paisagem com fonte 2.0:** a busca é cortada **embaixo, pelo teclado**. Entre a barra e o
+  topo do teclado sobram cerca de 72dp, menos que o cabeçalho fixo da tela (busca e filtros).
+- Não é defeito da casca nem do preenchimento: só se resolve com cabeçalho que rola ou recolhe,
+  que é mudança do miolo da tela. Fica para a **v1.8.0**, junto do limite já aceito na 12.4 (aba
+  Tarefas em paisagem com fonte 2.0), que tem a mesma origem.
+- Critério da E5 (13.7): causa registrada, **cumprido**. Correção: v1.8.0.
+
+#### Teste intermitente
+
+O `CalendarViewModelTest` falhava de vez em quando. Corrigido **no teste** (espera com limite
+no relógio virtual), sem mudança no código do app.
+
+#### Situação dos critérios da E6
+
+Abertura a frio: **cumprido**. Leitor de tela com fala real: **não cumprido**, e é o único.
