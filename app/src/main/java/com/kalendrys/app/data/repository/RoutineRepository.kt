@@ -285,9 +285,18 @@ class RoutineRepository(
         return RoutineCatchUp.plan(routineDao.active(), overridesByRoutine(), doneByDay, lastSeen, now, zone)
     }
 
-    /** Agenda o próximo início estritamente depois de [now], com os dados lidos agora (dentro do Mutex). */
+    /**
+     * Agenda o próximo início estritamente depois de [now], com os dados lidos agora (dentro do Mutex).
+     * Passa as rotinas concluídas no dia desse início: com todas as que avisam concluídas, o alarme fica
+     * silencioso (ainda redesenha os widgets), a mesma regra da entrega (ADR-0002, 14.3).
+     */
     private suspend fun scheduleLocked(now: Long) {
-        alarms.scheduleNext(routineDao.active(), startingPoint(now), overridesByRoutine())
+        val routines = routineDao.active()
+        val after = startingPoint(now)
+        val overrides = overridesByRoutine()
+        val next = RoutineSchedule.nextStart(routines, after, zone(), overrides)
+        val done = next?.let { completionDao.doneOn(it.at.toLocalDate().toEpochDay()).toSet() }.orEmpty()
+        alarms.scheduleNext(routines, after, overrides, done)
     }
 
     /**

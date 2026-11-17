@@ -57,9 +57,12 @@ class TaskRepositoryTest {
     private fun todayTiming(repeat: ReminderRepeat = ReminderRepeat.NONE) =
         TaskTiming(date = LocalDate.now(), time = LocalTime.of(9, 0), repeat = repeat)
 
+    /** Lembrete sempre no futuro: desde a E1 só se marca alarme que vai tocar (hoje às 9h já pode ter passado). */
+    private fun futureTiming() = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0))
+
     @Test
     fun `adicionar tarefa agenda o alarme`() = runTest {
-        val task = repository.addTask("Comprar pão", timing = todayTiming())
+        val task = repository.addTask("Comprar pão", timing = futureTiming())
 
         assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
         assertTrue(scheduler.cancelled.isEmpty())
@@ -67,7 +70,7 @@ class TaskRepositoryTest {
 
     @Test
     fun `editar tarefa cancela o alarme antigo e reagenda`() = runTest {
-        val task = repository.addTask("Tarefa", timing = todayTiming())
+        val task = repository.addTask("Tarefa", timing = futureTiming())
         scheduler.reset()
 
         repository.updateTask(task.copy(title = "Tarefa editada"))
@@ -99,7 +102,7 @@ class TaskRepositoryTest {
 
     @Test
     fun `desfazer conclusao reagenda o alarme`() = runTest {
-        val task = repository.addTask("Tarefa", timing = todayTiming())
+        val task = repository.addTask("Tarefa", timing = futureTiming())
         val logId = repository.logCompletion(task.id)
         scheduler.reset()
 
@@ -470,6 +473,43 @@ class TaskRepositoryTest {
         repository.undoCompletion(logId)
         assertEquals(LocalDate.now().plusDays(1).toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
         assertTrue(db.completionLogDao().all().isEmpty())
+    }
+
+
+    // --- E1 (v1.8.0, ADR-0002 14.3): o alarme marcado é a próxima ocorrência que será ENTREGUE ---
+
+    private fun at(day: LocalDate, hour: Int) = day.atTime(hour, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test
+    fun `diaria concluida antes do horario nao tem alarme nesse dia e desfazer devolve`() = runTest {
+        // Âncora depois de amanhã: o relógio real do teste nunca cruza essas datas.
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        assertEquals(at(day, 10), scheduler.scheduled.last().triggerAt)
+        scheduler.reset()
+
+        // Concluída no próprio dia, antes das 10h: o alarme desse dia sai, vale o do dia seguinte.
+        val logId = repository.logCompletion(task.id, completedAt = at(day, 7))
+        assertEquals(listOf(at(day.plusDays(1), 10)), scheduler.scheduled.map { it.triggerAt })
+        scheduler.reset()
+
+        repository.undoCompletion(logId)
+        assertEquals(listOf(at(day, 10)), scheduler.scheduled.map { it.triggerAt })
+    }
+
+    @Test
+    fun `catch-up e restauro marcam a mesma ocorrencia que o diagnostico mostra`() = runTest {
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        db.completionLogDao().insert(com.kalendrys.app.data.local.entity.CompletionLog(taskId = task.id, completedAt = at(day, 7)))
+        scheduler.reset()
+        val now = System.currentTimeMillis()
+
+        repository.rescheduleReminders(now)
+
+        val marked = scheduler.rescheduledAlarms.single { it.task.id == task.id }.triggerAt
+        assertEquals(at(day.plusDays(1), 10), marked)
+        assertEquals(marked, repository.nextReminderToDeliver(now))
     }
 
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---

@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.reminder.ReminderAlarm
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
@@ -17,15 +18,16 @@ import java.time.LocalDateTime
  * e os alarmes andam em sincronia conferindo o que foi agendado/cancelado.
  */
 class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
-    data class Scheduled(val task: Task, val after: Long)
+    data class Scheduled(val task: Task, val triggerAt: Long)
 
     val scheduled = mutableListOf<Scheduled>()
     val cancelled = mutableListOf<Long>()
     val dismissed = mutableListOf<Long>()
     val rescheduled = mutableListOf<List<Task>>()
+    val rescheduledAlarms = mutableListOf<ReminderAlarm>()
 
-    override fun schedule(task: Task, after: Long) {
-        scheduled += Scheduled(task, after)
+    override fun schedule(task: Task, triggerAt: Long) {
+        scheduled += Scheduled(task, triggerAt)
     }
 
     override fun cancel(taskId: Long) {
@@ -36,8 +38,9 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
         dismissed += taskId
     }
 
-    override fun rescheduleAll(tasks: List<Task>) {
-        rescheduled += tasks
+    override fun rescheduleAll(alarms: List<ReminderAlarm>) {
+        rescheduled += alarms.map { it.task }
+        rescheduledAlarms += alarms
     }
 
     fun reset() {
@@ -45,6 +48,7 @@ class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
         cancelled.clear()
         dismissed.clear()
         rescheduled.clear()
+        rescheduledAlarms.clear()
     }
 }
 
@@ -53,6 +57,7 @@ class FakeRoutineAlarms(context: Context) : RoutineAlarms(context) {
         val routines: List<Routine>,
         val after: LocalDateTime,
         val overridesByRoutine: Map<Long, List<RoutineOverride>>,
+        val doneOnStartDay: Set<Long> = emptySet(),
     )
 
     val calls = mutableListOf<Call>()
@@ -61,8 +66,9 @@ class FakeRoutineAlarms(context: Context) : RoutineAlarms(context) {
         routines: List<Routine>,
         after: LocalDateTime,
         overridesByRoutine: Map<Long, List<RoutineOverride>>,
+        doneOnStartDay: Set<Long>,
     ) {
-        calls += Call(routines, after, overridesByRoutine)
+        calls += Call(routines, after, overridesByRoutine, doneOnStartDay)
     }
 
     fun reset() {

@@ -63,7 +63,7 @@ class ReminderCatchUpRunnerTest {
         var failNextReschedule = false
         val cancelled = mutableListOf<Long>()
 
-        override fun schedule(task: Task, after: Long) {
+        override fun schedule(task: Task, triggerAt: Long) {
             log += "schedule:${task.id}"
         }
 
@@ -73,12 +73,12 @@ class ReminderCatchUpRunnerTest {
 
         override fun dismissNotification(taskId: Long) = Unit
 
-        override fun rescheduleAll(tasks: List<Task>) {
+        override fun rescheduleAll(alarms: List<ReminderAlarm>) {
             if (failNextReschedule) {
                 failNextReschedule = false
                 throw IllegalStateException("processo morreu antes da marca")
             }
-            log += "reschedule:" + tasks.map { it.id }.sorted().joinToString(",")
+            log += "reschedule:" + alarms.map { it.task.id }.sorted().joinToString(",")
         }
     }
 

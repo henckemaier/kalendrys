@@ -332,7 +332,7 @@ class AlarmDiagnosticsViewModelTest {
     }
 
     @Test
-    fun `diaria concluida no dia do alarme marcado diverge do sistema de proposito`() {
+    fun `diaria concluida no dia da proxima ocorrencia - agendador e diagnostico marcam a seguinte`() {
         disableSummary()
         // Relógio real (o ReminderScheduler agenda a partir de System.currentTimeMillis): âncora
         // depois de amanhã, para nunca cruzar a meia-noite durante o teste.
@@ -348,10 +348,12 @@ class AlarmDiagnosticsViewModelTest {
         val tasks = taskRepository(ReminderScheduler(context))
         runBlocking { tasks.rescheduleReminders(realNow) }
 
-        // O agendador (que não muda) marca a ocorrência concluída; a entrega a descartaria.
-        assertEquals(firstAt, scheduledAt(com.kalendrys.app.reminder.ReminderReceiver::class.java, action = null))
+        // v1.8.0, E1 (ADR-0002, 14.3): o agendador pula a ocorrência que a entrega descartaria, então
+        // o alarme marcado e o diagnóstico voltam a ser a MESMA conta: os dois mostram a seguinte.
         val following = first.plusDays(1).atTime(LocalTime.of(10, 0)).atZone(zone).toInstant().toEpochMilli()
-        assertEquals(NextAppAlarm(following, AppAlarmKind.TASK), nextAlarm(tasks = tasks, clock = { realNow }))
+        val scheduled = scheduledAt(com.kalendrys.app.reminder.ReminderReceiver::class.java, action = null)
+        assertEquals(following, scheduled)
+        assertEquals(NextAppAlarm(scheduled, AppAlarmKind.TASK), nextAlarm(tasks = tasks, clock = { realNow }))
     }
 
     @Test

@@ -332,4 +332,18 @@ class RoutineRepositoryTest {
         repository.uncomplete(first.id, today)
         assertEquals(listOf(true, true), picked(listId))
     }
+
+    @Test
+    fun `concluir a rotina passa ao alarme as concluidas do dia do proximo inicio e desfazer tira`() = runTest {
+        val saved = repository.add(routine(startMinute = 600).copy(remind = true))
+        val day = alarms.calls.last().let { call ->
+            com.kalendrys.app.domain.RoutineSchedule.nextStart(call.routines, call.after, java.time.ZoneId.systemDefault(), call.overridesByRoutine)!!.at.toLocalDate()
+        }
+
+        repository.complete(saved.id, day)
+        assertEquals(setOf(saved.id), alarms.calls.last().doneOnStartDay)
+
+        repository.uncomplete(saved.id, day)
+        assertEquals(emptySet<Long>(), alarms.calls.last().doneOnStartDay)
+    }
 }
