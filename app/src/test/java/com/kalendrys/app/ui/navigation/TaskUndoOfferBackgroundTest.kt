@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -40,8 +41,10 @@ import org.robolectric.annotation.Config
 
 /**
  * Validade da oferta de Desfazer (A1 da revisão do NB-4) quando o app vai para o fundo SEM recriar a
- * tela (Home, tela apagada): o coletor continua vivo, preso na mensagem, e a tela de origem para de
- * desenhá-la (só a tela RESUMED desenha). Ao voltar, a mensagem reaparece com o tempo cheio.
+ * tela (Home, tela apagada): a tela de origem para de desenhar a mensagem (só a tela RESUMED desenha)
+ * e o coletor, que segue o mesmo ciclo de vida (o da Activity, no NavHost), para de esperar sem limpar
+ * a oferta (A1 do Esquadro). Ao voltar, confere o prazo pelo relógio de parede: dentro dele a mensagem
+ * reaparece com o tempo cheio; vencido, é limpa sem mostrar.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w360dp-h800dp-port")
@@ -72,13 +75,16 @@ class TaskUndoOfferBackgroundTest {
         screen.registry.currentState = Lifecycle.State.RESUMED
         compose.setContent {
             KalendrysTheme {
-                // Como o KalendrysNavHost: o coletor fica fora da tela; a tela de origem desenha.
+                // Como o KalendrysNavHost: o coletor fica fora da tela; a tela de origem desenha. Os dois
+                // seguem o mesmo ciclo de vida (no app, o da Activity; a entrada da navegação o acompanha).
                 val app = remember { SnackbarHostState() }
-                TaskUndoOfferEffect(offers, app)
                 CompositionLocalProvider(
                     LocalAppSnackbarHostState provides app,
                     LocalLifecycleOwner provides screen,
-                ) { AppScaffold {} }
+                ) {
+                    TaskUndoOfferEffect(offers, app)
+                    AppScaffold {}
+                }
             }
         }
         compose.mainClock.autoAdvance = false
@@ -144,19 +150,43 @@ class TaskUndoOfferBackgroundTest {
     }
 
     @Test
-    fun `mensagem pendurada no fundo some ao fim do prazo, sem a tela a frente`() {
+    fun `tela apagada horas com o relogio acordado parado - ao voltar nao mostra e limpa`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+
+        // Tela apagada: o tempo acordado (o do Compose) quase não anda, o de parede anda 3 h.
+        lifecycle(Lifecycle.State.CREATED)
+        assertEquals("sair da frente não limpa a oferta", task, offers.pending.value?.task)
+        now += 3 * 60 * 60 * 1_000L
+        lifecycle(Lifecycle.State.RESUMED)
+
+        assertEquals("vencida pelo relógio de parede, não reaparece", 0, shown())
+        assertNull("e é limpa ao voltar", offers.pending.value)
+        assertNull("sem Desfazer a tarefa continua excluída", runBlocking { testDb.db.taskDao().byId(task.id) })
+    }
+
+    @Test
+    fun `fora da frente a espera para sem limpar e dentro do prazo mostra de novo com Desfazer`() {
         val task = deleted("Pagar conta")
         offers.offer(task)
         advance()
 
         lifecycle(Lifecycle.State.CREATED)
-        // Ainda no fundo: o prazo (30 s desde a oferta) passa sem nenhuma tela desenhar a mensagem.
-        now += TaskUndoOffers.VALIDITY_MS
-        advance(TaskUndoOffers.VALIDITY_MS)
-
-        assertNull("o fim do prazo limpa a oferta mesmo no fundo", offers.pending.value)
-        assertNull("sem Desfazer a tarefa continua excluída", runBlocking { testDb.db.taskDao().byId(task.id) })
+        // Fora da frente, mesmo passando os 10 s da mensagem longa, nada termina a oferta.
+        advance(15_000)
+        assertEquals(task, offers.pending.value?.task)
+        now += 20_000
         lifecycle(Lifecycle.State.RESUMED)
-        assertEquals(0, shown())
+
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        compose.onNodeWithText("Desfazer").performClick()
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
+            runBlocking { testDb.db.taskDao().byId(task.id) } != null
+        }
+        assertNull(offers.pending.value)
     }
 }
