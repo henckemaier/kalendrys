@@ -50,6 +50,7 @@ import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.bottomBarInsets
+import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.shopping.ShoppingListViewModel.Event
 import com.kalendrys.app.ui.theme.Spacing
 import kotlinx.coroutines.flow.collectLatest
@@ -99,20 +100,10 @@ fun ShoppingListScreen(
         viewModel.events.collectLatest { event ->
             when (event) {
                 is Event.ItemRemoved -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = removedMessage,
-                        actionLabel = undoLabel,
-                        duration = SnackbarDuration.Short,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) viewModel.undoRemove(event.item)
+                    if (snackbarHostState.showUndo(removedMessage, undoLabel)) viewModel.undoRemove(event.item)
                 }
                 is Event.PickedCleared -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = clearedMessage,
-                        actionLabel = undoLabel,
-                        duration = SnackbarDuration.Short,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) viewModel.undoClearPicked(event.itemIds)
+                    if (snackbarHostState.showUndo(clearedMessage, undoLabel)) viewModel.undoClearPicked(event.itemIds)
                 }
                 // P3: oferta sem forçar; some sozinha se ignorada.
                 is Event.OfferCompleteTask -> {
@@ -125,12 +116,9 @@ fun ShoppingListScreen(
                     if (result == SnackbarResult.ActionPerformed) viewModel.completeTask(event.taskId)
                 }
                 is Event.TaskCompleted -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = taskCompletedMessage,
-                        actionLabel = undoLabel,
-                        duration = SnackbarDuration.Short,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) viewModel.undoTaskCompletion(event.logId)
+                    if (snackbarHostState.showUndo(taskCompletedMessage, undoLabel)) {
+                        viewModel.undoTaskCompletion(event.logId)
+                    }
                 }
             }
         }

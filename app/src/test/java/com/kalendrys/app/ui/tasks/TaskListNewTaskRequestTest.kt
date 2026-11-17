@@ -6,8 +6,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -35,6 +39,7 @@ class TaskListNewTaskRequestTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var viewModel: TaskViewModel
+    private val store = NewTaskDraftStore()
 
     @Before
     fun setup() {
@@ -45,6 +50,7 @@ class TaskListNewTaskRequestTest {
             TaskViewModel(
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
                 ShoppingRepository(db),
+                store,
             ),
         )
     }
@@ -83,5 +89,25 @@ class TaskListNewTaskRequestTest {
 
         compose.onAllNodesWithText("Título").assertCountEquals(0)
         assertEquals(0, consumed)
+    }
+
+    @Test
+    fun `atalho com rascunho guardado mostra o rascunho`() {
+        store.open(java.time.LocalDate.now())
+        store.update { it.copy(title = "Pagar luz") }
+
+        show(openNewTask = true) {}
+
+        compose.onNode(hasSetTextAction() and hasText("Pagar luz")).assertIsDisplayed()
+    }
+
+    @Test
+    fun `o que se digita no painel vai para o rascunho`() {
+        show(openNewTask = true) {}
+
+        compose.onNode(hasSetTextAction() and hasText("Título")).performTextReplacement("Comprar pão")
+        compose.waitForIdle()
+
+        assertEquals("Comprar pão", store.draft.value!!.title)
     }
 }

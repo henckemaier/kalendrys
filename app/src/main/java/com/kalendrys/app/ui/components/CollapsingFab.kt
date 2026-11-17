@@ -58,13 +58,25 @@ const val COMPACT_HEIGHT_DP = 480
  * Aberto só no topo da lista E com altura de sobra: em janela baixa o FAB estendido cobriria o
  * conteúdo, então fica sempre recolhido (o rótulo para o leitor de tela é o mesmo).
  */
-fun fabExpanded(atTop: Boolean, windowHeightDp: Int): Boolean = atTop && windowHeightDp >= COMPACT_HEIGHT_DP
+fun fabExpanded(atTop: Boolean, windowHeightDp: Int): Boolean = atTop && !isCompactHeight(windowHeightDp)
+
+/**
+ * Janela baixa (abaixo de [COMPACT_HEIGHT_DP], paisagem de telefone): o corte único que recolhe o
+ * FAB e que devolve o título do painel de nova tarefa para a área que rola (O-1 da matriz v1.7.1).
+ */
+fun isCompactHeight(windowHeightDp: Int): Boolean = windowHeightDp < COMPACT_HEIGHT_DP
+
+/** Altura da janela em dp, inteira, como o corte de [isCompactHeight] a compara. */
+@Composable
+fun windowHeightDp(): Int {
+    val heightPx = LocalWindowInfo.current.containerSize.height
+    return with(LocalDensity.current) { heightPx.toDp().value.toInt() }
+}
 
 /** Aberto no topo da lista, recolhido depois de rolar ou em janela baixa: o padrão das abas. */
 @Composable
 fun rememberFabExpanded(listState: LazyListState): State<Boolean> {
-    val heightPx = LocalWindowInfo.current.containerSize.height
-    val heightDp = with(LocalDensity.current) { heightPx.toDp().value.toInt() }
+    val heightDp = windowHeightDp()
     return remember(listState, heightDp) {
         derivedStateOf { fabExpanded(atTop = listState.firstVisibleItemIndex == 0, windowHeightDp = heightDp) }
     }

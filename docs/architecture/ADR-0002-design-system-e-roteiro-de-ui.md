@@ -826,3 +826,237 @@ release.
 - **Só acompanhar:** correção do plugin `baselineprofile`; regra do `InputMerger` quando o
   Glance subir; ANR único visto no emulador; adiamento perdido ao revogar o alarme exato.
 - **Encerrados:** Desfazer cobrindo a última linha e resumo cruzando a meia-noite (aceitos).
+
+---
+
+## 13. Emenda de 2026-11-16 — escopo e desenho da v1.7.1
+
+Versão PATCH: sem migração (banco na versão 10), sem mudança no backup (versão 6), sem
+dependência nova e sem mudança no manifesto. Parte da 12.8. As decisões D1 a D3 são do usuário.
+
+### 13.1 Painel de nova tarefa
+
+- **Rascunho em memória (decisão do usuário, P5).** Os campos do painel saem de dentro dele e
+  passam para um `NewTaskDraft` (classe de dados pura, em `domain/`), guardado por um
+  `NewTaskDraftStore` criado no `KalendrysApp` e entregue ao `TaskViewModel` e ao
+  `CalendarViewModel`. O painel fica sem estado: recebe o rascunho e devolve as mudanças.
+  Nada vai para o banco, o DataStore ou o backup.
+- **Regras:** voltar, tocar fora ou arrastar para baixo fecha o painel e **guarda** o rascunho;
+  Cancelar **descarta**; Salvar grava a tarefa e descarta. O rascunho dura enquanto o processo
+  viver.
+- **Um rascunho só (D2),** compartilhado entre a aba Tarefas e o Calendário. Aberto pelo
+  Calendário, a data é o dia tocado, a não ser que o usuário já tenha mudado a data no rascunho.
+- **Perda aceita:** se o sistema encerrar o processo com o painel aberto em segundo plano, o
+  rascunho se perde (antes ele voltava). É o custo de não persistir.
+- `NewTaskList` vai para `domain/` e a regra de qual lista gravar (`resolveListId`) vira método
+  do `ShoppingRepository`; `ui/calendar` deixa de importar de `ui/tasks`. Criar lista e tarefa
+  numa transação só fica para a v1.8.0, com a reforma do painel.
+- A data sugerida (hoje, ou o dia tocado no Calendário) vale enquanto o usuário não mexer na
+  data do rascunho; depois vale a dele. Um rascunho guardado e reaberto noutro dia acompanha a
+  data nova.
+- O store é parâmetro obrigatório dos dois ViewModels, sem valor padrão, para nenhuma tela
+  ficar com um rascunho próprio por engano.
+- Para a v1.8.0, na reforma do painel: as operações do rascunho e a observação das listas estão
+  repetidas nos dois ViewModels. Não foram para o `KalendrysApp` para não pôr uma leitura do
+  banco na abertura do app.
+- Título do painel: fica fixo, fora da área que rola, **só em janela de altura normal**. Em
+  altura compacta (paisagem de celular, o mesmo corte do FAB recolhido) o título rola junto com
+  os campos. Motivo: com o título fixo e o teclado aberto em paisagem sobrava tão pouca altura
+  que o Salvar ficava inalcançável (matriz da v1.7.1). **Limite aceito:** em paisagem com
+  teclado o título pode sair de cena ao rolar; fica para a reforma do painel na v1.8.0.
+
+### 13.2 Seletor de dias da semana
+
+Sete alvos de 48dp somam 336dp e não cabem numa tela de 360dp com as margens (312dp úteis).
+Regra: cada dia é uma célula com **48dp de altura** e largura de um sétimo da linha, sem vão
+entre vizinhos; o círculo visual continua com 40dp. **Limite aceito:** em tela de 360dp a
+célula tem cerca de 44dp de largura. Com fonte grande a linha continua quebrando em duas.
+
+### 13.3 Diagnóstico de alarmes
+
+- **Defeito:** a linha "Próximo alarme" lia o próximo despertador do sistema, que é de qualquer
+  app. Sem permissão de alarme exato dizia "Nenhum" mesmo com lembretes agendados; com a
+  permissão, podia mostrar o despertador do Relógio como se fosse do Kalendrys.
+- **Regra (D3):** a linha mostra o próximo alarme **do app**, calculado dos dados com as mesmas
+  funções puras que os agendadores usam (`ReminderRecurrence.nextTriggerMillis`,
+  `RoutineSchedule.nextStart` e o horário do resumo diário). Uma função pura em `domain/`
+  escolhe o mais próximo; a tela ganha um ViewModel que lê os repositórios e não consulta mais
+  o despertador do sistema. Sem permissão exata, mostra o horário e avisa que pode atrasar.
+- A tela **não** tem lógica própria de horário: se o cálculo dos agendadores mudar, o
+  diagnóstico muda junto. Um teste compara os dois caminhos.
+- **Fontes dos três candidatos** (decisão de 2026-11-16, na E3): o conjunto de tarefas com
+  lembrete pendente é uma função só do `TaskRepository`, usada pelo reagendamento e pelo
+  diagnóstico; nas rotinas, o candidato é o próximo início **que avisa** (rotinas com aviso
+  ligado), lido pelo `RoutineRepository` sem agendar nada; o resumo vem de uma função pura
+  usada também pelo `DailyScheduler`. O alarme da virada do dia e o alarme silencioso de
+  rotina sem aviso não entram: não avisam o usuário.
+- **O que a linha mostra é o próximo aviso previsto, não uma leitura do sistema.** O
+  agendamento das rotinas é em cadeia (cada alarme agenda o seguinte), então o horário mostrado
+  pode ainda não estar agendado.
+- **Limite aceito: adiamentos ficam fora.** "Adiar" agenda um alarme direto, sem gravar nos
+  dados; com um adiamento pendente, o diagnóstico pode mostrar um horário posterior ao do aviso
+  adiado. Gravar o adiamento seria mudança de dados e não cabe em PATCH.
+- **Limite aceito: resumo em dia vazio.** O resumo diário não notifica quando não há tarefa
+  pendente nem rotina adiante; num dia assim o diagnóstico pode anunciar um resumo previsto que
+  não aparece.
+- **O diagnóstico mostra o próximo aviso que será ENTREGUE** (decisão na matriz, D-71-1). O
+  agendador marca o alarme da ocorrência mesmo quando ela já foi concluída no dia, e a entrega
+  a descarta; o diagnóstico pula essas ocorrências, de tarefa repetida e de rotina, usando o
+  **mesmo predicado** que a entrega usa, extraído para uma função pura compartilhada. Aqui o
+  diagnóstico pode divergir do instante que está no sistema, de propósito.
+- Para a v1.8.0, com a reforma do Desfazer: o agendador deixar de marcar alarme para ocorrência
+  já concluída. Não entra em PATCH porque desfazer a conclusão no mesmo dia teria de devolver
+  o alarme, e hoje isso funciona justamente porque o alarme continua lá.
+
+### 13.4 Mensagens com "Desfazer"
+
+Toda mensagem com "Desfazer" usa a duração longa (cerca de 10 s), por uma função única em
+`ui/components`; nenhuma tela escolhe a duração. Uma ação nova substitui a mensagem anterior,
+sem fila. A mensagem cobre a última linha por mais tempo; continua aceito como sobreposição
+transitória.
+
+### 13.5 Miudezas
+
+- Contador da lista cortado como "2/" na aba Rotinas com fonte 1.3: a etiqueta de progresso
+  nunca quebra nem encolhe; quem cede espaço é o texto vizinho. Se exigir rearranjar a linha do
+  bloco, fica para a v1.8.0.
+- Campo de busca da aba Tarefas meio encoberto com o teclado: primeiro a causa; corrige se for
+  na casca ou no preenchimento da tela, senão v1.8.0.
+- CI: resumo de testes e lint no log do build-check; `setup-java` v5 nos dois workflows no
+  mesmo commit, com SHA fixado e configuração idêntica, porque o `release.yml` só roda na tag.
+- **Não entra:** o resto dos problemas de fonte 2.0 (faixa de 30 min e títulos longos) depende
+  todo da timeline e vai para a v1.8.0.
+
+### 13.6 Aparelho físico (D1)
+
+O usuário tem um aparelho físico com depuração USB (Android 16) e **o Kalendrys instalado nele
+com dados reais**.
+
+- **Regra de segurança dos dados:** ninguém desinstala o app, limpa os dados nem instala por
+  cima nesse aparelho antes de o usuário confirmar que exportou o backup. A variante de
+  medição usa o mesmo pacote com outra assinatura, então instalá-la exige desinstalar o app e
+  apaga os dados. Depois da medição, o usuário reinstala a versão publicada e restaura o backup.
+- **Leitor de tela com fala real:** o TalkBack não aceita gesto injetado, então nenhum agente
+  faz essa passada. O usuário executa um roteiro curto escrito pela tester (uma linha por
+  verificação, resposta sim ou não) no APK de release. Cobre o que ficou sem fala na v1.7.0:
+  abrir do cartão de lista, estado do item, cabeçalho "Marcados", ações de deslize, botão
+  "Hoje", FAB recolhido e seletor de dias.
+- **Abertura a frio (pendência da 12.7):** protocolo da 11.8.3 no aparelho, v1.6.2 (563137e)
+  contra a v1.7.1 candidata, na ordem antes, depois, depois, antes. A v1.7.0 só é medida se a
+  v1.7.1 passar de 10%, para saber de onde veio a diferença. Medição fora do protocolo não
+  fecha a pendência.
+- **Protocolo em aparelho físico** (decisão de 2026-11-16): o limite de 4 GB livres no host da
+  11.8.3 existe porque o emulador roda no host. Em aparelho físico quem abre o app é o
+  aparelho, então esse limite **não se aplica**; a memória do host é só anotada. No lugar dele
+  valem as condições do aparelho: mesma faixa de bateria e de temperatura no início e no fim,
+  sem modo de economia, tela ligada, nada instalando ou atualizando, e nenhum Gradle rodando no
+  host durante as medidas. Os demais critérios não mudam: ordem antes, depois, depois, antes;
+  os dois "antes" a até 10% um do outro; p90 até 20% acima da mediana.
+
+### 13.7 Etapas e aceite
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E1 | Painel de nova tarefa (13.1) | Fechar pelo voltar e reabrir traz tudo de volta, também trocando de aba, girando a tela, pelo Calendário e pelo atalho; Cancelar e Salvar limpam; título inteiro em paisagem com fonte 1.0 e 2.0; `ui/calendar` não importa tipo de dado nem regra de `ui/tasks` (só o painel compartilhado); testes do rascunho e do store |
+| E2 | Seletor de dias (13.2) | Teste de semântica: 48dp de altura de toque nos 7 dias, sem vão; sem corte em 360dp e em fonte 2.0; nome do dia e estado continuam lidos |
+| E3 | Diagnóstico (13.3) | Mostra o mais próximo entre tarefa, rotina e resumo; "Nenhum" sem nada agendado; horário com aviso sem permissão exata; despertador do Relógio não aparece; relê ao voltar da tela do sistema |
+| E4 | Desfazer (13.4) | Nenhuma duração curta junto de "Desfazer" em `ui/`; duas ações seguidas mostram só a última; Desfazer desfaz a ação certa |
+| E5 | Miudezas (13.5) | "2/3" inteiro com fonte 1.0, 1.3 e 2.0; causa da busca registrada com captura |
+| E6 | Fechamento | Roteiro de leitor de tela executado; abertura a frio pelo protocolo; perfil regerado com o passo manual; tamanho do APK; testes de emulador no APK de release |
+
+Revisão do arquiteto na E1 e na E3. O resultado da abertura a frio e da passada de leitor de
+tela é registrado na 13.9.
+
+### 13.8 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Rascunho em memória compartilhado por duas telas é estado global novo | Um dono só (o store), painel sem estado, testes do store |
+| Diagnóstico calculado diverge do que está agendado | Mesmas funções dos agendadores; teste comparando os dois caminhos |
+| Perda dos dados reais do usuário na medição | Regra da 13.6: nada no aparelho antes do backup confirmado |
+| Primeira execução do `release.yml` com a action nova é a própria publicação | Configuração idêntica à do build-check, que roda no PR |
+
+### 13.9 Fechamento da v1.7.1
+
+#### Abertura a frio (2026-11-16): MEDIDA, critério cumprido
+
+Fecha a pendência da 12.7 e a da 11.8.3. Medida em aparelho físico (Android 16), pelo protocolo
+da 11.8.3 com a regra de aparelho da 13.6: `StartupBenchmark`, 10 aberturas a frio por rodada,
+tempo até o primeiro quadro, ordem antes, depois, depois, antes, sem Gradle no host durante as
+medidas. Números do time; o arquiteto conferiu as contas, não refez a medição.
+
+| Rodada | Versão | Mediana (ms) | p90 (ms) | p90 sobre a mediana |
+|--------|--------|--------------|----------|---------------------|
+| A1 | v1.6.2 (563137e) | 235,4 | 247,5 | +5,1% |
+| D1 | v1.7.1 | 227,3 | 236,5 | +4,1% |
+| D2 | v1.7.1 | 227,4 | 241,6 | +6,2% |
+| A2 | v1.6.2 (563137e) | 225,7 | 246,3 | +9,1% |
+
+- **Validade:** p90 dentro de 20% nas quatro rodadas; os dois "antes" diferem 4,3%.
+- **Resultado:** média dos "antes" 230,6 ms contra 227,4 ms dos "depois": **-1,4%**. Por par,
+  -3,4% e +0,8%. A v1.7.1 não é mais lenta que a v1.6.2; a leitura da Aparência antes do
+  primeiro quadro (12.3) não custou tempo mensurável. Como ficou abaixo de 10%, a v1.7.0 não
+  foi medida, e a regra dos 10% da 12.7 não gera defeito.
+- **Condições do aparelho:** USB, bateria em 100% nas quatro, sem modo de economia, sem
+  limitação térmica, nada instalando. **Desvio anotado:** a A1 começou cerca de 4 °C mais fria
+  (29,8 °C, contra 33,8 a 34,5 °C nas outras) e foi a mais lenta. Não invalida a sessão: os
+  dois "antes" concordam dentro do limite e a conclusão vale mesmo no pior par. Nas próximas
+  medições, uma rodada de aquecimento descartada antes da A1.
+- **Sem perfil (informativo):** só a A1, v1.6.2 sem compilação: 278,5 ms (p90 289,3). Não há
+  o par da v1.7.1, então não mede o ganho do perfil nesta versão.
+- **Host:** 3,25 a 3,84 GB livres, só anotado (13.6).
+- **Perfil e tamanho:** Baseline Profile regerado com 34.362 linhas, 4.125 do app; APK de
+  release com 3.308.867 bytes (+0,08% sobre a v1.7.0).
+
+#### Leitor de tela com fala real: NÃO VERIFICADO, por decisão do usuário (2026-11-17)
+
+A passada de leitor de tela em aparelho físico prevista na 13.6 **não foi feita**: o usuário a
+tirou do escopo da v1.7.1. O critério correspondente da E6 (13.7) fica **não cumprido**, não
+dispensado.
+
+- **O que cobre a acessibilidade nesta versão:** os testes de semântica do Compose (estado do
+  item no nó da linha, cabeçalho "Marcados" num nó só, ações de deslize com ação equivalente,
+  seletor de dias com papel, nome e estado) e a verificação da tester no emulador.
+- **O que ninguém verificou:** o que o TalkBack de fato **fala**, e a ordem do foco, nas telas
+  migradas na v1.7.0 e nos pontos mexidos na v1.7.1. O emulador não exporta a descrição de
+  estado, o papel de cabeçalho nem as ações personalizadas, e o TalkBack não aceita gesto
+  injetado; por isso essa parte só se prova com uma pessoa ouvindo.
+- **Limite conhecido da v1.7.1:** a acessibilidade por leitor de tela está garantida pela
+  estrutura (semântica), não pelo uso real. Pode haver rótulo lido duas vezes, ordem de foco
+  ruim ou frase estranha sem que nenhum teste acuse.
+- **Backlog:** a passada com fala real continua pendente, sem versão marcada. Deve ser feita
+  antes ou junto da v1.8.0, que reescreve o miolo das telas principais: verificar depois da
+  reescrita evita conferir duas vezes as mesmas telas. O roteiro da tester fica guardado.
+
+#### Aparelho do usuário
+
+Depois da medição, o aparelho físico voltou para o usuário. Não será usado pelo time sem um
+novo pedido dele; a regra de segurança dos dados da 13.6 continua valendo para qualquer uso
+futuro.
+
+#### Busca da aba Tarefas (E5): causa registrada, correção na v1.8.0
+
+O defeito registrado na v1.7.0 ("busca meio sob a barra de topo com o teclado") **não é o que
+acontece**. Causa achada pelo dev sênior, com capturas no emulador (2026-11-16); o arquiteto não
+reproduziu.
+
+- Com o teclado aberto, a barra de topo e a janela **não se deslocam**: a barra fica no mesmo
+  lugar. A busca nunca fica sob a barra. A regra do teclado da 12.4 está funcionando.
+- Retrato com fonte 1.0 e 2.0, e paisagem com fonte 1.0: busca inteira.
+- **Paisagem com fonte 2.0:** a busca é cortada **embaixo, pelo teclado**. Entre a barra e o
+  topo do teclado sobram cerca de 72dp, menos que o cabeçalho fixo da tela (busca e filtros).
+- Não é defeito da casca nem do preenchimento: só se resolve com cabeçalho que rola ou recolhe,
+  que é mudança do miolo da tela. Fica para a **v1.8.0**, junto do limite já aceito na 12.4 (aba
+  Tarefas em paisagem com fonte 2.0), que tem a mesma origem.
+- Critério da E5 (13.7): causa registrada, **cumprido**. Correção: v1.8.0.
+
+#### Teste intermitente
+
+O `CalendarViewModelTest` falhava de vez em quando. **Causa:** o tempo limite da espera era
+contado no relógio virtual do teste, que avança sem esperar o trabalho real terminar.
+**Correção, só no teste:** o limite passou a ser contado em tempo real. Nenhuma mudança no
+código do app.
+
+#### Situação dos critérios da E6
+
+Abertura a frio: **cumprido**. Leitor de tela com fala real: **não cumprido**, e é o único.

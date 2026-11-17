@@ -100,6 +100,9 @@ em que ela acontece tem a própria conclusão. A lista separa *Atrasadas*, *Hoje
 - **Concluir adiantado**: concluir antes do dia uma tarefa única com data futura a traz para hoje
   e tira o lembrete futuro; o "Desfazer" devolve a data e o lembrete (melhor esforço: se o app
   foi encerrado no meio, desfaz sem restaurar).
+- **Rascunho do painel de nova tarefa** (v1.7.1): fechar o painel pelo voltar, tocando fora ou
+  arrastando guarda o rascunho; Cancelar descarta e Salvar grava. Um rascunho só, compartilhado
+  entre Tarefas e Calendário, em memória (não vai para o banco nem para o backup).
 
 ## Rotinas
 
@@ -171,6 +174,9 @@ usa cada uma. Lista sem dono é uma lista avulsa (sem lembrete próprio).
   horário (guardado no DataStore; os alarmes se reajustam sozinhos), atalho para as
   notificações do sistema e versão do app.
 - **Atalhos do ícone** (toque longo no ícone do app): *Nova tarefa* e *Listas*.
+- **Diagnóstico de alarmes** (Configurações): mostra o próximo aviso do Kalendrys (lembrete,
+  início de rotina ou resumo), calculado dos dados com as mesmas funções dos agendadores, e não
+  o despertador do sistema; sem alarme exato, avisa que pode atrasar.
 - **Exportar histórico** (Configurações → Dados): salva um CSV com todas as conclusões de
   tarefas e rotinas onde o usuário escolher (Downloads, Drive...), pelo seletor de arquivos do
   sistema, sem permissão de armazenamento. Colunas: `Dia;Tipo;Título;Horário;Concluída em;Situação`

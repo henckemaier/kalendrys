@@ -111,6 +111,22 @@ object TaskSchedule {
     }
 
     /**
+     * Próximo toque do lembrete da tarefa estritamente depois de [now] (epoch millis), ou `null` se
+     * ele já acabou. É o instante que o [com.kalendrys.app.reminder.ReminderScheduler] agenda e o
+     * que o diagnóstico de alarmes mostra: os argumentos da recorrência ficam só aqui.
+     */
+    fun nextReminderMillis(task: Task, now: Long, zone: ZoneId): Long? =
+        ReminderRecurrence.nextTriggerMillis(
+            reminderAt = task.reminderAt,
+            repeat = task.repeat,
+            now = now,
+            zone = zone,
+            every = task.intervalEvery,
+            unit = task.intervalUnit,
+            byWeekdays = task.byWeekdays,
+        )
+
+    /**
      * [doneEver]: a tarefa está encerrada ([isFinished]; só vale para as sem repetição);
      * [doneToday]: alguma conclusão hoje.
      */

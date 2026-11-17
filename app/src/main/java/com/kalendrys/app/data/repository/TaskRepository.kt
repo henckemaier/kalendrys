@@ -264,11 +264,46 @@ class TaskRepository(
      * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
      */
     suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
+        scheduler.rescheduleAll(tasksToRemind(now))
+    }
+
+    /**
+     * As tarefas cujo lembrete o app mantém agendado em [now]: com lembrete pendente e não
+     * encerradas. Um conjunto só para o [rescheduleReminders] e para o diagnóstico de alarmes.
+     * Só leitura.
+     */
+    suspend fun tasksToRemind(now: Long = System.currentTimeMillis()): List<Task> {
         val zone = ZoneId.systemDefault()
         val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
-        scheduler.rescheduleAll(
-            taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) },
-        )
+        return taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) }
+    }
+
+    /**
+     * Próximo lembrete de tarefa que de fato CHEGA depois de [now] (epoch millis), para o diagnóstico
+     * de alarmes; `null` sem nenhum. Parte do mesmo instante que o agendador marca
+     * ([TaskSchedule.nextReminderMillis]), mas pula a ocorrência que o catch-up descartaria
+     * ([ReminderCatchUp.isDiscarded]: repetida já concluída no dia), avançando no máximo
+     * [MAX_DISCARDED_OCCURRENCES] vezes por tarefa. Por isso pode diferir do alarme no AlarmManager:
+     * o agendador não muda, ele marca a ocorrência e a entrega a descarta. Só leitura.
+     */
+    suspend fun nextReminderToDeliver(now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): Long? {
+        val tasks = tasksToRemind(now)
+        if (tasks.isEmpty()) return null
+        // As ocorrências candidatas são depois de [now]: bastam as conclusões a partir de hoje.
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        val doneDays = completionLogDao.between(start = today, end = Long.MAX_VALUE)
+            .groupBy({ it.taskId }) { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
+            .mapValues { (_, days) -> days.toSet() }
+        return tasks.mapNotNull { nextDelivered(it, now, zone, doneDays[it.id].orEmpty()) }.minOrNull()
+    }
+
+    private fun nextDelivered(task: Task, now: Long, zone: ZoneId, doneDays: Set<LocalDate>): Long? {
+        var at = TaskSchedule.nextReminderMillis(task, now, zone) ?: return null
+        repeat(MAX_DISCARDED_OCCURRENCES) {
+            if (!ReminderCatchUp.isDiscarded(task, at, doneDays, zone)) return at
+            at = TaskSchedule.nextReminderMillis(task, at, zone) ?: return null
+        }
+        return null
     }
 
     /**
@@ -292,5 +327,11 @@ class TaskRepository(
     private companion object {
         const val TAG = "TaskRepository"
         const val MAX_EARLY_COMPLETIONS = 20
+
+        /**
+         * Limite de ocorrências puladas por tarefa no [nextReminderToDeliver]. Cada uma é um dia com
+         * conclusão a partir de hoje; na prática é uma (a de hoje).
+         */
+        const val MAX_DISCARDED_OCCURRENCES = 32
     }
 }

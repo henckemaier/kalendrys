@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -67,6 +68,7 @@ class CalendarScreenShellTest {
                     InMemoryRoutineCatchUpMark(),
                 ),
                 ShoppingRepository(db),
+                NewTaskDraftStore(),
             ),
         )
         compose.setContent {

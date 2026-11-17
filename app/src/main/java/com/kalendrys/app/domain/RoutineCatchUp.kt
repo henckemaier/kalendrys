@@ -61,7 +61,7 @@ object RoutineCatchUp {
         return days(lastSeen, now, zone, toleranceMinutes).mapNotNull { date ->
             val done = doneByDay[date].orEmpty()
             val due = routines.mapNotNull { routine ->
-                if (!routine.remind || routine.id in done) return@mapNotNull null
+                if (isDiscarded(routine, done)) return@mapNotNull null
                 val overrides = overridesByRoutine[routine.id].orEmpty()
                 if (!RoutineSchedule.occursOn(routine, date, zone, overrides)) return@mapNotNull null
                 val start = RoutineSchedule.startOn(routine, date, overrides).atZone(zone).toInstant().toEpochMilli()
@@ -75,6 +75,14 @@ object RoutineCatchUp {
                 ?.let { Due(date, it) }
         }
     }
+
+    /**
+     * O aviso de início de [routine] num dia é descartado: o aviso está desligado ou a rotina já foi
+     * concluída nesse dia ([doneThatDay]: ids das concluídas no dia). O [plan] e o diagnóstico de
+     * alarmes ([com.kalendrys.app.data.repository.RoutineRepository.nextRemindingStart]) usam a
+     * mesma regra.
+     */
+    fun isDiscarded(routine: Routine, doneThatDay: Set<Long>): Boolean = !routine.remind || routine.id in doneThatDay
 
     private fun dateOf(epochMillis: Long, zone: ZoneId): LocalDate = Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
 

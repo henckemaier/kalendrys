@@ -323,6 +323,19 @@ class RoutineRepositoryCatchUpTest {
     }
 
     @Test
+    fun `rotina com aviso concluida pelo app antes do inicio nao e entregue quando o alarme toca`() = runTest {
+        // D-71-1, item c: o mesmo caminho do app (Concluir às 8:00, alarme do início às 10:00 chama o catchUp).
+        val saved = addAt(block("Treino", 10).copy(remind = true), 8, 0)
+        clockMillis = at(8, 0)
+        repository.complete(saved.id, day, today = day)
+
+        repository.catchUp(nowOverride = at(10, 0))
+
+        assertTrue(delivered.isEmpty())
+        assertEquals(at(10, 0), mark.get())
+    }
+
+    @Test
     fun `concluir as 9h02 o bloco das 9h com alarme atrasado avisa uma vez antes de gravar e nao repete`() = runTest {
         // Comportamento documentado: o catch-up antes de gravar entrega o aviso atrasado (com a
         // configuração antiga) e o complete o cancela logo em seguida; o alarme que chegar depois

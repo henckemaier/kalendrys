@@ -36,9 +36,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -76,6 +74,7 @@ import com.kalendrys.app.ui.components.SwipeRow
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.rememberFabExpanded
+import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.splitTop
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
@@ -84,6 +83,7 @@ import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
@@ -113,16 +113,11 @@ fun TaskListScreen(
     val undoLabel = stringResource(R.string.undo)
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.undoable.collectLatest { action ->
-            val (message, duration) = when (action) {
-                is UndoableAction.Completed -> completedMessage to SnackbarDuration.Short
-                is UndoableAction.Deleted -> deletedMessage to SnackbarDuration.Long
+            val message = when (action) {
+                is UndoableAction.Completed -> completedMessage
+                is UndoableAction.Deleted -> deletedMessage
             }
-            val result = snackbarHostState.showSnackbar(
-                message = message,
-                actionLabel = undoLabel,
-                duration = duration,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.undo(action)
+            if (snackbarHostState.showUndo(message, undoLabel)) viewModel.undo(action)
         }
     }
 
@@ -225,15 +220,27 @@ fun TaskListScreen(
     }
 
     if (showNewTask) {
+        // Abre (ou reabre, depois de girar) o rascunho único; sugere hoje se a data não foi escolhida.
+        LaunchedEffect(Unit) { viewModel.openNewTask(LocalDate.now()) }
         val lists by viewModel.lists.collectAsStateWithLifecycle()
-        NewTaskSheet(
-            onSave = { title, notes, timing, location, list ->
-                viewModel.addTask(title, notes, timing, location, list)
-                showNewTask = false
-            },
-            onDismiss = { showNewTask = false },
-            lists = lists,
-        )
+        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
+        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
+        draft?.let {
+            NewTaskSheet(
+                draft = it,
+                onChange = viewModel::updateNewTask,
+                onSave = {
+                    viewModel.saveNewTask()
+                    showNewTask = false
+                },
+                onCancel = {
+                    viewModel.cancelNewTask()
+                    showNewTask = false
+                },
+                onDismiss = { showNewTask = false },
+                lists = lists,
+            )
+        }
     }
 }
 

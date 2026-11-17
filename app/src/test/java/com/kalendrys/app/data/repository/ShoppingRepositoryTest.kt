@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ShoppingProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -177,5 +178,33 @@ class ShoppingRepositoryTest {
 
         val positions = runBlocking { repository.observeItems(listId).first() }.map { it.position }.sorted()
         assertEquals((0 until total).toList(), positions)
+    }
+
+    // --- Lista da nova tarefa (resolveListId, antes em ui/tasks; v1.7.1, L8) ---------------------
+
+    @Test
+    fun `resolveListId sem escolha nao cria lista`() = runTest {
+        assertNull(repository.resolveListId(null))
+        assertEquals(0, repository.observeLists().first().size)
+    }
+
+    @Test
+    fun `resolveListId com lista existente devolve o id dela`() = runTest {
+        val listId = repository.createList("Mercado")
+        assertEquals(listId, repository.resolveListId(NewTaskList.Existing(listId)))
+        assertEquals(1, repository.observeLists().first().size)
+    }
+
+    @Test
+    fun `resolveListId com lista existente excluida vira sem lista`() = runTest {
+        assertNull(repository.resolveListId(NewTaskList.Existing(999)))
+    }
+
+    @Test
+    fun `resolveListId com lista nova cria agora e nome em branco nao cria`() = runTest {
+        val id = repository.resolveListId(NewTaskList.New("Churrasco"))
+        assertEquals("Churrasco", repository.list(id!!)!!.name)
+        assertNull(repository.resolveListId(NewTaskList.New("   ")))
+        assertEquals(1, repository.observeLists().first().size)
     }
 }

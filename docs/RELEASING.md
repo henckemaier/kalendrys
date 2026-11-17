@@ -75,6 +75,32 @@ Com um emulador ou aparelho Android 13+ conectado: `./gradlew --no-daemon
 3. Confira: arquivos não vazios, com classes `com/kalendrys/app`, e `assets/dexopt/baseline.prof`
    dentro do APK de release.
 
+## Medindo a abertura a frio
+
+O critério e o protocolo estão no ADR-0002 (11.8.3; resultado da v1.7.1 na 13.9): `StartupBenchmark`
+antes e depois, por pares em sequência no mesmo aparelho, de preferência na ordem antes, depois,
+depois, antes (A-D-D-A); compara-se a mediana **com perfil**; p90 até 20% acima da mediana em cada
+medição; os dois "antes" diferindo até 10%. O método que funcionou (v1.7.1): compilar antes os APKs
+de benchmark dos dois commits (`:app:assembleBenchmarkRelease :baselineprofile:assembleBenchmarkRelease`,
+o "antes" num worktree temporário de caminho curto) e medir só com `adb install -r` e
+`am instrument -w -e class com.kalendrys.baselineprofile.StartupBenchmark ...`.
+
+- **Aparelho do usuário:** todo comando com o serial (`adb -s <serial>`, `ANDROID_SERIAL=<serial>`
+  no Gradle). Nada instala, desinstala ou limpa dados no aparelho do usuário sem o **backup
+  exportado e confirmado** por ele. A variante de medição tem outra assinatura: medir obriga a
+  desinstalar o app dele.
+- **Aparelho físico:** o limite de 4 GB de memória livre do host **não vale** (a carga é do aparelho;
+  só se anota). Valem, iguais no início e no fim de cada medição: bateria e temperatura na mesma
+  faixa, sem economia de bateria, tela desbloqueada e acesa, nada instalando ou atualizando no
+  aparelho, e **nenhum Gradle no host** durante as medidas.
+- **Aquecimento:** faça **uma rodada descartada** antes da primeira medição. Na v1.7.1 a A1 começou
+  uns 4 °C mais fria que as outras e foi a mais lenta.
+- **Tempo:** no celular cada abertura leva uns 45 s (rastro do perfetto por iteração). Uma medição
+  com as duas variantes (com perfil e sem compilação, 10 aberturas cada) leva uns 16 min, e as 4
+  passam de 1 h; só com perfil, uns 8 min cada. Combine o tempo com o dono do aparelho antes.
+- Neste aparelho o Macrobenchmark grava o `benchmarkData.json` em
+  `/sdcard/Android/media/com.kalendrys.baselineprofile/` (não em `additional_test_output`).
+
 ## Secrets necessários
 
 Configurar em **Settings → Secrets and variables → Actions**:

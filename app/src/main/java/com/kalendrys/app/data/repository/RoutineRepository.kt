@@ -287,9 +287,35 @@ class RoutineRepository(
 
     /** Agenda o próximo início estritamente depois de [now], com os dados lidos agora (dentro do Mutex). */
     private suspend fun scheduleLocked(now: Long) {
-        val after = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone())
-        alarms.scheduleNext(routineDao.active(), after, overridesByRoutine())
+        alarms.scheduleNext(routineDao.active(), startingPoint(now), overridesByRoutine())
     }
+
+    /**
+     * Próximo início de bloco que AVISA (rotina com `remind`) estritamente depois de [now], em epoch
+     * millis; `null` sem nenhum. É o próximo aviso previsto, não uma leitura do sistema: o
+     * agendamento é em cadeia (cada alarme agenda o seguinte, e um início sem aviso é só um alarme
+     * silencioso que redesenha os widgets), então este horário pode ainda não estar no AlarmManager.
+     * Pula o início em que todas as rotinas que avisam já estão concluídas no dia: o catch-up o
+     * descartaria ([RoutineCatchUp.isDiscarded]), então nada chegaria. Avança no máximo
+     * [MAX_DISCARDED_STARTS] inícios; além disso, `null`.
+     * Só leitura: não passa pelo Mutex, não agenda nada e não mexe na marca do catch-up.
+     */
+    suspend fun nextRemindingStart(now: Long = clock()): Long? {
+        val zone = zone()
+        val reminding = routineDao.active().filter { it.remind }
+        val overrides = overridesByRoutine()
+        var after = startingPoint(now)
+        repeat(MAX_DISCARDED_STARTS) {
+            val start = RoutineSchedule.nextStart(reminding, after, zone, overrides) ?: return null
+            val done = completionDao.doneOn(start.at.toLocalDate().toEpochDay()).toSet()
+            if (start.routines.any { !RoutineCatchUp.isDiscarded(it, done) }) return start.at.atZone(zone).toInstant().toEpochMilli()
+            after = start.at
+        }
+        return null
+    }
+
+    /** Ponto de partida do próximo início: o mesmo para o agendamento e para o diagnóstico. */
+    private fun startingPoint(now: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone())
 
     /** Exceções agrupadas por rotina, para o [RoutineSchedule] honrar skip/remarcação. */
     private suspend fun overridesByRoutine(): Map<Long, List<RoutineOverride>> =
@@ -297,5 +323,8 @@ class RoutineRepository(
 
     private companion object {
         const val TAG = "RoutineRepository"
+
+        /** Limite de inícios pulados no [nextRemindingStart] (concluídos no dia); folga para um dia cheio de blocos. */
+        const val MAX_DISCARDED_STARTS = 64
     }
 }
