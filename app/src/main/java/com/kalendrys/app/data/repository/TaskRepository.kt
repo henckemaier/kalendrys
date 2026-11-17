@@ -78,9 +78,11 @@ class TaskRepository(
             Task(title = title.trim(), notes = notes.trim(), location = location.trim(), shoppingListId = shoppingListId),
             ZoneId.systemDefault(),
         )
-        val saved = task.copy(id = taskDao.insert(task))
-        scheduleNext(saved)
-        return saved
+        return alarmLock.withLock {
+            val saved = task.copy(id = taskDao.insert(task))
+            scheduleNext(saved)
+            saved
+        }
     }
 
     /**
@@ -104,13 +106,15 @@ class TaskRepository(
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
     suspend fun updateTask(task: Task) {
         closeReminderWindow()
-        taskDao.update(task)
-        scheduler.cancel(task.id)
-        if (!isFinished(task)) scheduleNext(task)
+        alarmLock.withLock {
+            taskDao.update(task)
+            scheduler.cancel(task.id)
+            if (!isFinished(task)) scheduleNext(task)
+        }
     }
 
     /** Exclui a tarefa: cancela o alarme e tira da tela o lembrete já exibido dela. */
-    suspend fun deleteTask(task: Task) {
+    suspend fun deleteTask(task: Task) = alarmLock.withLock {
         scheduler.cancel(task.id)
         scheduler.dismissNotification(task.id)
         taskDao.delete(task)
@@ -123,8 +127,10 @@ class TaskRepository(
      */
     suspend fun restoreTask(task: Task) {
         closeReminderWindow()
-        taskDao.insert(task)
-        if (!isFinished(task)) scheduleNext(task)
+        alarmLock.withLock {
+            taskDao.insert(task)
+            if (!isFinished(task)) scheduleNext(task)
+        }
     }
 
     /**
@@ -134,7 +140,7 @@ class TaskRepository(
      * isso sobrescreveu ficam no PRÓPRIO registro (banco 11), para o [undoCompletion].
      *
      * Tarefa única JÁ ENCERRADA (toque duplo, widget e notificação ao mesmo tempo): devolve o
-     * registro existente e não cria outro (NB-3 da v1.8.0). As conclusões passam por [completionLock]
+     * registro existente e não cria outro (NB-3 da v1.8.0). As conclusões passam por [alarmLock]
      * para duas chamadas simultâneas não lerem a tarefa ainda aberta e gravarem dois registros.
      *
      * Tarefa que se REPETE com lista anexada zera as marcações da lista (ADR-0001, P4), de forma
@@ -146,7 +152,7 @@ class TaskRepository(
      * notificação de lembrete já exibida da tarefa some. Tarefa repetida tem o alarme refeito para a
      * próxima ocorrência que será entregue (v1.8.0, E1: concluída hoje, o alarme de hoje sai).
      */
-    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = completionLock.withLock {
+    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = alarmLock.withLock {
         scheduler.dismissNotification(taskId)
         val task = taskDao.byId(taskId)
         if (task != null && task.repeat == ReminderRepeat.NONE && isFinished(task)) {
@@ -192,7 +198,7 @@ class TaskRepository(
         // Fecha a janela do catch-up antes de reabrir a tarefa (ADR-0003): o lembrete que venceu
         // enquanto ela estava concluída não vira atrasado nem perdido.
         closeReminderWindow()
-        completionLock.withLock {
+        alarmLock.withLock {
             val log = completionLogDao.byId(logId) ?: return@withLock
             val current = taskDao.byId(log.taskId)
             val previousDue = log.previousDueDate
@@ -208,8 +214,17 @@ class TaskRepository(
         }
     }
 
-    /** Serializa concluir e desfazer (ver [logCompletion]): o registro é a fonte única, sem estado em memória. */
-    private val completionLock = Mutex()
+    /**
+     * Trava das gravações que mexem em alarme de tarefa (concluir, desfazer, criar, editar, restaurar,
+     * excluir) e do reagendamento geral do catch-up ([rescheduleReminders]): quem lê tarefas e conclusões
+     * para marcar alarmes faz isso sem outra gravação no meio (NB-E1-B da v1.8.0).
+     *
+     * ORDEM DAS TRAVAS: a do [com.kalendrys.app.reminder.ReminderCatchUpRunner] por FORA, esta por DENTRO,
+     * nunca o contrário. Por isso o fechamento da janela do catch-up ([closeReminderWindow], que entra
+     * no runner) é chamado SEMPRE antes e fora desta trava. Não é reentrante: só os pontos de entrada
+     * públicos a pegam; o [scheduleNext] privado (chamado de dentro deles) não.
+     */
+    private val alarmLock = Mutex()
 
     /**
      * Tarefas vinculadas à lista [listId] e se cada uma está pendente agora (atrasada, de hoje ou
@@ -262,7 +277,9 @@ class TaskRepository(
      * Agenda a próxima ocorrência de cada tarefa estritamente depois de [now]. Chamado só pelo
      * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
      */
-    suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) {
+    suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) = alarmLock.withLock {
+        // Lê tarefas e conclusões e marca DENTRO da trava (NB-E1-B): um concluir ou desfazer no meio não
+        // vê seu alarme sobrescrito por uma leitura anterior a ele.
         val zone = ZoneId.systemDefault()
         val tasks = tasksToRemind(now)
         val doneDays = completionDaysFrom(now, zone)

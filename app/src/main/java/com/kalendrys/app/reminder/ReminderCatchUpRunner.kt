@@ -48,6 +48,11 @@ class ReminderCatchUpRunner(
         suspend fun remindersChanged()
     }
 
+    /**
+     * Uma execução do catch-up por vez. ORDEM DAS TRAVAS (NB-E1-B da v1.8.0): esta por FORA, a trava de
+     * alarmes do [TaskRepository] por DENTRO (o [TaskRepository.rescheduleReminders] a pega aqui dentro),
+     * nunca o contrário: o repositório chama o catch-up (fechar a janela) sempre fora da trava dele.
+     */
     private val mutex = Mutex()
 
     /**
