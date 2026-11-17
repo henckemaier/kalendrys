@@ -512,6 +512,25 @@ class TaskRepositoryTest {
         assertEquals(marked, repository.nextReminderToDeliver(now))
     }
 
+
+    @Test
+    fun `tarefa com alarme marcado e conta sem ocorrencia termina sem alarme`() = runTest {
+        // Diária com alarme marcado; todas as ocorrências que a conta olha (o limite de dias pulados)
+        // já concluídas: não há ocorrência a entregar, então o alarme é cancelado (NB-1 da revisão da E1).
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+        (0L..40L).forEach { n ->
+            db.completionLogDao().insert(com.kalendrys.app.data.local.entity.CompletionLog(taskId = task.id, completedAt = at(day.plusDays(n), 7)))
+        }
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(day, 8))
+
+        assertTrue("sem ocorrência não marca alarme", scheduler.scheduled.isEmpty())
+        assertTrue("o alarme marcado é cancelado", task.id in scheduler.cancelled)
+    }
+
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
 
     @Test

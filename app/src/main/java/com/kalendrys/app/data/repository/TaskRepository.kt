@@ -273,12 +273,14 @@ class TaskRepository(
 
     /**
      * Marca o alarme de [task] na próxima ocorrência que será ENTREGUE depois de [now] (ADR-0002,
-     * 14.3): a mesma conta do [nextReminderToDeliver]. Sem ocorrência, não marca nada (como antes).
+     * 14.3): a mesma conta do [nextReminderToDeliver]. Sem ocorrência a entregar, CANCELA o alarme da
+     * tarefa (NB-1 da revisão da E1): não fica um alarme marcado que a conta já não prevê.
      */
     private suspend fun scheduleNext(task: Task, now: Long = System.currentTimeMillis()) {
         val zone = ZoneId.systemDefault()
         val doneDays = completionDaysFrom(now, zone)[task.id].orEmpty()
-        nextDelivered(task, now, zone, doneDays)?.let { scheduler.schedule(task, it) }
+        val at = nextDelivered(task, now, zone, doneDays)
+        if (at != null) scheduler.schedule(task, at) else scheduler.cancel(task.id)
     }
 
     /** Dias com conclusão de cada tarefa, de hoje em diante (as ocorrências candidatas são depois de [now]). */
