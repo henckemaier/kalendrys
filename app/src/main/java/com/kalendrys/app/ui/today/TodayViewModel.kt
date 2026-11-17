@@ -174,8 +174,11 @@ class TodayViewModel(
     private val completedEvents = Channel<Completed>(Channel.BUFFERED)
     val completed: Flow<Completed> = completedEvents.receiveAsFlow()
 
-    /** Ocorrência pulada que o snackbar oferece desfazer (P5). */
-    data class Skipped(val routineId: Long, val date: LocalDate)
+    /**
+     * Ocorrência pulada que o snackbar oferece desfazer (P5). [previous]: a exceção que o pular
+     * substituiu naquele dia (ex.: uma remarcação), `null` se não havia; o [undoSkip] a recoloca.
+     */
+    data class Skipped(val routineId: Long, val date: LocalDate, val previous: RoutineOverride? = null)
 
     private val skippedEvents = Channel<Skipped>(Channel.BUFFERED)
     val skipped: Flow<Skipped> = skippedEvents.receiveAsFlow()
@@ -279,19 +282,29 @@ class TodayViewModel(
     }
 
     /**
-     * Pular a ocorrência de [routineId] em [date] (P5): grava o `SKIP` pelo repositório, que reagenda
-     * os alarmes, e avisa a tela para oferecer Desfazer ([skipped]). O bloco continua na trilha,
-     * marcado ([DayTimeline.Block.skipped]).
+     * Pular a ocorrência de [routineId] em [date] (P5): o MESMO [RoutineRepository.skipOccurrence] da
+     * tela de exceção (reagenda os alarmes), e avisa a tela para oferecer Desfazer ([skipped]), com a
+     * exceção que o pular substituiu. O bloco continua na trilha, marcado ([DayTimeline.Block.skipped]).
      */
     fun skip(routineId: Long, date: LocalDate) {
         viewModelScope.launch {
-            repository.skipOccurrence(routineId, date.toEpochDay())
-            skippedEvents.send(Skipped(routineId, date))
+            val previous = repository.skipOccurrence(routineId, date.toEpochDay())
+            skippedEvents.send(Skipped(routineId, date, previous))
         }
     }
 
-    /** Desfaz o pular (pelo Desfazer da mensagem ou pela ação do bloco esmaecido): tira a exceção do dia. */
-    fun undoSkip(routineId: Long, date: LocalDate) {
+    /**
+     * Desfazer da MENSAGEM, logo depois de pular: devolve o dia ao que era antes — tira o pular e
+     * recoloca a exceção anterior ([Skipped.previous], ex.: uma remarcação).
+     */
+    fun undoSkip(event: Skipped) {
+        viewModelScope.launch {
+            repository.restoreOccurrenceException(event.routineId, event.date.toEpochDay(), event.previous)
+        }
+    }
+
+    /** "Desfazer pular" do BLOCO esmaecido, a qualquer momento: só tira o pular (a exceção do dia). */
+    fun unskip(routineId: Long, date: LocalDate) {
         viewModelScope.launch { repository.clearOccurrenceException(routineId, date.toEpochDay()) }
     }
 

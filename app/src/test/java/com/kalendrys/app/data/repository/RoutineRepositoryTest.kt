@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -345,5 +346,47 @@ class RoutineRepositoryTest {
 
         repository.uncomplete(saved.id, day)
         assertEquals(emptySet<Long>(), alarms.calls.last().doneOnStartDay)
+    }
+
+    // --- P5 (v1.8.0, E3): pular devolve a exceção anterior; o Desfazer da mensagem a recoloca ---
+
+    @Test
+    fun `pular devolve a excecao que substituiu e restaurar a recoloca, reagendando`() = runTest {
+        val saved = repository.add(routine())
+        val epochDay = LocalDate.now().toEpochDay()
+        repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 930, newEpochDay = null)
+
+        val previous = repository.skipOccurrence(saved.id, epochDay)
+        assertEquals(RoutineOverrideType.SKIP, repository.occurrenceOverride(saved.id, epochDay)?.type)
+        assertEquals(RoutineOverrideType.RESCHEDULE, previous?.type)
+
+        val callsBefore = alarms.calls.size
+        repository.restoreOccurrenceException(saved.id, epochDay, previous)
+        val restored = repository.occurrenceOverride(saved.id, epochDay)
+        assertEquals(RoutineOverrideType.RESCHEDULE, restored?.type)
+        assertEquals(930, restored?.newStartMinute)
+        assertTrue("restaurar reagenda", alarms.calls.size > callsBefore)
+    }
+
+    @Test
+    fun `pular sem excecao devolve null e pular de novo nao devolve o proprio SKIP`() = runTest {
+        val saved = repository.add(routine())
+        val epochDay = LocalDate.now().toEpochDay()
+
+        assertNull(repository.skipOccurrence(saved.id, epochDay))
+        assertNull(repository.skipOccurrence(saved.id, epochDay))
+    }
+
+    @Test
+    fun `restaurar so age se o dia ainda esta pulado`() = runTest {
+        val saved = repository.add(routine())
+        val epochDay = LocalDate.now().toEpochDay()
+        val previous = repository.skipOccurrence(saved.id, epochDay)
+        // Outra alteração no meio (ex.: remarcou pela tela de exceção): ela vence.
+        repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 1_000, newEpochDay = null)
+
+        repository.restoreOccurrenceException(saved.id, epochDay, previous)
+
+        assertEquals(1_000, repository.occurrenceOverride(saved.id, epochDay)?.newStartMinute)
     }
 }

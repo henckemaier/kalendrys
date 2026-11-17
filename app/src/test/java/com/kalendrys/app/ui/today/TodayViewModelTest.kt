@@ -207,12 +207,78 @@ class TodayViewModelTest {
             vm.skip(treino.id, today)
             val skipped = awaitState { it.block("Treino").skipped }
             assertEquals(false, skipped.block("Treino").isActive)
-            assertEquals(TodayViewModel.Skipped(treino.id, today), vm.skipped.first())
+            assertEquals(TodayViewModel.Skipped(treino.id, today, previous = null), vm.skipped.first())
             assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, today.toEpochDay())?.type)
 
-            vm.undoSkip(treino.id, today)
+            vm.unskip(treino.id, today)
             val back = awaitState { !it.block("Treino").skipped }
             assertEquals(true, back.block("Treino").isActive)
+            assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `dia remarcado, pular e Desfazer na mensagem - a remarcacao volta`() = runTest {
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block && item.startMinute == 930 } }
+            vm.skip(treino.id, today)
+            awaitState { it.block("Treino").skipped }
+            val event = vm.skipped.first()
+            assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
+            assertEquals(930, event.previous?.newStartMinute)
+
+            vm.undoSkip(event)
+            val back = awaitState { !it.block("Treino").skipped }
+            assertEquals(930, back.block("Treino").startMinute)
+            val restored = routineRepository.occurrenceOverride(treino.id, epochDay)
+            assertEquals(RoutineOverrideType.RESCHEDULE, restored?.type)
+            assertEquals(930, restored?.newStartMinute)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Desfazer pular do bloco em dia remarcado e pulado so tira o pular`() = runTest {
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
+        routineRepository.skipOccurrence(treino.id, epochDay)
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block && item.skipped } }
+            vm.unskip(treino.id, today)
+            val back = awaitState { !it.block("Treino").skipped }
+            // Sem exceção nenhuma: horário normal (a remarcação não volta).
+            assertEquals(600, back.block("Treino").startMinute)
+            assertNull(routineRepository.occurrenceOverride(treino.id, epochDay))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `pular sem excecao no dia - o evento nao leva anterior e Desfazer na mensagem so tira o pular`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.skip(treino.id, today)
+            awaitState { it.block("Treino").skipped }
+            val event = vm.skipped.first()
+            assertNull(event.previous)
+
+            vm.undoSkip(event)
+            awaitState { !it.block("Treino").skipped }
             assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
             cancelAndIgnoreRemainingEvents()
         }
