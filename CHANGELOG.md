@@ -3,6 +3,44 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.7.1 — Acessibilidade e pendências do redesenho (versionCode 10701)
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 13).
+Sem migração de banco (Room versão 10), sem mudança no backup (formato 6), sem dependência nova
+e sem permissão nova.
+
+### Mudanças de comportamento
+
+- **Painel de nova tarefa guarda o rascunho**: fechar pelo voltar, tocando fora ou arrastando
+  para baixo guarda o que foi digitado; o Cancelar descarta e o Salvar grava. O rascunho é um
+  só para a aba Tarefas e o Calendário e dura enquanto o app estiver aberto (se o sistema
+  encerrar o app em segundo plano, ele se perde).
+- **"Desfazer" com duração longa** (cerca de 10 s) em todas as telas; uma ação nova substitui a
+  mensagem anterior.
+
+### Correções
+
+- **Diagnóstico de alarmes**: a linha passa a ser "Próximo aviso do Kalendrys", calculada dos
+  lembretes, rotinas e resumo do app. Antes lia o próximo despertador do sistema: sem a
+  permissão de alarme exato dizia "Nenhum" e, com ela, podia mostrar o despertador do Relógio.
+  Sem alarme exato, avisa que pode atrasar; ocorrências já concluídas no dia não aparecem.
+- **Seletor de dias da semana**: cada dia tem 48dp de altura de toque, sem vão entre vizinhos,
+  e as linhas se repartem por igual quando os sete não cabem.
+- **Contador da lista** ("2/3") nunca é cortado; na linha da rotina quem cede espaço é o
+  horário.
+- **Título do painel de nova tarefa** em janela baixa (paisagem): rola junto com os campos, para
+  o Salvar continuar alcançável com o teclado aberto.
+
+### Interno
+
+- **Abertura a frio**: medida em aparelho físico, v1.7.1 1,4% mais rápida que a v1.6.2 (fecha
+  a pendência da v1.7.0).
+- **Acessibilidade**: leitor de tela com fala real nao verificado, coberto por testes de
+  semantica.
+- O build-check imprime no log o resumo dos testes e do lint; `setup-java` v5 nos dois
+  workflows.
+- Baseline Profile regerado com o código final.
+
 ## v1.7.0 — Redesenho: fundação visual e fluxos rápidos (versionCode 10700)
 
 Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 12).
