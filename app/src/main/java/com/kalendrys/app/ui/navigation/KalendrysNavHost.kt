@@ -64,7 +64,6 @@ import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTE
 import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTINE_ID_ARG
 import com.kalendrys.app.ui.routineexception.RoutineExceptionScreen
 import com.kalendrys.app.ui.routineexception.routineExceptionRoute
-import com.kalendrys.app.ui.routines.RoutinesScreen
 import com.kalendrys.app.ui.settings.SettingsScreen
 import com.kalendrys.app.ui.shopping.NO_TASK_ID
 import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ID_ARG
@@ -78,6 +77,7 @@ import com.kalendrys.app.ui.taskdetail.TASK_ID_ARG
 import com.kalendrys.app.ui.taskdetail.TaskDetailScreen
 import com.kalendrys.app.ui.taskdetail.taskDetailRoute
 import com.kalendrys.app.ui.tasks.TaskListScreen
+import com.kalendrys.app.ui.today.TodayScreen
 import java.time.LocalDate
 
 enum class AppTab(
@@ -165,9 +165,11 @@ fun KalendrysNavHost(
                     )
                 }
                 composable(AppTab.Routines.route) {
-                    RoutinesScreen(
+                    TodayScreen(
                         onOpenRoutine = openRoutine,
                         onNewRoutine = { navController.navigate(routineEditorRoute()) },
+                        // Forja liga Todas as rotinas na E2.
+                        onOpenAllRoutines = {},
                         onOpenSettings = openSettings,
                         onOpenTask = openTask,
                         onOpenException = openRoutineException,
