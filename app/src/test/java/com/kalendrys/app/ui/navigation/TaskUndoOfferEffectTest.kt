@@ -62,6 +62,9 @@ class TaskUndoOfferEffectTest {
     private lateinit var repository: TaskRepository
     private lateinit var offers: TaskUndoOffers
 
+    /** Relógio da validade da oferta (o tempo da mensagem é o mainClock do Compose). */
+    private var now = 0L
+
     // Escopo do "app" para o restauro: próprio, fora do Dispatchers.Main (que outros testes trocam).
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var generation by mutableIntStateOf(0)
@@ -77,7 +80,7 @@ class TaskUndoOfferEffectTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        offers = TaskUndoOffers(repository, appScope)
+        offers = TaskUndoOffers(repository, appScope) { now }
         compose.setContent {
             KalendrysTheme {
                 // Tirar e pôr de volta (com geração nova) descarta o coletor, o estado da mensagem e a tela,
@@ -128,7 +131,7 @@ class TaskUndoOfferEffectTest {
     }
 
     /** Como girar a tela: o coletor e o estado da mensagem saem da composição e voltam novos. */
-    private fun recreate() {
+    private fun recreate(whileAway: () -> Unit = {}) {
         // Com o relógio parado, a escrita só entra na composição depois de avisada (sendApplyNotifications)
         // e de um quadro; sem isso a troca atrasava ~1 s e a mensagem antiga podia vencer no meio.
         compose.runOnUiThread {
@@ -137,6 +140,7 @@ class TaskUndoOfferEffectTest {
         }
         frames(3)
         assertEquals("o coletor antigo saiu", 0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        whileAway()
         compose.runOnUiThread {
             generation++
             present = true
@@ -284,5 +288,33 @@ class TaskUndoOfferEffectTest {
         compose.onNodeWithText("Desfazer").performClick()
         advance()
         assertTrue(runBlocking { ownResult.await() })
+    }
+
+    // --- Validade da oferta (A1 da revisão do NB-4): 30 s a partir da criação ---
+
+    @Test
+    fun `oferta pendente com o coletor recriado depois do prazo nao mostra nada e some`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+
+        // Saiu do app pelo voltar com a mensagem na tela e voltou depois do prazo.
+        recreate { now += TaskUndoOffers.VALIDITY_MS + 1 }
+
+        assertEquals(0, compose.onAllNodesWithText("Tarefa excluída").fetchSemanticsNodes().size)
+        assertNull(offers.pending.value)
+        assertNull(stored(task.id))
+    }
+
+    @Test
+    fun `dentro do prazo o coletor recriado mostra de novo`() {
+        val task = deleted("Pagar conta")
+        offers.offer(task)
+        advance()
+
+        recreate { now += TaskUndoOffers.VALIDITY_MS - 1_000 }
+
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        assertEquals(task, offers.pending.value?.task)
     }
 }

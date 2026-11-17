@@ -131,4 +131,18 @@ class TaskUndoOffersTest {
         assertEquals(task, repository.observeTask(id).first())
         assertEquals(listOf(id), scheduler.scheduled.map { it.task.id })
     }
+
+    @Test
+    fun `oferta vale o prazo a partir da criacao`() = runTest {
+        var now = 1_000L
+        val offers = TaskUndoOffers(repository, backgroundScope) { now }
+        offers.offer(com.kalendrys.app.data.local.entity.Task(id = 1, title = "T"))
+        val offer = offers.pending.value!!
+        assertEquals(1_000L, offer.createdAt)
+
+        now += TaskUndoOffers.VALIDITY_MS - 1
+        assertEquals(false, offers.isExpired(offer))
+        now += 1
+        assertEquals(true, offers.isExpired(offer))
+    }
 }

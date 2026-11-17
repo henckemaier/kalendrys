@@ -18,7 +18,8 @@ import kotlinx.coroutines.flow.collectLatest
  * Só limpa a oferta quando a mensagem termina de verdade: Desfazer ([TaskUndoOffers.undo]) ou tempo
  * esgotado/dispensada ([TaskUndoOffers.finish]). Se o coletor sai da composição no meio (girar a
  * tela), a espera é cancelada sem limpar: ao voltar, a oferta ainda pendente aparece de novo, com o
- * tempo reiniciado (NB-4). collectLatest: oferta nova cancela a mensagem da anterior e a substitui.
+ * tempo reiniciado (NB-4), dentro do prazo da oferta; vencida, é limpa sem mostrar.
+ * collectLatest: oferta nova cancela a mensagem da anterior e a substitui.
  */
 @Composable
 internal fun TaskUndoOfferEffect(offers: TaskUndoOffers, hostState: SnackbarHostState) {
@@ -27,6 +28,11 @@ internal fun TaskUndoOfferEffect(offers: TaskUndoOffers, hostState: SnackbarHost
     LaunchedEffect(offers, hostState) {
         offers.pending.collectLatest { offer ->
             if (offer == null) return@collectLatest
+            // Vencida (ex.: saiu do app pelo voltar e voltou depois): limpa sem mostrar.
+            if (offers.isExpired(offer)) {
+                offers.finish(offer)
+                return@collectLatest
+            }
             if (hostState.showUndo(message, undoLabel)) offers.undo(offer) else offers.finish(offer)
         }
     }
