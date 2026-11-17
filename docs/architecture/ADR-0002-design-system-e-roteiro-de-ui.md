@@ -1122,6 +1122,14 @@ exclui e publica a oferta; o `KalendrysNavHost`, que está sempre composto, é o
 coletor e mostra a mensagem com a função única da 13.4. O deslize da lista de tarefas continua
 como está.
 
+**Onde a mensagem é desenhada** (decisão na E0): no espaço de mensagens da tela que está à
+frente, não na moldura de fora da navegação. Desenhada por fora, ela cobria o FAB da aba por 10 s
+e caía no mesmo lugar da mensagem da própria tela. O estado da mensagem continua sendo do topo
+da navegação; ele é entregue ao `AppScaffold` por um valor de composição com padrão nulo, e o
+`AppScaffold` o desenha junto da mensagem da tela, uma acima da outra, e as duas acima do FAB, sem
+cobri-lo. Só a tela que está à frente desenha, para a mensagem não aparecer em dobro durante a
+transição. Consequência: toda tela de destino precisa usar o `AppScaffold`.
+
 ### 14.3 Agendador alinhado à entrega
 
 Fecha o item deixado na 13.3 (D-71-1).
