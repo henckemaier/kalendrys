@@ -13,6 +13,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
@@ -304,6 +305,55 @@ class TodayViewModelTest {
             routineRepository.add(Routine(title = "Depois", startMinute = 700))
             // O toggle ignora o pulado: nenhuma conclusão gravada.
             assertEquals(false, treino.id in db.routineCompletionDao().doneOn(today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // --- A1 do Esquadro na E3: bloco remarcado vindo de outro dia age no dia de ORIGEM ---
+
+    @Test
+    fun `pular bloco remarcado de ontem troca a remarcacao por pular na origem e Desfazer a devolve`() = runTest {
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        // Só no dia da semana de ontem; a de ontem foi remarcada para hoje às 15:30.
+        val treino = routineRepository.add(
+            Routine(title = "Treino", startMinute = 600, createdAt = 0, daysOfWeek = RoutineDays.bit(yesterday.dayOfWeek)),
+        )
+        routineRepository.rescheduleOccurrence(treino.id, yesterday.toEpochDay(), newStartMinute = 930, newEpochDay = today.toEpochDay())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val shown = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }.block("Treino")
+            assertEquals(yesterday, shown.occurrenceDate)
+            assertEquals(930, shown.startMinute)
+
+            // A tela passa o dia da ocorrência (block.occurrenceDate), não o mostrado.
+            vm.skip(treino.id, shown.occurrenceDate)
+            awaitState { state -> state.timeline.none { it is DayTimeline.Block && it.routine.id == treino.id } }
+            val event = vm.skipped.first()
+            assertEquals(yesterday, event.date)
+            assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
+            assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, yesterday.toEpochDay())?.type)
+            assertNull("nenhum pular inútil no dia mostrado", routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+
+            vm.undoSkip(event)
+            val back = awaitState { state -> state.timeline.any { it is DayTimeline.Block && it.routine.id == treino.id } }
+            assertEquals(930, back.block("Treino").startMinute)
+            assertEquals(yesterday, back.block("Treino").occurrenceDate)
+            assertEquals(RoutineOverrideType.RESCHEDULE, routineRepository.occurrenceOverride(treino.id, yesterday.toEpochDay())?.type)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `bloco do proprio dia segue com o dia mostrado`() = runTest {
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            assertEquals(LocalDate.now(), state.block("Treino").occurrenceDate)
+            assertEquals(treino.id, state.block("Treino").routine.id)
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -160,8 +160,9 @@ fun TodayScreen(
                     onReschedule = onOpenException,
                     onToggle = viewModel::toggle,
                     onToggleTask = viewModel::toggleTask,
-                    onSkip = { block -> viewModel.skip(block.routine.id, state.selectedDate) },
-                    onUnskip = { block -> viewModel.unskip(block.routine.id, state.selectedDate) },
+                    // No dia da OCORRÊNCIA (o de origem, se o bloco veio remarcado de outro dia), não no mostrado.
+                    onSkip = { block -> viewModel.skip(block.routine.id, block.occurrenceDate) },
+                    onUnskip = { block -> viewModel.unskip(block.routine.id, block.occurrenceDate) },
                 )
                 val sections = SectionsState(
                     noDateExpanded = noDateExpanded,

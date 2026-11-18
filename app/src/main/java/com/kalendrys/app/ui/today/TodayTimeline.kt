@@ -145,7 +145,8 @@ internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: T
                     onOpen = if (editable) ({ actions.onOpenRoutine(item.routine.id) }) else null,
                     onSkip = if (editable && !item.skipped) ({ actions.onSkip(item) }) else null,
                     onReschedule = if (editable) {
-                        ({ actions.onReschedule(item.routine.id, state.selectedDate.toEpochDay()) })
+                        // A exceção mora no dia da ocorrência (o de origem, se veio remarcado de outro dia).
+                        ({ actions.onReschedule(item.routine.id, item.occurrenceDate.toEpochDay()) })
                     } else {
                         null
                     },
