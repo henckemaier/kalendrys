@@ -187,11 +187,13 @@ internal fun rowStateLabel(done: Boolean): String =
     stringResource(if (done) R.string.today_state_done else R.string.today_state_pending)
 
 /**
- * Altura mínima da pílula (um círculo). A altura do bloco sai do CONTEÚDO (horários, faixa, título
- * inteiro), nunca de uma conta pela duração (v1.8.0, E4, 14.5): a pílula ocupa a altura que o bloco
- * tiver, e com fonte grande ou título longo o bloco cresce sem cortar nem sobrepor.
+ * Altura MÍNIMA da pílula pela duração (v1.8.0, E4, 14.5, A1 do Esquadro): 30 min ou menos é um
+ * círculo (48dp), cresce com a duração e para em ~1h40 (160dp), para o bloco longo continuar mais
+ * alto que o curto. É só o mínimo: o bloco toma a altura do MAIOR entre conteúdo (horários, faixa,
+ * título inteiro) e pílula, então com fonte grande ou título longo ele passa disso sem cortar nem
+ * sobrepor, e a pílula acompanha a altura do bloco.
  */
-private val PillMinHeight = 48.dp
+private fun pillMinHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).coerceIn(48f, 160f).dp
 
 /**
  * Bloco de rotina. Tocar abre a rotina; segurar abre um menu curto ancorado no bloco com "Pular este
@@ -287,7 +289,7 @@ private fun BlockRow(
                     modifier = Modifier
                         .padding(vertical = RowPadding)
                         .width(PillWidth)
-                        .heightIn(min = PillMinHeight)
+                        .heightIn(min = pillMinHeight(routine.durationMinutes))
                         .fillMaxHeight()
                         .then(contentAlpha)
                         .clip(PillShape)

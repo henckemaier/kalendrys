@@ -100,7 +100,10 @@ class TodayTimelineMeasureTest {
         assertFalse("$label: cortado na altura", layout.didOverflowHeight)
         val boxWidth = layout.size.width
         (0 until layout.lineCount).forEach { line ->
+            // Início e fim de cada linha dentro da caixa: não depende do alinhamento à esquerda.
+            val left = layout.getLineLeft(line)
             val right = layout.getLineRight(line)
+            assertTrue("$label: linha $line começa em $left, antes da caixa", left >= -0.5f)
             assertTrue("$label: linha $line termina em $right, fora da caixa de $boxWidth", right <= boxWidth + 0.5f)
         }
     }
@@ -130,9 +133,55 @@ class TodayTimelineMeasureTest {
         val density = compose.density.density
         val timeColumn = 2 * timeLabelHeightPx + 2 * (RowPadding.value + 2) * density
         assertTrue("$label: bloco ${rowBounds.height} < coluna de horas $timeColumn", rowBounds.height >= timeColumn - 0.5f)
-        // Círculo mínimo da pílula com o respiro.
-        val pill = (48 + 2 * RowPadding.value) * density
+        // Pílula mínima pela duração (48..160dp) com o respiro: o bloco nunca fica abaixo dela.
+        val pill = (pillMinDp(minutes) + 2 * RowPadding.value) * density
         assertTrue("$label: bloco ${rowBounds.height} < pílula mínima $pill", rowBounds.height >= pill - 0.5f)
+    }
+
+    /** A mesma conta do mínimo da pílula na timeline: duração × 1,6 limitada a 48..160dp. */
+    private fun pillMinDp(minutes: Int): Float = (minutes * 1.6f).coerceIn(48f, 160f)
+
+    /** Vários blocos de título CURTO na mesma trilha (fonte em vigor); devolve a altura de cada um, em px. */
+    private fun shortTitleHeights(fontScale: Float, durations: List<Int>): List<Float> {
+        val blocks = durations.mapIndexed { i, minutes ->
+            val routine = Routine(id = i + 1L, title = "Bloco $minutes", startMinute = (6 + i * 3) * 60, durationMinutes = minutes)
+            DayTimeline.Block(
+                routine,
+                done = false,
+                startMinute = routine.startMinute,
+                linkAbove = DayTimeline.Link.NONE,
+                linkBelow = DayTimeline.Link.NONE,
+                occurrenceDate = LocalDate.now(),
+            )
+        }
+        val state = TodayViewModel.UiState(isLoaded = true, timeline = blocks)
+        val actions = TrailActions({}, {}, { _, _ -> }, {}, { _, _ -> }, {}, {})
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                KalendrysTheme {
+                    LazyColumn(Modifier.width(360.dp)) { todayTrail(state, nowMinute = 0, actions = actions) }
+                }
+            }
+        }
+        compose.waitForIdle()
+        return durations.map { minutes ->
+            compose.onNode(hasText("Bloco $minutes", substring = true) and hasState).fetchSemanticsNode().boundsInRoot.height
+        }
+    }
+
+    @Test
+    fun `fonte 1_0 com titulo curto - bloco mais longo continua mais alto`() {
+        val (h15, h60, h120) = shortTitleHeights(1f, listOf(15, 60, 120))
+
+        assertTrue("60 min ($h60) mais alto que 15 min ($h15)", h60 > h15)
+        assertTrue("2 h ($h120) mais alto que 60 min ($h60)", h120 > h60)
+        // E cada um com pelo menos a pílula mínima da sua duração.
+        val density = compose.density.density
+        listOf(15 to h15, 60 to h60, 120 to h120).forEach { (minutes, height) ->
+            val pill = (pillMinDp(minutes) + 2 * RowPadding.value) * density
+            assertTrue("$minutes min: $height < pílula mínima $pill", height >= pill - 0.5f)
+        }
     }
 
     @Test
