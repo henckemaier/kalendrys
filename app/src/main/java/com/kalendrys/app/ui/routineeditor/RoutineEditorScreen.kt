@@ -114,7 +114,6 @@ fun RoutineEditorScreen(
     viewModel: RoutineEditorViewModel = viewModel(factory = RoutineEditorViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
 
@@ -144,7 +143,8 @@ fun RoutineEditorScreen(
                 stringResource(if (paused) R.string.routine_resume else R.string.routine_pause),
                 onClick = viewModel::togglePause,
             )
-            menu += TopBarAction(stringResource(R.string.routine_delete)) { showDeleteDialog = true }
+            // P8: sem confirmação (ação com Desfazer, ADR-0002 5.4); a mensagem aparece na origem.
+            menu += TopBarAction(stringResource(R.string.routine_delete), onClick = viewModel::delete)
         }
         actions += TopBarAction(
             stringResource(R.string.save),
@@ -189,26 +189,6 @@ fun RoutineEditorScreen(
         }
     }
 
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(R.string.routine_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.routine_delete_confirm_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        viewModel.delete()
-                    },
-                ) {
-                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
-            },
-        )
-    }
 
     if (showDiscardDialog) {
         AlertDialog(

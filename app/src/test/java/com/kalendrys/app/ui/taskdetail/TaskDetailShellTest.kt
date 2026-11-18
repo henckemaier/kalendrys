@@ -21,9 +21,7 @@ import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
-import com.kalendrys.app.TaskUndoOffers
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import com.kalendrys.app.testutil.testUndoOffers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -60,7 +58,7 @@ class TaskDetailShellTest {
                 SavedStateHandle(mapOf(TASK_ID_ARG to taskId)),
                 repository,
                 ShoppingRepository(db),
-                TaskUndoOffers(repository, CoroutineScope(Dispatchers.Unconfined)),
+                testUndoOffers(db),
             ),
         )
         compose.setContent {

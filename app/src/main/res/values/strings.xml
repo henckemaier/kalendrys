@@ -42,6 +42,7 @@
     <string name="delete_task">Excluir tarefa</string>
     <string name="task_completed">Tarefa concluída</string>
     <string name="task_deleted">Tarefa excluída</string>
+    <string name="routine_deleted">Rotina excluída</string>
     <string name="empty_tasks_title">Nenhuma tarefa</string>
     <string name="empty_tasks_message">Crie uma tarefa para começar a organizar o seu dia.</string>
     <string name="task_search_hint">Buscar tarefas</string>
@@ -84,8 +85,6 @@
     <string name="all_routines_more">Mais opções para %1$s</string>
     <string name="all_routines_pause">Pausar</string>
     <string name="all_routines_resume">Retomar</string>
-    <string name="all_routines_archive">Excluir rotina</string>
-    <string name="all_routines_archived">Rotina excluída</string>
     <string name="all_routines_days_none">Sem dias</string>
     <string name="routine_free_time">Tempo livre · %1$s</string>
     <string name="routine_time_range">%1$s–%2$s (%3$s)</string>
@@ -180,8 +179,6 @@
     <string name="routine_delete">Excluir rotina</string>
     <string name="routine_pause">Pausar rotina</string>
     <string name="routine_resume">Retomar rotina</string>
-    <string name="routine_delete_confirm_title">Excluir rotina?</string>
-    <string name="routine_delete_confirm_message">Ela some de hoje em diante. Os dias passados continuam mostrando o bloco e as conclusões.</string>
     <string name="routine_discard_message">As alterações feitas nesta rotina serão perdidas.</string>
     <string name="routine_not_found_title">Rotina não encontrada</string>
     <string name="routine_not_found_message">Ela pode ter sido excluída.</string>

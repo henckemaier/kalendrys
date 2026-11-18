@@ -91,7 +91,7 @@ fun AllRoutinesScreen(
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
     val snackbarHostState = remember { SnackbarHostState() }
-    val archivedMessage = stringResource(R.string.all_routines_archived)
+    val archivedMessage = stringResource(R.string.routine_deleted)
     val undoLabel = stringResource(R.string.undo)
 
     LaunchedEffect(viewModel) {
@@ -187,7 +187,7 @@ internal fun AllRoutineRow(row: AllRoutinesViewModel.Row, actions: RowActions) {
     val pausedLabel = stringResource(R.string.all_routines_paused_state)
     val pauseLabel = stringResource(R.string.all_routines_pause)
     val resumeLabel = stringResource(R.string.all_routines_resume)
-    val archiveLabel = stringResource(R.string.all_routines_archive)
+    val archiveLabel = stringResource(R.string.routine_delete)
     val tone = routineTone(RoutineColor.fromKey(routine.color))
     val supporting = listOfNotNull(routineTimeRange(routine), routineDaysLabel(routine), row.category?.name)
         .joinToString(SEPARATOR)
@@ -281,7 +281,7 @@ private fun RowMenu(
                 )
             }
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.all_routines_archive)) },
+                text = { Text(stringResource(R.string.routine_delete)) },
                 leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
                 onClick = {
                     open = false

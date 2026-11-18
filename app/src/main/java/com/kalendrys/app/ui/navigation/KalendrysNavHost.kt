@@ -50,7 +50,7 @@ import androidx.navigation.navArgument
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
-import com.kalendrys.app.TaskUndoOffers
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.ui.calendar.CalendarScreen
 import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
@@ -104,13 +104,13 @@ enum class AppTab(
 fun KalendrysNavHost(
     launchRequest: LaunchRequest? = null,
     onLaunchRequestHandled: () -> Unit = {},
-    taskUndoOffers: TaskUndoOffers = (LocalContext.current.applicationContext as KalendrysApp).taskUndoOffers,
+    undoOffers: UndoOffers = (LocalContext.current.applicationContext as KalendrysApp).undoOffers,
 ) {
     val navController = rememberNavController()
-    // Mensagens do app (Desfazer da exclusão pelo detalhe): este é o único coletor; quem desenha é o
+    // Mensagens do app (Desfazer das exclusões de tarefa e rotina): o único coletor; quem desenha é o
     // AppScaffold da tela à frente, que lê o estado pelo LocalAppSnackbarHostState.
     val appSnackbar = remember { SnackbarHostState() }
-    TaskUndoOfferEffect(taskUndoOffers, appSnackbar)
+    UndoOfferEffect(undoOffers, appSnackbar)
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == null || AppTab.entries.any { it.route == currentRoute }

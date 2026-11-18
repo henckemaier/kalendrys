@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
@@ -50,6 +52,8 @@ class RoutineEditorViewModel(
     private val categoryRepository: RoutineCategoryRepository,
     private val shoppingRepository: ShoppingRepository,
     private val exerciseRepository: ExerciseRepository,
+    /** Oferta de Desfazer do app (P8): "Excluir rotina" oferece aqui e a mensagem aparece na origem. */
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -251,10 +255,25 @@ class RoutineEditorViewModel(
         }
     }
 
+    /**
+     * "Excluir rotina" (P8): arquiva, oferece o Desfazer do app ([UndoOffers]) e fecha a tela; a
+     * mensagem "Rotina excluída" aparece na tela de origem (Hoje, Todas as rotinas, Calendário). Sem
+     * confirmação (ação com Desfazer, ADR-0002 5.4).
+     *
+     * Com alterações não salvas, a exclusão vence: o rascunho é descartado sem o "Descartar
+     * alterações?" — os campos não são gravados e as edições de exercício da sessão voltam ao que
+     * eram ao abrir, como no descartar. O Desfazer devolve a rotina como estava GRAVADA, não o
+     * rascunho. O aviso que a exclusão tirou da tela não volta.
+     */
     fun delete() {
-        val existing = uiState.value.routine ?: return
+        val state = uiState.value
+        val existing = state.routine ?: return
         viewModelScope.launch {
+            if (state.exerciseItemsChanged) {
+                state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
+            }
             repository.archive(existing)
+            undoOffers.offer(UndoTarget.DeletedRoutine(existing.id))
             eventChannel.send(Event.Closed)
         }
     }
@@ -371,6 +390,7 @@ class RoutineEditorViewModel(
                     app.routineCategoryRepository,
                     app.shoppingRepository,
                     app.exerciseRepository,
+                    app.undoOffers,
                 )
             }
         }
