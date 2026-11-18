@@ -27,6 +27,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -69,6 +70,7 @@ class TaskListScrollTest {
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
                 ShoppingRepository(db),
                 NewTaskDraftStore(),
+                testUndoOffers(testDb),
             ),
         )
     }

@@ -280,11 +280,12 @@ class UndoOfferEffectTest {
     }
 
     @Test
-    fun `excluir pelo detalhe e concluir outra na lista, cada Desfazer desfaz a sua`() {
+    fun `oferta do app e a mensagem da propria tela, cada Desfazer desfaz a sua`() {
         val task = deleted("Excluída pelo detalhe")
         offers.offer(UndoTarget.DeletedTask(task))
         advance()
-        // A lista mostra a mensagem dela dentro dos 10 s.
+        // A tela à frente mostra a mensagem dela dentro dos 10 s (ex.: a Hoje, que segue com a própria;
+        // a lista de Tarefas passou para a oferta do app na E5).
         val ownResult = screenScope.async { own.showUndo("Tarefa concluída", "Desfazer") }
         advance()
 
@@ -387,6 +388,24 @@ class UndoOfferEffectTest {
             shadowOf(Looper.getMainLooper()).idle()
             compose.mainClock.advanceTimeByFrame()
             archivedAt(routineId) == null
+        }
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `tarefa concluida mostra Tarefa concluida e Desfazer apaga o registro`() {
+        val task = runBlocking { repository.addTask("Pagar conta") }
+        val logId = runBlocking { repository.logCompletion(task.id) }
+
+        offers.offer(UndoTarget.CompletedTask(logId))
+        advance()
+
+        compose.onNodeWithText("Tarefa concluída").assertIsDisplayed()
+        compose.onNodeWithText("Desfazer").performClick()
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
+            runBlocking { testDb.db.completionLogDao().byId(logId) } == null
         }
         assertNull(offers.pending.value)
     }

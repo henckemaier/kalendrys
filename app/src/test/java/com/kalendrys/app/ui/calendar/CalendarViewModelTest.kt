@@ -15,6 +15,7 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.tasks.TaskViewModel
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,7 @@ class CalendarViewModelTest {
     @Test
     fun `rascunho comecado na aba Tarefas aparece no Calendario e vice-versa`() = runTest {
         val store = NewTaskDraftStore()
-        val tasks = testDb.track(TaskViewModel(taskRepository, shoppingRepository, store))
+        val tasks = testDb.track(TaskViewModel(taskRepository, shoppingRepository, store, testUndoOffers(testDb, tasks = taskRepository)))
         val calendar = testDb.track(CalendarViewModel(taskRepository, routineRepository, shoppingRepository, store))
         val tapped = LocalDate.now().plusDays(3)
 
@@ -175,7 +176,7 @@ class CalendarViewModelTest {
     @Test
     fun `cancelar descarta o rascunho sem gravar`() = runTest {
         val store = NewTaskDraftStore()
-        val tasks = testDb.track(TaskViewModel(taskRepository, shoppingRepository, store))
+        val tasks = testDb.track(TaskViewModel(taskRepository, shoppingRepository, store, testUndoOffers(testDb, tasks = taskRepository)))
         tasks.openNewTask(LocalDate.now())
         tasks.updateNewTask { it.copy(title = "Ligar") }
 

@@ -16,6 +16,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -51,6 +52,7 @@ class TaskListNewTaskRequestTest {
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
                 ShoppingRepository(db),
                 store,
+                testUndoOffers(testDb),
             ),
         )
     }

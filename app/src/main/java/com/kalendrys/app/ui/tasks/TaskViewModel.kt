@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.NewTaskDraftStore
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -23,14 +24,12 @@ import com.kalendrys.app.domain.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -39,6 +38,7 @@ class TaskViewModel(
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
     private val draftStore: NewTaskDraftStore,
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     /**
@@ -68,12 +68,6 @@ class TaskViewModel(
     ) {
         val isEmpty: Boolean
             get() = overdue.isEmpty() && dueToday.isEmpty() && upcoming.isEmpty() && noDate.isEmpty() && doneToday.isEmpty()
-    }
-
-    /** Ações que a tela oferece desfazer pelo snackbar. */
-    sealed interface UndoableAction {
-        data class Completed(val logId: Long) : UndoableAction
-        data class Deleted(val task: Task) : UndoableAction
     }
 
     private val _query = MutableStateFlow("")
@@ -136,9 +130,6 @@ class TaskViewModel(
         _filters.update { if (filter in it) it - filter else it + filter }
     }
 
-    private val undoableActions = Channel<UndoableAction>(Channel.BUFFERED)
-    val undoable: Flow<UndoableAction> = undoableActions.receiveAsFlow()
-
     /** Listas para o "Usar lista existente" do painel de nova tarefa. */
     val lists: StateFlow<List<ShoppingListSummary>> =
         shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -181,27 +172,17 @@ class TaskViewModel(
         }
     }
 
+    /**
+     * Círculo de concluir: concluir e oferecer o Desfazer é UMA operação do app (E5), no escopo dele,
+     * para a mensagem sobreviver a girar a tela; quem mostra é o coletor do `KalendrysNavHost`.
+     */
     fun complete(task: Task) {
-        viewModelScope.launch {
-            val logId = repository.logCompletion(task.id)
-            undoableActions.send(UndoableAction.Completed(logId))
-        }
+        undoOffers.completeTask(task)
     }
 
+    /** Deslize de excluir: o MESMO caminho do detalhe e do editor (NB-E3-C), oferta do app. */
     fun delete(task: Task) {
-        viewModelScope.launch {
-            repository.deleteTask(task)
-            undoableActions.send(UndoableAction.Deleted(task))
-        }
-    }
-
-    fun undo(action: UndoableAction) {
-        viewModelScope.launch {
-            when (action) {
-                is UndoableAction.Completed -> repository.undoCompletion(action.logId)
-                is UndoableAction.Deleted -> repository.restoreTask(action.task)
-            }
-        }
+        undoOffers.deleteTask(task)
     }
 
     /**
@@ -227,7 +208,7 @@ class TaskViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskViewModel(app.repository, app.shoppingRepository, app.newTaskDraftStore)
+                TaskViewModel(app.repository, app.shoppingRepository, app.newTaskDraftStore, app.undoOffers)
             }
         }
     }
