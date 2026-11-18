@@ -27,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -116,10 +118,12 @@ private fun EmptyStateContent(
             }
         }
         Spacer(Modifier.height(Spacing.xl))
+        // O título do vazio é lido como título (v1.8.0, E7). Sem liveRegion: anunciaria a cada recomposição.
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(Spacing.s))
         Text(

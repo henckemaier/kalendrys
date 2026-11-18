@@ -82,4 +82,20 @@ class TaskScheduleTest {
         assertTrue(TaskSchedule.occursOn(daily, today.plusDays(5)))
         assertFalse(TaskSchedule.occursOn(task(null), today))
     }
+
+    // --- Instante de uma conclusão "no dia" (Hoje retroativa e notificação, NB-E5-A) ---
+
+    @Test
+    fun `concluir no dia de hoje e o proprio agora e dia passado e aquele dia na hora atual`() {
+        val zone = java.time.ZoneId.of("America/Sao_Paulo")
+        val now = java.time.ZonedDateTime.of(2026, 11, 18, 9, 30, 0, 0, zone)
+
+        assertEquals(now.toInstant().toEpochMilli(), TaskSchedule.completionInstantOn(LocalDate.of(2026, 11, 18), now))
+        assertEquals(
+            java.time.ZonedDateTime.of(2026, 11, 17, 9, 30, 0, 0, zone).toInstant().toEpochMilli(),
+            TaskSchedule.completionInstantOn(LocalDate.of(2026, 11, 17), now),
+        )
+        // Dia futuro não volta no tempo nem avança: é o agora.
+        assertEquals(now.toInstant().toEpochMilli(), TaskSchedule.completionInstantOn(LocalDate.of(2026, 11, 19), now))
+    }
 }

@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -102,6 +104,8 @@ internal fun NewTaskSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier
                     .fillMaxWidth()
+                    // Cabeçalho do painel para o leitor de tela (E7, 14.9).
+                    .semantics { heading() }
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 16.dp),
             )
@@ -202,7 +206,10 @@ private fun CompactTopRow(canSave: Boolean, onCancel: () -> Unit, onSave: () -> 
             style = MaterialTheme.typography.titleLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            // Cabeçalho também na linha compacta; com reticências o nó continua com o texto inteiro.
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
         )
         TextButton(onClick = onCancel) {
             Text(stringResource(R.string.cancel), maxLines = 1, softWrap = false)

@@ -90,7 +90,7 @@ class ReminderCatchUpRunnerTest {
         var gate: CompletableDeferred<Unit>? = null
         val entered = CompletableDeferred<Unit>()
 
-        override suspend fun showReminder(task: Task) {
+        override suspend fun showReminder(task: Task, firedAt: Long) {
             entered.complete(Unit)
             gate?.await()
             shown += task.id
