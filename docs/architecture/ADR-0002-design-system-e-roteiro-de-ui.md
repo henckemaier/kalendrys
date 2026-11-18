@@ -1236,6 +1236,13 @@ Detalha a seção 6.
   conclusão retroativa a tira quando conclui o dia dessa ocorrência, e a deixa quando a que
   está na tela é de outro dia. Sem isso, a notificação de ontem ficava depois de ontem ser
   concluído, e tocar em "Concluir" nela concluía a ocorrência de hoje antes da hora.
+- **A notificação de lembrete leva o dia da ocorrência**, como a de rotina já leva. "Concluir"
+  numa notificação de tarefa repetida grava a conclusão no dia daquela ocorrência, não em
+  hoje; para tarefa única continua sendo agora. A regra anterior dependia de adivinhar qual
+  ocorrência está na tela, e errava quando a de hoje foi perdida ou entregue com atraso. Com
+  o dia na própria notificação, tocar "Concluir" numa notificação antiga nunca conclui a
+  ocorrência de hoje nem tira o lembrete dela. Notificação emitida por versão anterior, sem o
+  dia, continua valendo como agora.
 - Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua visível, e para o
   leitor de tela concluir é uma ação da linha, com o estado na própria linha (mesmo padrão do
   item de lista, 12.4).
@@ -1287,6 +1294,14 @@ tela deixa de ter mensagem própria; com isso ele sobrevive a girar a tela e a t
 - Criar lista e tarefa passa a ser uma transação só.
 - Altura compacta: título e botões "Cancelar" e "Salvar" numa linha fixa no topo, campos
   rolando. Substitui a regra do título da 13.1.
+- **Aberto ou fechado é estado da tela; rascunho e operações são do app** (decisão no desenho
+  da E6). O pedido de abertura, com a data sugerida, é estado salvo da navegação: sobrevive a
+  girar, e some quando a tela termina de verdade. Guardado no objeto do app, ele faria o painel
+  reabrir sozinho ao voltar ao app muito depois, o mesmo defeito que a oferta de Desfazer teve
+  (14.2). O objeto do app fica com o rascunho, as operações (abrir, alterar, cancelar, salvar no
+  escopo do app), as listas do seletor e a limpeza da lista excluída no meio.
+- Widget e atalho deixam de trocar de aba; com o app fechado, o painel abre sobre a Hoje.
+- A lista criada junto com a tarefa nasce pela mesma função que cria lista avulsa.
 
 ### 14.8 Etapas e critérios de aceite
 
