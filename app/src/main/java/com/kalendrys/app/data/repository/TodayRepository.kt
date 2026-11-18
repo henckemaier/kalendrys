@@ -11,6 +11,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -47,6 +48,15 @@ class TodayRepository(
     fun refresh() {
         refreshes.update { it + 1 }
     }
+
+    /**
+     * A data de hoje, da MESMA fonte que este retrato usa (emite de novo na virada da meia-noite). A
+     * tela Hoje a recebe por aqui para acompanhar o dia junto com os números (NB-E3-B da v1.8.0).
+     */
+    val today: Flow<LocalDate> get() = dates()
+
+    /** O agora do mesmo relógio do retrato (instante de uma conclusão feita pela Hoje). */
+    fun now(): ZonedDateTime = clock(zone()).atZone(zone())
 
     private data class Snapshot(
         val tasks: List<Task>,

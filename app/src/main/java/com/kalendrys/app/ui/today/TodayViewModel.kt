@@ -32,7 +32,6 @@ import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -45,7 +44,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -74,8 +75,9 @@ class TodayViewModel(
 
     data class UiState(
         val isLoaded: Boolean = false,
-        val today: LocalDate = LocalDate.now(),
-        val selectedDate: LocalDate = LocalDate.now(),
+        // Valores de antes de carregar (isLoaded = false); o hoje de verdade vem do TodayRepository.
+        val today: LocalDate = LocalDate.MIN,
+        val selectedDate: LocalDate = LocalDate.MIN,
         val week: List<WeekDay> = emptyList(),
         val timeline: List<DayTimeline.Item> = emptyList(),
         /**
@@ -120,7 +122,44 @@ class TodayViewModel(
     /** Conclusão de rotina que o snackbar oferece desfazer. */
     data class Completed(val routineId: Long, val date: LocalDate)
 
-    private val selectedDate = MutableStateFlow(LocalDate.now())
+    /**
+     * O que a Hoje mostra (NB-E3-B): ACOMPANHANDO HOJE (padrão) ou UM DIA ESCOLHIDO. Tocar em Hoje, ou
+     * escolher hoje na faixa, volta a acompanhar. Na virada da meia-noite: quem acompanha vai sozinho
+     * para o dia novo; um dia escolhido que virou hoje volta a acompanhar; um dia passado fica onde está.
+     */
+    private sealed interface Selection {
+        data object FollowingToday : Selection
+
+        data class Chosen(val date: LocalDate) : Selection
+    }
+
+    /** O dia mostrado e o hoje do mesmo instante. */
+    private data class Day(val today: LocalDate, val selected: LocalDate)
+
+    private val selection = MutableStateFlow<Selection>(Selection.FollowingToday)
+
+    /** O último [Day] visto pela tela, para as ações (tocar, pular, concluir) usarem o mesmo hoje. */
+    @Volatile
+    private var lastDay: Day? = null
+
+    /**
+     * Hoje vem da MESMA fonte de datas do [TodayRepository] (que avisa a troca de dia); nada de relógio
+     * direto aqui. Só corre enquanto a tela observa (a fonte espera a meia-noite com `delay`). Um dia
+     * escolhido que é hoje (escolhido agora, ou que virou hoje na meia-noite) volta a acompanhar.
+     */
+    private val day: Flow<Day> =
+        combine(selection, todayRepository.today) { sel, now ->
+            if (sel is Selection.Chosen && sel.date == now) {
+                selection.compareAndSet(sel, Selection.FollowingToday)
+                Day(now, now)
+            } else {
+                Day(now, if (sel is Selection.Chosen) sel.date else now)
+            }
+        }.distinctUntilChanged()
+            .onEach { lastDay = it }
+            .shareIn(viewModelScope, SharingStarted.WhileSubscribed(), replay = 1)
+
+    private val selectedDate: Flow<LocalDate> = day.map { it.selected }.distinctUntilChanged()
 
     /** Última leitura das conclusões de tarefa da semana visível, para desfazer pela trilha. */
     @Volatile
@@ -148,9 +187,10 @@ class TodayViewModel(
             ) { all, scheduled, overrides -> Triple(all, scheduled, overrides) },
             taskRepository.tasks,
             weekCompletions,
-            selectedDate,
+            day,
             todayRepository.observe(),
-        ) { sources, tasks, weekLogs, selected, todayOverview ->
+        ) { sources, tasks, weekLogs, shown, todayOverview ->
+            val selected = shown.selected
             val (routines, scheduled, overrides) = sources
             val (weekStart, routineDone, taskCompletions) = weekLogs
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
@@ -164,7 +204,7 @@ class TodayViewModel(
                 .mapValues { (_, ids) -> ids.toSet() }
             val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
             val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
-            val today = LocalDate.now()
+            val today = shown.today
             // Pulados ficam visíveis, marcados (P5): a tela os esmaece com a ação de desfazer.
             val timeline = DayTimeline.build(
                 scheduled,
@@ -308,20 +348,26 @@ class TodayViewModel(
     }
 
     fun select(date: LocalDate) {
-        selectedDate.value = date
+        selection.value = if (date == lastDay?.today) Selection.FollowingToday else Selection.Chosen(date)
     }
 
-    fun goToToday() = select(LocalDate.now())
+    fun goToToday() {
+        selection.value = Selection.FollowingToday
+    }
 
-    fun previousWeek() = select(selectedDate.value.minusWeeks(1))
+    fun previousWeek() {
+        lastDay?.let { select(it.selected.minusWeeks(1)) }
+    }
 
-    fun nextWeek() = select(selectedDate.value.plusWeeks(1))
+    fun nextWeek() {
+        lastDay?.let { select(it.selected.plusWeeks(1)) }
+    }
 
     /** Marca como feito (com "Desfazer" no snackbar) ou, se já estava feito, desmarca. */
     fun toggle(block: DayTimeline.Block) {
-        val date = selectedDate.value
+        val (now, date) = lastDay ?: return
         // Pulado não se conclui: primeiro desfaz o pular.
-        if (block.skipped || date.isAfter(LocalDate.now())) return
+        if (block.skipped || date.isAfter(now)) return
         viewModelScope.launch {
             if (block.done) {
                 repository.uncomplete(block.routine.id, date)
@@ -368,15 +414,17 @@ class TodayViewModel(
      * registra agora (com "Desfazer"); desmarcar desfaz a conclusão do dia selecionado.
      */
     fun toggleTask(task: Task, done: Boolean) {
-        val date = selectedDate.value
-        if (date.isAfter(LocalDate.now())) return
+        val (now, date) = lastDay ?: return
+        if (date.isAfter(now)) return
         viewModelScope.launch {
             if (done) {
                 taskLogFor(task.id, date)?.let { taskRepository.undoCompletion(it) }
             } else {
                 // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
-                val completedAt = if (date == LocalDate.now()) System.currentTimeMillis()
-                else date.atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                // A data e a hora vêm do mesmo relógio do TodayRepository (sem relógio direto aqui).
+                val clock = todayRepository.now()
+                val completedAt = if (date == now) clock.toInstant().toEpochMilli()
+                else date.atTime(clock.toLocalTime()).atZone(clock.zone).toInstant().toEpochMilli()
                 taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt))
             }
         }
