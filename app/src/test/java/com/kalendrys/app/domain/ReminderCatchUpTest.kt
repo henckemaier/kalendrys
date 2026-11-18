@@ -295,4 +295,28 @@ class ReminderCatchUpTest {
         assertTrue(ReminderCatchUp.isDiscarded(daily, fired, setOf(wed), zone))
         assertEquals(false, ReminderCatchUp.isDiscarded(daily, fired, setOf(wed), ZoneId.of("UTC")))
     }
+
+    // --- Última ocorrência que já tocou (NB-E4-A da v1.8.0) ---
+
+    @Test
+    fun `ultima ocorrencia desde o dia concluido ate agora`() {
+        val daily = task(1, wed.minusDays(10), time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY)
+        val yesterday = wed.minusDays(1)
+        // Antes das 10h de hoje: a última é a de ontem.
+        assertEquals(yesterday, ReminderCatchUp.lastOccurrenceSince(daily, yesterday, millis(wed, LocalTime.of(9, 0)), zone)?.day(zone))
+        // Depois das 10h: a de hoje.
+        assertEquals(wed, ReminderCatchUp.lastOccurrenceSince(daily, yesterday, millis(wed, LocalTime.of(11, 0)), zone)?.day(zone))
+        // Desde anteontem, antes das 10h: ainda a de ontem.
+        assertEquals(yesterday, ReminderCatchUp.lastOccurrenceSince(daily, wed.minusDays(2), millis(wed, LocalTime.of(9, 0)), zone)?.day(zone))
+        // Exatamente no horário de hoje: já tocou.
+        assertEquals(wed, ReminderCatchUp.lastOccurrenceSince(daily, yesterday, millis(wed, LocalTime.of(10, 0)), zone)?.day(zone))
+    }
+
+    @Test
+    fun `sem ocorrencia na janela da null`() {
+        val weekly = task(1, wed, time = LocalTime.of(10, 0), repeat = ReminderRepeat.WEEKLY)
+        // Semanal de quarta: de segunda até terça à noite não tocou nada.
+        assertEquals(null, ReminderCatchUp.lastOccurrenceSince(weekly, wed.minusDays(2), millis(wed.minusDays(1), LocalTime.of(23, 0)), zone))
+        assertEquals(null, ReminderCatchUp.lastOccurrenceSince(task(2, null), wed, millis(wed, LocalTime.of(23, 0)), zone))
+    }
 }

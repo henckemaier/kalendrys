@@ -425,7 +425,7 @@ class TodayViewModel(
                 val clock = todayRepository.now()
                 val completedAt = if (date == now) clock.toInstant().toEpochMilli()
                 else date.atTime(clock.toLocalTime()).atZone(clock.zone).toInstant().toEpochMilli()
-                taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt))
+                taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt, now = clock.toInstant().toEpochMilli()))
             }
         }
     }
