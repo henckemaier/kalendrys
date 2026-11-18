@@ -1135,7 +1135,17 @@ guarda a oferta pendente até a mensagem terminar (Desfazer, tempo esgotado ou d
 até outra oferta substituí-la. Se a tela for recriada com a mensagem visível (girar o aparelho),
 a mensagem volta com o tempo reiniciado, em vez de o Desfazer sumir com a tarefa excluída.
 A oferta tem **validade curta** a partir da criação: vencida, é descartada sem ser mostrada,
-para a mensagem não reaparecer do nada quando o app é reaberto muito depois.
+para a mensagem não reaparecer do nada quando o app é reaberto muito depois. A espera da mensagem
+também é limitada pelo que resta do prazo, porque o tempo da mensagem só corre com a tela à
+frente. Um toque em Desfazer numa mensagem visível sempre restaura: o prazo decide se a
+mensagem aparece, não se o botão funciona. O coletor só fica ativo com a tela do app à frente:
+sair da frente cancela a espera sem limpar a oferta, e voltar confere o prazo pelo relógio de
+parede antes de mostrar. Isso cobre o botão de início, a tela apagada e o processo congelado.
+
+**A oferta serve a duas exclusões** (decisão na P8): tarefa excluída pelo detalhe e rotina
+excluída pelo editor. O objeto do app guarda uma oferta por vez, de um dos dois tipos, e é ele
+que sabe restaurar cada um; o coletor único só escolhe o texto. As demais regras (prazo, tela à
+frente, substituição) são as mesmas para os dois.
 
 **Qual conclusão desfazer:** quando uma tarefa tem mais de uma conclusão no mesmo dia, desmarcar
 desfaz a **mais recente**. Desfazer a mais antiga devolvia a data errada e deixava um registro
@@ -1157,6 +1167,11 @@ Fecha o item deixado na 13.3 (D-71-1).
   do horário; é o mesmo comportamento que as rotinas sem aviso sempre tiveram.
 - **O alarme no sistema é sempre o resultado da conta.** Se a conta não devolve ocorrência, o
   alarme da tarefa é cancelado, não deixado como estava.
+- **Ler e marcar sob a mesma trava.** Todo trecho do `TaskRepository` que lê o estado (tarefa e
+  conclusões) e marca alarme roda sob a mesma trava que serializa concluir e desfazer. Sem isso,
+  um catch-up que leu antes de um desfazer marca por cima o alarme antigo e o lembrete do dia
+  sai atrasado. Ordem fixa das travas: a do catch-up por fora, a do repositório por dentro,
+  nunca o contrário.
 - Motivo: uma tarefa concluída de manhã deixava um despertador marcado para a tarde, visível no
   sistema, que não avisava nada.
 - As regras do ADR-0003 (catch-up) não mudam. Os testes dele seguem sem asserção alterada.
@@ -1174,6 +1189,13 @@ Detalha a seção 6.
   resumo diário. Os números da tela e do widget têm de bater.
 - **Seções (P2):** progresso do dia, próximo item, timeline, "Atrasadas", "Hoje" e "Sem data"
   (recolhida). Em outro dia da semana, a tela mostra a timeline e as tarefas daquele dia.
+- **Concluídas (n)** (decisão na E3): seção recolhível no fim, no padrão do "Marcados (n)" das
+  listas. Entra nela toda tarefa com conclusão **no dia mostrado**, pela data do registro e não
+  pela data da tarefa, que não esteja já riscada na timeline; cada uma pode ser desmarcada.
+  Sem ela, uma tarefa atrasada ou sem data concluída hoje sumia da tela, entrava na contagem do
+  widget e não podia ser desmarcada. A seção "Hoje" fica só com as pendentes. Os pendentes vêm
+  do `TodayOverview`; as concluídas, dos registros do dia. Dois testes de igualdade com o
+  widget: pendentes e concluídas.
 - **A tela inteira é uma lista:** a faixa da semana rola junto com o conteúdo. Resolve a
   paisagem pela raiz, sem depender da folga do FAB (12.4, S-1).
 - **Filtro por categoria (P3):** sai da Hoje e vai para "Todas as rotinas".
@@ -1181,8 +1203,29 @@ Detalha a seção 6.
 - **Todas as rotinas** (rota nova): ativas e pausadas; editar, pausar, retomar e arquivar com
   Desfazer. Resolve a rotina pausada que sumia da aba.
 - **Pular (P5):** ganha Desfazer, e o bloco pulado continua visível no dia, esmaecido, com a
-  ação de desfazer.
-- Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua.
+  ação de desfazer. Pular fica num menu curto ao segurar o bloco ("Pular este dia", "Remarcar
+  este dia"); o bloco pulado tem um controle visível de desfazer. A mensagem com Desfazer, logo
+  depois de pular, devolve o dia ao que era antes, inclusive uma remarcação; o desfazer do
+  bloco, mais tarde, só tira o pular.
+- **As ações do bloco valem para o dia da ocorrência, não para o dia mostrado.** Um bloco que
+  chegou remarcado de outro dia pertence à ocorrência do dia de origem; pular, remarcar e
+  desfazer agem nela. O bloco da timeline carrega esse dia, calculado no domínio.
+- Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua visível, e para o
+  leitor de tela concluir é uma ação da linha, com o estado na própria linha (mesmo padrão do
+  item de lista, 12.4).
+- **A rota interna da Hoje continua `routines`**, e não `today` como dizia a seção 6: o estado
+  salvo pela v1.7.1 com a aba Rotinas aberta é restaurado direto na Hoje. Com outro nome de rota
+  a restauração não acharia o destino.
+- **Título da barra:** na data de hoje, "Hoje"; em outro dia, o dia mostrado, com o botão "Hoje"
+  ao lado para voltar.
+- **Estado vazio:** a Hoje é a primeira tela de quem instala; o vazio fala do dia e oferece
+  "Nova tarefa" e "Nova rotina". Para isso o `EmptyState` ganhou uma ação secundária opcional e
+  passou a rolar quando o conteúdo não cabe, em vez de cortar; vale para todos os vazios.
+- **Nome da ação de tirar uma rotina (P8, decisão do usuário):** "Excluir rotina" nos dois
+  lugares, com a mensagem "Rotina excluída" e Desfazer. Por baixo continua o arquivamento: a
+  rotina some de hoje em diante e os dias passados ficam no histórico. No editor a confirmação
+  sai, pela regra da 5.4 (ação com Desfazer não pede confirmação), e a mensagem aparece na tela
+  de origem.
 
 ### 14.5 Timeline (D2)
 
@@ -1243,11 +1286,11 @@ Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
   com editor aberto perdendo o rascunho (some com o salvar na hora); repetição personalizada;
   entrega do catch-up com título antigo ou aviso que pisca; editor de rotina em paisagem com
   teclado.
-- **v1.9.0, com o salvar na hora:** concluir e desfazer regravam a linha inteira da tarefa a
-  partir de uma leitura anterior, e uma edição simultânea pode se perder. A janela é pequena e
-  antiga, mas o salvar na hora multiplica as gravações. Desenho: a conclusão adiantada e o
-  desfazer passam a alterar **só** data e lembrete, com a guarda dentro do próprio comando, em
-  vez de regravar a tarefa.
+- **v1.9.0, com o salvar na hora:** dentro do repositório, criar, editar, concluir e desfazer já
+  passam pela mesma trava (14.3), então uma gravação não atropela a outra. O que sobra é a tela
+  que grava a partir de uma cópia antiga da tarefa e sobrescreve o que mudou por fora. O salvar
+  na hora resolve isso aplicando a edição sobre a linha mais recente (5.2); nesse desenho, a
+  conclusão adiantada e o desfazer passam a alterar **só** data e lembrete.
 - **Limite aceito:** o reinício das marcações da lista fica fora da transação de concluir e de
   desfazer. Se o processo morrer entre os dois, as marcações de uma tarefa repetida podem não
   voltar; o histórico e a tarefa ficam corretos.
