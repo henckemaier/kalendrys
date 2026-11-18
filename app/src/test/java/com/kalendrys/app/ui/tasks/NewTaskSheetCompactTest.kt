@@ -1,11 +1,9 @@
 package com.kalendrys.app.ui.tasks
 
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.assertIsDisplayed
@@ -14,11 +12,9 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.domain.NewTaskDraft
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -29,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -46,25 +43,32 @@ class NewTaskSheetCompactTest {
     @get:Rule
     val compose = createComposeRule()
 
+    /**
+     * A escala de fonte vai pela CONFIGURAÇÃO (como no aparelho), não por um `LocalDensity`: o painel
+     * é janela própria e o `ComposeView` dela fornece um `LocalDensity` novo, do próprio contexto, que
+     * passaria por cima do fornecido aqui (a fonte 2.0 não chegaria ao painel).
+     */
     private fun render(fontScale: Float) {
+        RuntimeEnvironment.setFontScale(fontScale)
         compose.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                KalendrysTheme {
-                    var draft by remember { mutableStateOf(NewTaskDraft.startingOn(LocalDate.now())) }
-                    NewTaskSheet(
-                        draft = draft,
-                        onChange = { transform -> draft = transform(draft) },
-                        onSave = {},
-                        onCancel = {},
-                        onDismiss = {},
-                        lists = emptyList(),
-                    )
-                }
+            KalendrysTheme {
+                var draft by remember { mutableStateOf(NewTaskDraft.startingOn(LocalDate.now())) }
+                NewTaskSheet(
+                    draft = draft,
+                    onChange = { transform -> draft = transform(draft) },
+                    onSave = {},
+                    onCancel = {},
+                    onDismiss = {},
+                    lists = emptyList(),
+                )
             }
         }
+        // Painel aberto e parado (fim da animação de entrada) antes de medir.
         compose.waitForIdle()
     }
+
+    /** A raiz da janela do próprio nó (o painel tem janela própria: há mais de uma raiz). */
+    private fun SemanticsNode.windowRoot(): SemanticsNode = generateSequence(this) { it.parent }.last()
 
     private fun text(label: String): SemanticsNode =
         compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
@@ -95,7 +99,7 @@ class NewTaskSheetCompactTest {
         val visible = node.boundsInRoot
         assertEquals("$label: largura visível", node.size.width.toFloat(), visible.width, 0.5f)
         assertEquals("$label: altura visível", node.size.height.toFloat(), visible.height, 0.5f)
-        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val root = node.windowRoot().boundsInRoot
         assertTrue("$label: passa da borda direita", visible.right <= root.right + 0.5f)
         assertWholeText(label)
     }
@@ -112,7 +116,8 @@ class NewTaskSheetCompactTest {
         assertTrue("Salvar por último", save.left >= cancel.right - 0.5f)
         // Na linha do título, no topo do painel (acima do primeiro campo).
         val title = text("Nova tarefa").boundsInRoot
-        val firstField = compose.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot
+        // O primeiro campo do painel (o Título); "SetText" sozinho pega todos os campos.
+        val firstField = compose.onNode(hasSetTextAction() and hasText("Título")).fetchSemanticsNode().boundsInRoot
         assertTrue("linha acima dos campos", save.bottom <= firstField.top + 0.5f)
         assertTrue("título na mesma linha", title.bottom > save.top && title.top < save.bottom)
     }
