@@ -50,6 +50,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -57,9 +58,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
@@ -321,12 +326,17 @@ private fun BlockRow(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = routineTimeRange(block.startMinute, routine.durationMinutes),
+                    // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros. O-7: sempre numa linha:
+                    // a faixa inteira se couber, senão só a duração ("2h"); o leitor de tela lê a frase inteira.
+                    OneLineTimeRange(
+                        full = routineTimeRange(block.startMinute, routine.durationMinutes),
+                        short = if (routine.durationMinutes > 0) {
+                            DurationFormat.format(routine.durationMinutes)
+                        } else {
+                            minuteOfDayLabel(block.startMinute)
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros; com fonte grande
-                        // ele QUEBRA em mais linhas em vez de virar reticências (E4: sem corte).
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (routine.remind && !skipped) {
@@ -461,6 +471,37 @@ private fun GapRow(gap: DayTimeline.Gap) {
                 modifier = if (fits) Modifier else Modifier.semantics { contentDescription = full },
             )
         }
+    }
+}
+
+/**
+ * Faixa de horário do bloco SEMPRE numa linha (O-7 da v1.8.0): [full] ("07:00–09:00 (2h)") se couber
+ * na largura que sobra, senão [short] (só a duração, "2h"; num bloco sem duração os dois são a hora).
+ * Escolha por medida, no molde da linha do tempo livre, mas com um `Layout` simples em vez de
+ * `BoxWithConstraints`: o bloco mede a altura pelas intrínsecas (`IntrinsicSize.Min`) e um
+ * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira ([full]), como texto
+ * do nó, igual a antes; os dois textos desenhados ficam fora da leitura.
+ */
+@Composable
+private fun OneLineTimeRange(full: String, short: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    Layout(
+        content = {
+            Text(text = full, style = style, color = color, maxLines = 1, softWrap = false)
+            Text(text = short, style = style, color = color, maxLines = 1, softWrap = false)
+        },
+        modifier = modifier.clearAndSetSemantics { text = AnnotatedString(full) },
+    ) { measurables, constraints ->
+        // Cada texto na largura natural, numa linha só; o inteiro vale se couber na largura disponível.
+        val natural = constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
+        val wide = measurables[0].measure(natural)
+        val chosen = if (!constraints.hasBoundedWidth || wide.width <= constraints.maxWidth) {
+            wide
+        } else {
+            measurables[1].measure(natural)
+        }
+        val width = chosen.width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = chosen.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) { chosen.placeRelative(0, 0) }
     }
 }
 
