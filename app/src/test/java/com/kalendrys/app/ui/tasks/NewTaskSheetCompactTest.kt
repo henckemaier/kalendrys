@@ -116,7 +116,8 @@ class NewTaskSheetCompactTest {
         assertTrue("Salvar por último", save.left >= cancel.right - 0.5f)
         // Na linha do título, no topo do painel (acima do primeiro campo).
         val title = text("Nova tarefa").boundsInRoot
-        val firstField = compose.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot
+        // O primeiro campo do painel (o Título); "SetText" sozinho pega todos os campos.
+        val firstField = compose.onNode(hasSetTextAction() and hasText("Título")).fetchSemanticsNode().boundsInRoot
         assertTrue("linha acima dos campos", save.bottom <= firstField.top + 0.5f)
         assertTrue("título na mesma linha", title.bottom > save.top && title.top < save.bottom)
     }
