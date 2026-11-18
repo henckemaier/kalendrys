@@ -481,23 +481,35 @@ private fun GapRow(gap: DayTimeline.Gap) {
  * `BoxWithConstraints`: o bloco mede a altura pelas intrínsecas (`IntrinsicSize.Min`) e um
  * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira ([full]), como texto
  * do nó, igual a antes; os dois textos desenhados ficam fora da leitura.
+ *
+ * NB-1 do Esquadro: se nem a forma curta couber (duração longa, "23h 59min", em 320dp com fonte 2.0,
+ * sino e lista juntos), ela é medida com a largura disponível como máximo e ganha reticências: a
+ * caixa nunca passa da largura que sobra, e o texto não desenha por cima do sino nem do 2/3.
  */
 @Composable
 private fun OneLineTimeRange(full: String, short: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     Layout(
         content = {
             Text(text = full, style = style, color = color, maxLines = 1, softWrap = false)
-            Text(text = short, style = style, color = color, maxLines = 1, softWrap = false)
+            Text(
+                text = short,
+                style = style,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         modifier = modifier.clearAndSetSemantics { text = AnnotatedString(full) },
     ) { measurables, constraints ->
-        // Cada texto na largura natural, numa linha só; o inteiro vale se couber na largura disponível.
+        // A faixa inteira na largura natural, numa linha só, para a escolha: vale se couber na largura
+        // disponível. Senão, a curta medida com essa largura como máximo (reticências se nem ela couber).
         val natural = constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
         val wide = measurables[0].measure(natural)
         val chosen = if (!constraints.hasBoundedWidth || wide.width <= constraints.maxWidth) {
             wide
         } else {
-            measurables[1].measure(natural)
+            measurables[1].measure(constraints.copy(minWidth = 0))
         }
         val width = chosen.width.coerceIn(constraints.minWidth, constraints.maxWidth)
         val height = chosen.height.coerceIn(constraints.minHeight, constraints.maxHeight)
