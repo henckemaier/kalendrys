@@ -7,24 +7,19 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.CalendarCalculator
-import com.kalendrys.app.domain.NewTaskDraft
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ReminderRecurrence
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.TaskSchedule
-import com.kalendrys.app.domain.TaskTiming
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -37,13 +32,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 class CalendarViewModel(
     private val repository: TaskRepository,
     private val routineRepository: RoutineRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val draftStore: NewTaskDraftStore,
 ) : ViewModel() {
 
     /** Um evento no dia: conclusão (do histórico) ou tarefa marcada para o dia. */
@@ -197,44 +190,6 @@ class CalendarViewModel(
 
     fun goToToday() = select(LocalDate.now())
 
-    /** Listas para o "Usar lista existente" do painel de nova tarefa. */
-    val lists: StateFlow<List<ShoppingListSummary>> =
-        shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Rascunho único do painel de nova tarefa (compartilhado com a aba Tarefas); null = sem rascunho. */
-    val newTaskDraft: StateFlow<NewTaskDraft?> = draftStore.draft
-
-    init {
-        // Lista escolhida no rascunho e excluída no meio some da escolha. O Flow do Room só emite a
-        // lista de verdade (nunca um vazio provisório), então não apaga uma escolha válida.
-        viewModelScope.launch {
-            shoppingRepository.observeSummaries().collect { lists -> draftStore.keepListsIn(lists.mapTo(HashSet()) { it.id }) }
-        }
-    }
-
-    /** O painel abriu sugerindo [date]; a data do rascunho só muda se o usuário ainda não a escolheu. */
-    fun openNewTask(date: LocalDate?) = draftStore.open(date)
-
-    fun updateNewTask(transform: (NewTaskDraft) -> NewTaskDraft) = draftStore.update(transform)
-
-    /** Cancelar: descarta o rascunho. */
-    fun cancelNewTask() {
-        draftStore.discard()
-    }
-
-    /** Salvar: grava a tarefa do rascunho e o descarta. */
-    fun saveNewTask() {
-        val draft = draftStore.discard() ?: return
-        addTask(draft.title, draft.notes, draft.timing, draft.location, draft.list)
-    }
-
-    /** Igual ao painel de Tarefas: "Criar nova" cria a lista só ao salvar (ADR-0001, P2). */
-    fun addTask(title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList? = null) {
-        if (title.isBlank()) return
-        viewModelScope.launch {
-            repository.addTask(title, notes, timing, location, shoppingListId = shoppingRepository.resolveListId(list))
-        }
-    }
 
     private fun timeOf(epochMillis: Long, zone: ZoneId): LocalTime =
         Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalTime()
@@ -243,7 +198,7 @@ class CalendarViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                CalendarViewModel(app.repository, app.routineRepository, app.shoppingRepository, app.newTaskDraftStore)
+                CalendarViewModel(app.repository, app.routineRepository, app.shoppingRepository)
             }
         }
     }

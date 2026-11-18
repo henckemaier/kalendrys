@@ -119,14 +119,11 @@ class KalendrysApp : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(settingsDataStore) }
 
-    /** Rascunho único do painel de nova tarefa (Tarefas e Calendário), só em memória (v1.7.1). */
-    val newTaskDraftStore: NewTaskDraftStore by lazy { NewTaskDraftStore() }
-
     /**
-     * Painel de nova tarefa (rascunho, salvar no escopo do app, listas; v1.8.0 E6). Usa o MESMO
-     * [newTaskDraftStore]: enquanto as telas migram, as duas portas veem o mesmo rascunho.
+     * Painel de nova tarefa (v1.8.0, E6): dono único do rascunho e das operações dele (salvar no escopo
+     * do app, listas do seletor). Só em memória. Aberto ou fechado é estado de tela (NewTaskHost).
      */
-    val newTaskPanel: NewTaskPanel by lazy { NewTaskPanel(repository, shoppingRepository, appScope, newTaskDraftStore) }
+    val newTaskPanel: NewTaskPanel by lazy { NewTaskPanel(repository, shoppingRepository, appScope) }
 
     /** Desfazer das exclusões que fecham a tela (tarefa e rotina), na origem; só em memória (E0-D, P8). */
     val undoOffers: UndoOffers by lazy { UndoOffers(repository, routineRepository, appScope) }

@@ -21,7 +21,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -69,7 +68,6 @@ class TaskListScrollTest {
             TaskViewModel(
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
                 ShoppingRepository(db),
-                NewTaskDraftStore(),
                 testUndoOffers(testDb),
             ),
         )

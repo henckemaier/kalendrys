@@ -48,6 +48,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.NewTaskPanel
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
 import com.kalendrys.app.UndoOffers
@@ -105,6 +106,7 @@ fun KalendrysNavHost(
     launchRequest: LaunchRequest? = null,
     onLaunchRequestHandled: () -> Unit = {},
     undoOffers: UndoOffers = (LocalContext.current.applicationContext as KalendrysApp).undoOffers,
+    newTaskPanel: NewTaskPanel = (LocalContext.current.applicationContext as KalendrysApp).newTaskPanel,
 ) {
     val navController = rememberNavController()
     // Mensagens do app (Desfazer das exclusões de tarefa e rotina): o único coletor; quem desenha é o
@@ -123,8 +125,11 @@ fun KalendrysNavHost(
     val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
         navController.navigate(routineExceptionRoute(routineId, epochDay))
     }
-    // Pedido de "nova tarefa" vindo do widget, entregue à tela de tarefas uma única vez.
-    var newTaskRequested by rememberSaveable { mutableStateOf(false) }
+    // Painel de nova tarefa (E6, 14.7): ABERTO ou FECHADO é estado de tela, salvo aqui no topo (o dia
+    // sugerido, em epochDay; null = fechado). Sobrevive a girar e à morte do processo (aí reabre com o
+    // rascunho vazio, perda aceita) e some quando a Activity termina. Rascunho e operações são do app.
+    var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
+    val openNewTask: (LocalDate) -> Unit = { date -> newTaskEpochDay = date.toEpochDay() }
     // Dia pedido por uma notificação ou widget de rotina (kalendrys://routines/{data}), entregue à Hoje uma única vez.
     var routinesDateRequested by rememberSaveable { mutableStateOf<LocalDate?>(null) }
 
@@ -168,8 +173,7 @@ fun KalendrysNavHost(
                     TaskListScreen(
                         onOpenTask = openTask,
                         onOpenSettings = openSettings,
-                        openNewTask = newTaskRequested,
-                        onNewTaskOpened = { newTaskRequested = false },
+                        onNewTask = openNewTask,
                     )
                 }
                 composable(AppTab.Today.route) {
@@ -180,12 +184,18 @@ fun KalendrysNavHost(
                         onOpenSettings = openSettings,
                         onOpenTask = openTask,
                         onOpenException = openRoutineException,
+                        onNewTask = openNewTask,
                         requestedDate = routinesDateRequested,
                         onRequestedDateHandled = { routinesDateRequested = null },
                     )
                 }
                 composable(AppTab.Calendar.route) {
-                    CalendarScreen(onOpenTask = openTask, onOpenRoutine = openRoutine, onOpenSettings = openSettings)
+                    CalendarScreen(
+                        onOpenTask = openTask,
+                        onOpenRoutine = openRoutine,
+                        onOpenSettings = openSettings,
+                        onNewTask = openNewTask,
+                    )
                 }
                 composable(AppTab.Lists.route) {
                     ShoppingListsScreen(onOpenList = openShoppingList, onOpenSettings = openSettings)
@@ -282,15 +292,17 @@ fun KalendrysNavHost(
         }
     }
 
+    // Por cima de qualquer destino: o painel é janela própria e o voltar fecha primeiro ele.
+    NewTaskHost(newTaskPanel, newTaskEpochDay?.let(LocalDate::ofEpochDay), onClose = { newTaskEpochDay = null })
+
     // Depois do NavHost, para o grafo já estar montado quando a navegação acontecer.
     LaunchedEffect(launchRequest) {
         when (launchRequest) {
             null -> return@LaunchedEffect
             is LaunchRequest.OpenTask -> openTask(launchRequest.taskId)
-            LaunchRequest.NewTask -> {
-                navController.openTab(AppTab.Tasks)
-                newTaskRequested = true
-            }
+            // Widget e atalho: o painel abre POR CIMA do que estiver na tela, sem trocar de aba (O-2 da
+            // v1.7.0); com o app frio, sobre a aba inicial (Hoje).
+            LaunchRequest.NewTask -> openNewTask(LocalDate.now())
             // Se o editor de rotina estava aberto, a aba volta com ele (restoreState) e o dia
             // pedido só vale ao sair do editor.
             LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)

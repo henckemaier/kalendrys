@@ -5,16 +5,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ShoppingProgress
-import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
@@ -70,7 +67,7 @@ class TaskViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, NewTaskDraftStore(), undoOffers))
+    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers))
 
     private suspend fun ReceiveTurbine<TaskViewModel.UiState>.awaitState(
         predicate: (TaskViewModel.UiState) -> Boolean,
@@ -113,34 +110,6 @@ class TaskViewModelTest {
             assertNull(state.item("Órfã").listProgress)
             cancelAndIgnoreRemainingEvents()
         }
-    }
-
-    @Test
-    fun `criar tarefa com lista existente grava o vinculo`() = runTest {
-        val listId = shoppingRepository.createList("Mercado")
-        viewModel().addTask("Mercado", "", TaskTiming(date = null), "", NewTaskList.Existing(listId))
-
-        val task = taskRepository.tasks.first { it.isNotEmpty() }.single()
-        assertEquals(listId, task.shoppingListId)
-        assertEquals(1, shoppingRepository.observeLists().first().size)
-    }
-
-    @Test
-    fun `criar tarefa com lista nova cria a lista so ao salvar e vincula`() = runTest {
-        viewModel().addTask("Churrasco", "", TaskTiming(date = null), "", NewTaskList.New("Churrasco de sábado"))
-
-        val task = taskRepository.tasks.first { it.isNotEmpty() }.single()
-        val list = shoppingRepository.observeLists().first().single()
-        assertEquals("Churrasco de sábado", list.name)
-        assertEquals(list.id, task.shoppingListId)
-    }
-
-    @Test
-    fun `criar tarefa sem lista nao cria lista`() = runTest {
-        viewModel().addTask("Ligar", "", TaskTiming(date = null), "")
-
-        assertNull(taskRepository.tasks.first { it.isNotEmpty() }.single().shoppingListId)
-        assertEquals(0, shoppingRepository.observeLists().first().size)
     }
 
     // --- E5 (v1.8.0): Desfazer da lista é a oferta do app ---

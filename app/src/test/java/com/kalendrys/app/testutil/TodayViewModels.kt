@@ -1,7 +1,6 @@
 package com.kalendrys.app.testutil
 
 import android.content.Context
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -27,6 +26,6 @@ class TodayRepositories(context: Context, db: AppDatabase) {
     /** O mesmo retrato do widget Resumo (fonte única das pendências da Hoje). */
     val today = TodayRepository(tasks, routines, shopping)
 
-    fun viewModel(firstDayOfWeek: DayOfWeek = DayOfWeek.SUNDAY, draftStore: NewTaskDraftStore = NewTaskDraftStore()) =
-        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, draftStore, today)
+    fun viewModel(firstDayOfWeek: DayOfWeek = DayOfWeek.SUNDAY) =
+        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, today)
 }

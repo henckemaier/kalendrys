@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
@@ -64,7 +63,7 @@ class TodayMidnightTest {
             dates = { dates },
             clock = { dates.value.atTime(10, 0) },
         )
-        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, NewTaskDraftStore(), today))
+        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today))
     }
 
     private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(

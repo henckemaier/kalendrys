@@ -39,10 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,13 +83,11 @@ import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
-import com.kalendrys.app.ui.tasks.NewTaskSheet
 import com.kalendrys.app.ui.theme.Spacing
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.Dispatchers
 
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -101,13 +96,13 @@ fun CalendarScreen(
     onOpenTask: (Long) -> Unit,
     onOpenRoutine: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    /** Pede o painel de nova tarefa (hospedado no topo da navegação, E6) sugerindo o dia tocado. */
+    onNewTask: (LocalDate) -> Unit = {},
     viewModel: CalendarViewModel = viewModel(factory = CalendarViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
-    // Lembrete inicial do painel de nova tarefa; null = painel fechado.
-    var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val todayLabel = stringResource(R.string.calendar_today)
     val settingsLabel = stringResource(R.string.settings_title)
@@ -129,7 +124,7 @@ fun CalendarScreen(
                 CollapsingFab(
                     text = stringResource(R.string.new_task),
                     expanded = fabExpanded,
-                    onClick = { newTaskEpochDay = state.selectedDate.toEpochDay() },
+                    onClick = { onNewTask(state.selectedDate) },
                     // O leitor de tela ouve em que dia a tarefa nasce, como antes da casca.
                     contentDescription = stringResource(
                         R.string.new_task_on_day,
@@ -159,30 +154,6 @@ fun CalendarScreen(
         }
     }
 
-    newTaskEpochDay?.let { epochDay ->
-        // Rascunho único (o mesmo da aba Tarefas): a data vira o dia tocado, a não ser que o usuário
-        // já a tenha escolhido no rascunho.
-        LaunchedEffect(epochDay) { viewModel.openNewTask(LocalDate.ofEpochDay(epochDay)) }
-        val lists by viewModel.lists.collectAsStateWithLifecycle()
-        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
-        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-        draft?.let {
-            NewTaskSheet(
-                draft = it,
-                onChange = viewModel::updateNewTask,
-                onSave = {
-                    viewModel.saveNewTask()
-                    newTaskEpochDay = null
-                },
-                onCancel = {
-                    viewModel.cancelNewTask()
-                    newTaskEpochDay = null
-                },
-                onDismiss = { newTaskEpochDay = null },
-                lists = lists,
-            )
-        }
-    }
 }
 
 @Composable
