@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.update
 
 /**
  * Dono único do rascunho do painel de nova tarefa (ADR-0002, 13; v1.7.1), criado no [KalendrysApp]
- * e compartilhado pela aba Tarefas e pelo Calendário. Vive enquanto o processo viver: se o sistema
+ * e compartilhado pela aba Tarefas e pelo Calendário; desde a v1.8.0 (E6) mora dentro do [NewTaskPanel],
+ * que salva e observa as listas. Este continua o estado puro. Vive enquanto o processo viver: se o sistema
  * matar o processo, o rascunho se perde (perda aceita, sem persistência).
  *
  * Regras: fechar o painel (voltar, tocar fora, arrastar) GUARDA; Cancelar e Salvar DESCARTAM.
