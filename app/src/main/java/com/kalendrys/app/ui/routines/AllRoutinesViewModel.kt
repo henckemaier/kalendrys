@@ -7,18 +7,16 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.domain.AppLocale
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,12 +26,14 @@ const val ALL_ROUTINES_ROUTE = "routines-all"
 /**
  * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): a gestão das rotinas, fora do retrato do dia.
  * Mostra as ativas e as pausadas (as arquivadas não), cada grupo por horário de início, título e id;
- * pausar, retomar e arquivar com Desfazer. O filtro por categoria (P3) mora aqui, não na Hoje.
+ * pausar, retomar e excluir (arquivar) com o Desfazer do app. O filtro por categoria (P3) mora aqui, não na Hoje.
  * As regras (alarmes, avisos, catch-up) ficam no [RoutineRepository]; aqui só a lista e o filtro.
  */
 class AllRoutinesViewModel(
     private val routines: RoutineRepository,
     categories: RoutineCategoryRepository,
+    /** Excluir e oferecer o Desfazer do app (NB-E3-C), o mesmo caminho do editor. */
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     /** Uma linha: a rotina e a categoria dela (null sem categoria ou com categoria excluída). */
@@ -54,9 +54,6 @@ class AllRoutinesViewModel(
         /** Categoria do filtro ativo, ou null para "todas". */
         val selectedCategoryId: Long? = null,
     )
-
-    /** Rotina arquivada agora, para a tela oferecer Desfazer. */
-    data class Archived(val routineId: Long)
 
     private val selectedCategoryId = MutableStateFlow<Long?>(null)
 
@@ -80,9 +77,6 @@ class AllRoutinesViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    private val archivedEvents = Channel<Archived>(Channel.BUFFERED)
-    val archived: Flow<Archived> = archivedEvents.receiveAsFlow()
-
     fun selectCategory(categoryId: Long?) {
         selectedCategoryId.value = categoryId
     }
@@ -95,15 +89,13 @@ class AllRoutinesViewModel(
         viewModelScope.launch { routines.resume(routine) }
     }
 
+    /**
+     * "Excluir rotina": o MESMO caminho do editor (NB-E3-C), uma operação do [UndoOffers] no escopo
+     * do app (arquiva e oferece); a mensagem com Desfazer é a do app, mostrada nesta tela pelo
+     * `KalendrysNavHost`. A tela não tem mais Desfazer próprio.
+     */
     fun archive(routine: Routine) {
-        viewModelScope.launch {
-            routines.archive(routine)
-            archivedEvents.send(Archived(routine.id))
-        }
-    }
-
-    fun undoArchive(routineId: Long) {
-        viewModelScope.launch { routines.unarchive(routineId) }
+        undoOffers.deleteRoutine(routine)
     }
 
     companion object {
@@ -113,7 +105,7 @@ class AllRoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                AllRoutinesViewModel(app.routineRepository, app.routineCategoryRepository)
+                AllRoutinesViewModel(app.routineRepository, app.routineCategoryRepository, app.undoOffers)
             }
         }
     }

@@ -26,7 +26,15 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
+import com.kalendrys.app.ui.navigation.UndoOfferEffect
 import com.kalendrys.app.ui.theme.KalendrysTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,6 +61,7 @@ class AllRoutinesScreenSemanticsTest {
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var repository: RoutineRepository
     private lateinit var categories: RoutineCategoryRepository
+    private lateinit var offers: UndoOffers
     private val opened = mutableListOf<Long>()
     private var newRoutines = 0
     private var backs = 0
@@ -80,15 +89,21 @@ class AllRoutinesScreenSemanticsTest {
             repository.pause(v)
             violao = v.id
         }
-        val viewModel = testDb.track(AllRoutinesViewModel(repository, categories))
+        offers = testUndoOffers(testDb, repository)
+        val viewModel = testDb.track(AllRoutinesViewModel(repository, categories, offers))
         compose.setContent {
             KalendrysTheme {
-                AllRoutinesScreen(
-                    onBack = { backs++ },
-                    onOpenRoutine = { opened += it },
-                    onNewRoutine = { newRoutines++ },
-                    viewModel = viewModel,
-                )
+                // Como o KalendrysNavHost: a mensagem do app (NB-E3-C), com o coletor único fora da tela.
+                val app = remember { SnackbarHostState() }
+                CompositionLocalProvider(LocalAppSnackbarHostState provides app) {
+                    UndoOfferEffect(offers, app)
+                    AllRoutinesScreen(
+                        onBack = { backs++ },
+                        onOpenRoutine = { opened += it },
+                        onNewRoutine = { newRoutines++ },
+                        viewModel = viewModel,
+                    )
+                }
             }
         }
         waitForRow(treino)
@@ -155,10 +170,13 @@ class AllRoutinesScreenSemanticsTest {
     }
 
     @Test
-    fun `excluir pela acao da linha avisa e Desfazer devolve a rotina`() {
+    fun `excluir pela acao da linha publica a oferta do app e o Desfazer dela devolve a rotina`() {
         runAction(treino, "Excluir rotina")
         compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasTestTag(rowTag(treino))).fetchSemanticsNodes().isEmpty() }
+        // A mensagem é a do app (NB-E3-C): a mesma oferta do editor, não um aviso próprio da tela.
+        compose.waitUntil(TIMEOUT_MS) { offers.pending.value?.target == UndoTarget.DeletedRoutine(treino) }
         compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasText("Rotina excluída")).fetchSemanticsNodes().isNotEmpty() }
+        assertEquals(1, compose.onAllNodes(hasText("Rotina excluída")).fetchSemanticsNodes().size)
 
         compose.onNode(hasText("Desfazer") and hasClickAction()).performClick()
 

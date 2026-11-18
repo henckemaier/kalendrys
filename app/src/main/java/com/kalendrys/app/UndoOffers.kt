@@ -1,5 +1,6 @@
 package com.kalendrys.app
 
+import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -61,6 +62,25 @@ class UndoOffers(
     /** [target] acabou de ser excluído; substitui a pendente, de qualquer tipo. */
     fun offer(target: UndoTarget) {
         _pending.value = UndoOffer(nextId.incrementAndGet(), target, createdAt = clock())
+    }
+
+    /**
+     * EXCLUIR E OFERECER a tarefa numa operação só, no [scope] do app (NB-E3-C): a tela só pede e
+     * fecha. Fechar a tela (cancelar o escopo dela) logo depois de pedir não perde nem a exclusão
+     * nem a oferta. [task] vai como estava no banco (lembrete e vínculo de lista), para o Desfazer.
+     */
+    fun deleteTask(task: Task): Job = scope.launch {
+        tasks.deleteTask(task)
+        offer(UndoTarget.DeletedTask(task))
+    }
+
+    /**
+     * EXCLUIR (arquivar) E OFERECER a rotina numa operação só, no [scope] do app (NB-E3-C): o editor e
+     * Todas as rotinas só pedem. O Desfazer devolve a rotina como está gravada.
+     */
+    fun deleteRoutine(routine: Routine): Job = scope.launch {
+        routines.archive(routine)
+        offer(UndoTarget.DeletedRoutine(routine.id))
     }
 
     /** [offer] passou do prazo de validade e não deve mais ser mostrada. */

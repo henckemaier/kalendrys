@@ -10,7 +10,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
-import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListSummary
@@ -199,14 +198,14 @@ class TaskDetailViewModel(
      * Exclui (mesmo caminho do deslize na lista), oferece o Desfazer e fecha a tela (v1.8.0, E0-D). A
      * oferta leva a tarefa como estava no banco (lembrete e vínculo de lista); edições não salvas do
      * rascunho não voltam. A mensagem aparece na tela de origem, pelo `KalendrysNavHost`.
+     *
+     * Excluir e oferecer é UMA operação do [UndoOffers], no escopo do app (NB-E3-C): a tela só pede e
+     * fecha; fechar no meio não perde a exclusão nem a oferta.
      */
     fun delete() {
         val task = uiState.value.task ?: return
-        viewModelScope.launch {
-            repository.deleteTask(task)
-            undoOffers.offer(UndoTarget.DeletedTask(task))
-            eventChannel.send(Event.Deleted)
-        }
+        undoOffers.deleteTask(task)
+        viewModelScope.launch { eventChannel.send(Event.Deleted) }
     }
 
     companion object {

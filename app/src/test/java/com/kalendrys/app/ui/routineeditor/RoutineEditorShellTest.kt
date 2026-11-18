@@ -122,7 +122,7 @@ class RoutineEditorShellTest {
         compose.waitUntil(TIMEOUT_MS) {
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
-            closed == 1
+            closed == 1 && offers.pending.value != null
         }
         assertEquals(0, compose.onAllNodesWithText("Excluir rotina?").fetchSemanticsNodes().size)
         assertEquals(true, runBlocking { testDb.db.routineDao().byId(routineId)?.archivedAt } != null)

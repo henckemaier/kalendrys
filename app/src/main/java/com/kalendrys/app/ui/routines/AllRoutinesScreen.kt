@@ -26,13 +26,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,17 +65,15 @@ import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberFabExpanded
-import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.theme.Spacing
-import kotlinx.coroutines.flow.collectLatest
 
 /**
  * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): ativas e pausadas, com o filtro por categoria
  * (P3) e o FAB "Nova rotina" (P4). Tocar na linha edita; pausar, retomar e excluir ficam no menu de
  * três pontos e, para o leitor de tela, como ações da própria linha (um nó por linha, 14.9).
- * "Excluir rotina" (P8, decisão do usuário; por baixo é o arquivar) oferece Desfazer no aviso da
- * própria tela.
+ * "Excluir rotina" (P8, decisão do usuário; por baixo é o arquivar) vai pelo mesmo caminho do editor
+ * (NB-E3-C): a mensagem "Rotina excluída" com Desfazer é a do app, que o AppScaffold desta tela desenha.
  */
 @Composable
 fun AllRoutinesScreen(
@@ -90,16 +85,6 @@ fun AllRoutinesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
-    val snackbarHostState = remember { SnackbarHostState() }
-    val archivedMessage = stringResource(R.string.routine_deleted)
-    val undoLabel = stringResource(R.string.undo)
-
-    LaunchedEffect(viewModel) {
-        // collectLatest: um arquivamento novo substitui o aviso do anterior, que não é desfeito.
-        viewModel.archived.collectLatest { event ->
-            if (snackbarHostState.showUndo(archivedMessage, undoLabel)) viewModel.undoArchive(event.routineId)
-        }
-    }
 
     AppScaffold(
         topBar = { AppTopBar(title = stringResource(R.string.all_routines_title), onBack = onBack) },
@@ -107,7 +92,6 @@ fun AllRoutinesScreen(
             CollapsingFab(text = stringResource(R.string.new_routine), expanded = fabExpanded, onClick = onNewRoutine)
         },
         hasFab = true,
-        snackbarHostState = snackbarHostState,
     ) { padding ->
         when {
             !state.isLoaded -> Unit

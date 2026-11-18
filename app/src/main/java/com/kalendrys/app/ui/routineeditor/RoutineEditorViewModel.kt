@@ -10,7 +10,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
-import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
@@ -44,7 +43,9 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
@@ -264,16 +265,21 @@ class RoutineEditorViewModel(
      * alterações?" — os campos não são gravados e as edições de exercício da sessão voltam ao que
      * eram ao abrir, como no descartar. O Desfazer devolve a rotina como estava GRAVADA, não o
      * rascunho. O aviso que a exclusão tirou da tela não volta.
+     *
+     * Arquivar e oferecer é UMA operação do [UndoOffers], no escopo do app (NB-E3-C). Reverter as
+     * edições de exercício continua ANTES, aqui, e sem cancelamento: fechar a tela no meio não deixa
+     * o pedido de exclusão para trás.
      */
     fun delete() {
         val state = uiState.value
         val existing = state.routine ?: return
         viewModelScope.launch {
-            if (state.exerciseItemsChanged) {
-                state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
+            withContext(NonCancellable) {
+                if (state.exerciseItemsChanged) {
+                    state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
+                }
+                undoOffers.deleteRoutine(existing)
             }
-            repository.archive(existing)
-            undoOffers.offer(UndoTarget.DeletedRoutine(existing.id))
             eventChannel.send(Event.Closed)
         }
     }
