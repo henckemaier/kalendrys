@@ -6,7 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
-import com.kalendrys.app.TaskUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
@@ -14,7 +16,6 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
@@ -46,7 +47,7 @@ class TaskDetailViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var taskRepository: TaskRepository
     private lateinit var shoppingRepository: ShoppingRepository
-    private lateinit var undoOffers: TaskUndoOffers
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -56,7 +57,7 @@ class TaskDetailViewModelTest {
         db = testDb.db
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
-        undoOffers = TaskUndoOffers(taskRepository, CoroutineScope(Dispatchers.Unconfined))
+        undoOffers = testUndoOffers(db)
     }
 
     @After
@@ -274,7 +275,7 @@ class TaskDetailViewModelTest {
         }
 
         // Quando o fechar chega, a oferta já está pendente, com lembrete e vínculo de lista.
-        val offered = undoOffers.pending.value!!.task
+        val offered = (undoOffers.pending.value!!.target as UndoTarget.DeletedTask).task
         assertEquals(before, offered)
         assertEquals(listId, offered.shoppingListId)
         assertTrue(offered.reminderAt != null)

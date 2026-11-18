@@ -4,9 +4,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
- * Mensagens do APP, que nascem numa tela e aparecem em outra (v1.8.0, E0-D: o Desfazer da exclusão
- * pelo detalhe, mostrado na tela de origem depois que o detalhe fecha). Quem fornece é o
- * `KalendrysNavHost`, único dono do estado e único que chama [showUndo] nele.
+ * Mensagens de Desfazer de exclusão do APP, que nascem numa tela e aparecem em outra (v1.8.0: a
+ * tarefa excluída pelo detalhe, E0-D, e a rotina excluída pelo editor, P8, mostradas na tela de
+ * origem depois que a tela que excluiu fecha). Quem fornece é o `KalendrysNavHost`, único dono do
+ * estado e único que chama [showUndo] nele.
  *
  * Quem desenha é o [AppScaffold] da tela que está à frente (entrada de navegação RESUMED), no slot de
  * mensagens da própria tela, ACIMA da mensagem da tela (nunca no mesmo lugar); como em toda tela do
@@ -16,6 +17,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
  *
  * Padrão nulo: sem fornecer (prévias, testes de componente), o [AppScaffold] não desenha nada a mais.
  *
- * Só para essa mensagem: não pendurar outras coisas aqui.
+ * Só para as mensagens de Desfazer de exclusão: não pendurar outras coisas aqui.
  */
 internal val LocalAppSnackbarHostState = staticCompositionLocalOf<SnackbarHostState?> { null }

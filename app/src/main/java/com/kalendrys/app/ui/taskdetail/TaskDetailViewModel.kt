@@ -9,7 +9,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
-import com.kalendrys.app.TaskUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListSummary
@@ -43,7 +44,7 @@ class TaskDetailViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val undoOffers: TaskUndoOffers,
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
@@ -203,7 +204,7 @@ class TaskDetailViewModel(
         val task = uiState.value.task ?: return
         viewModelScope.launch {
             repository.deleteTask(task)
-            undoOffers.offer(task)
+            undoOffers.offer(UndoTarget.DeletedTask(task))
             eventChannel.send(Event.Deleted)
         }
     }
@@ -212,7 +213,7 @@ class TaskDetailViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskDetailViewModel(createSavedStateHandle(), app.repository, app.shoppingRepository, app.taskUndoOffers)
+                TaskDetailViewModel(createSavedStateHandle(), app.repository, app.shoppingRepository, app.undoOffers)
             }
         }
     }

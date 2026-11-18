@@ -1,17 +1,19 @@
-package com.kalendrys.app.ui.routines
+package com.kalendrys.app.ui.today
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
@@ -40,11 +42,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** Progresso 3/8 da lista no bloco da trilha (ADR-0001, P8). */
+/** Tela Hoje (ex-aba Rotinas): progresso 3/8 da lista no bloco da trilha (ADR-0001, P8) e o NB-1. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
-class RoutinesViewModelTest {
+class TodayViewModelTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
@@ -78,24 +80,25 @@ class RoutinesViewModelTest {
     }
 
     private fun viewModel() = testDb.track(
-        RoutinesViewModel(
+        TodayViewModel(
             routineRepository,
             taskRepository,
-            RoutineCategoryRepository(db),
             DayOfWeek.MONDAY,
             shoppingRepository,
+            NewTaskDraftStore(),
+            TodayRepository(taskRepository, routineRepository, shoppingRepository),
         ),
     )
 
-    private suspend fun ReceiveTurbine<RoutinesViewModel.UiState>.awaitState(
-        predicate: (RoutinesViewModel.UiState) -> Boolean,
-    ): RoutinesViewModel.UiState {
+    private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(
+        predicate: (TodayViewModel.UiState) -> Boolean,
+    ): TodayViewModel.UiState {
         var state = awaitItem()
         while (!predicate(state)) state = awaitItem()
         return state
     }
 
-    private fun RoutinesViewModel.UiState.block(title: String): DayTimeline.Block =
+    private fun TodayViewModel.UiState.block(title: String): DayTimeline.Block =
         timeline.filterIsInstance<DayTimeline.Block>().single { it.routine.title == title }
 
     @Test
@@ -152,11 +155,15 @@ class RoutinesViewModelTest {
 
         val viewModel = viewModel()
         viewModel.uiState.test {
-            // Espera a trilha de hoje com a tarefa concluída (as duas conclusões já carregadas).
-            val state = awaitState { s -> s.untimedTasks.any { it.task.id == id && it.done } }
-            viewModel.toggleTask(state.untimedTasks.single { it.task.id == id }.task, done = true)
-            // Desfeita a B, a tarefa volta para +3 e sai da trilha de hoje.
-            awaitState { s -> s.untimedTasks.none { it.task.id == id } }
+            // Espera a tarefa entre as Concluídas de hoje (as duas conclusões já carregadas).
+            val state = awaitState { s -> s.completedTasks.any { it.task.id == id && it.done } }
+            viewModel.toggleTask(state.completedTasks.single { it.task.id == id }.task, done = true)
+            // Desfeita a B, a tarefa volta para +3 e não é pendente de hoje. Ela continua em Concluídas pelo
+            // registro A, que também é de hoje (E3: Concluídas vai pela data do REGISTRO).
+            awaitState { s ->
+                s.dayTasks.none { it.task.id == id } &&
+                    s.completedTasks.any { it.task.id == id && it.task.dueDate == today.plusDays(3).toEpochDay() }
+            }
             cancelAndIgnoreRemainingEvents()
         }
         Triple(id, a, b)
@@ -191,5 +198,113 @@ class RoutinesViewModelTest {
 
         assertEquals(true, b > a)
         assertBackToPlusThreeWithOnlyA(id, a)
+    }
+
+    // --- P5 (v1.8.0, E3): Pular com Desfazer ---
+
+    @Test
+    fun `pular mantem o bloco na trilha marcado, avisa para Desfazer e desfazer o devolve`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.skip(treino.id, today)
+            val skipped = awaitState { it.block("Treino").skipped }
+            assertEquals(false, skipped.block("Treino").isActive)
+            assertEquals(TodayViewModel.Skipped(treino.id, today, previous = null), vm.skipped.first())
+            assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, today.toEpochDay())?.type)
+
+            vm.unskip(treino.id, today)
+            val back = awaitState { !it.block("Treino").skipped }
+            assertEquals(true, back.block("Treino").isActive)
+            assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `dia remarcado, pular e Desfazer na mensagem - a remarcacao volta`() = runTest {
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block && item.startMinute == 930 } }
+            vm.skip(treino.id, today)
+            awaitState { it.block("Treino").skipped }
+            val event = vm.skipped.first()
+            assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
+            assertEquals(930, event.previous?.newStartMinute)
+
+            vm.undoSkip(event)
+            val back = awaitState { !it.block("Treino").skipped }
+            assertEquals(930, back.block("Treino").startMinute)
+            val restored = routineRepository.occurrenceOverride(treino.id, epochDay)
+            assertEquals(RoutineOverrideType.RESCHEDULE, restored?.type)
+            assertEquals(930, restored?.newStartMinute)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Desfazer pular do bloco em dia remarcado e pulado so tira o pular`() = runTest {
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
+        routineRepository.skipOccurrence(treino.id, epochDay)
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block && item.skipped } }
+            vm.unskip(treino.id, today)
+            val back = awaitState { !it.block("Treino").skipped }
+            // Sem exceção nenhuma: horário normal (a remarcação não volta).
+            assertEquals(600, back.block("Treino").startMinute)
+            assertNull(routineRepository.occurrenceOverride(treino.id, epochDay))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `pular sem excecao no dia - o evento nao leva anterior e Desfazer na mensagem so tira o pular`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.skip(treino.id, today)
+            awaitState { it.block("Treino").skipped }
+            val event = vm.skipped.first()
+            assertNull(event.previous)
+
+            vm.undoSkip(event)
+            awaitState { !it.block("Treino").skipped }
+            assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `bloco pulado nao se conclui pelo circulo`() = runTest {
+        val today = LocalDate.now()
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        routineRepository.skipOccurrence(treino.id, today.toEpochDay())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            vm.toggle(state.block("Treino"))
+            // As alterações do repositório passam uma por vez: depois desta, um concluir pedido acima já teria gravado.
+            routineRepository.add(Routine(title = "Depois", startMinute = 700))
+            // O toggle ignora o pulado: nenhuma conclusão gravada.
+            assertEquals(false, treino.id in db.routineCompletionDao().doneOn(today.toEpochDay()))
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

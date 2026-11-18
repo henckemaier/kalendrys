@@ -15,6 +15,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -512,6 +513,25 @@ class TaskRepositoryTest {
         assertEquals(marked, repository.nextReminderToDeliver(now))
     }
 
+
+    @Test
+    fun `tarefa com alarme marcado e conta sem ocorrencia termina sem alarme`() = runTest {
+        // Diária com alarme marcado; todas as ocorrências que a conta olha (o limite de dias pulados)
+        // já concluídas: não há ocorrência a entregar, então o alarme é cancelado (NB-1 da revisão da E1).
+        val day = LocalDate.now().plusDays(2)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
+        (0L..40L).forEach { n ->
+            db.completionLogDao().insert(com.kalendrys.app.data.local.entity.CompletionLog(taskId = task.id, completedAt = at(day.plusDays(n), 7)))
+        }
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(day, 8))
+
+        assertTrue("sem ocorrência não marca alarme", scheduler.scheduled.isEmpty())
+        assertTrue("o alarme marcado é cancelado", task.id in scheduler.cancelled)
+    }
+
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
 
     @Test
@@ -626,12 +646,12 @@ class TaskRepositoryTest {
 
     // --- E1, corrida: o reagendamento geral (catch-up) lê as conclusões, o desfazer entra no meio ---
 
-    @org.junit.Ignore("Achado da E1 (v1.8.0): rescheduleReminders fora do completionLock; remover o @Ignore com a correcao")
     @Test
     fun `desfazer no meio do reagendamento geral nao perde o alarme do dia desfeito`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val marked = mutableMapOf<Long, Long>()
         var undoInTheMiddle: (() -> Unit)? = null
+        var undoJob: kotlinx.coroutines.Job? = null
         // Marca no "sistema" o último alarme de cada tarefa. O primeiro rescheduleAll já recebeu o que o
         // catch-up calculou (com a conclusão ainda no banco) e, antes de marcar, o desfazer acontece.
         val racing = object : ReminderScheduler(context) {
@@ -653,11 +673,50 @@ class TaskRepositoryTest {
         val logId = repo.logCompletion(task.id, completedAt = at(day, 7))
         assertEquals(at(day.plusDays(1), 10), marked[task.id])
 
-        undoInTheMiddle = { kotlinx.coroutines.runBlocking { repo.undoCompletion(logId) } }
+        // O desfazer entra em paralelo no meio do reagendamento (com a trava, espera ele terminar; um
+        // runBlocking aqui travaria, porque esta thread segura a trava).
+        undoInTheMiddle = { undoJob = kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch { repo.undoCompletion(logId) } }
         repo.rescheduleReminders(System.currentTimeMillis())
+        undoJob!!.join()
 
         assertNull(db.completionLogDao().byId(logId))
         assertEquals("desfeita, a ocorrência do dia volta a ter alarme", at(day, 10), marked[task.id])
+    }
+
+
+    // --- NB-E1-B: concluir e desfazer concorrendo com o reagendamento geral, nas duas ordens ---
+
+    private class MarkingScheduler(context: Context) : ReminderScheduler(context) {
+        val marked = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+        override fun schedule(task: com.kalendrys.app.data.local.entity.Task, triggerAt: Long) {
+            marked[task.id] = triggerAt
+        }
+        override fun cancel(taskId: Long) {
+            marked.remove(taskId)
+        }
+        override fun dismissNotification(taskId: Long) = Unit
+    }
+
+    @Test
+    fun `concluir e desfazer concorrendo com o catch-up terminam no alarme certo nas duas ordens`() = runTest {
+        val racing = MarkingScheduler(ApplicationProvider.getApplicationContext())
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao())
+        val day = LocalDate.now().plusDays(2)
+        val task = repo.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
+        repeat(25) { round ->
+            // Ordem alternada: ora o catch-up é disparado antes, ora a gravação.
+            suspend fun race(write: suspend () -> Unit) {
+                val catchUp = suspend { repo.rescheduleReminders(System.currentTimeMillis()) }
+                val first = if (round % 2 == 0) catchUp else write
+                val second = if (round % 2 == 0) write else catchUp
+                listOf(async(Dispatchers.Default) { first() }, async(Dispatchers.Default) { second() }).awaitAll()
+            }
+            var logId = 0L
+            race { logId = repo.logCompletion(task.id, completedAt = at(day, 7)) }
+            assertEquals("rodada $round: concluída, vale o dia seguinte", at(day.plusDays(1), 10), racing.marked[task.id])
+            race { repo.undoCompletion(logId) }
+            assertEquals("rodada $round: desfeita, volta o dia", at(day, 10), racing.marked[task.id])
+        }
     }
 
     // --- E1: editar e restaurar (excluída com Desfazer) também pulam a ocorrência já concluída ---

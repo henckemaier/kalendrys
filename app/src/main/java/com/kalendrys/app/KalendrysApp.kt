@@ -122,8 +122,8 @@ class KalendrysApp : Application() {
     /** Rascunho único do painel de nova tarefa (Tarefas e Calendário), só em memória (v1.7.1). */
     val newTaskDraftStore: NewTaskDraftStore by lazy { NewTaskDraftStore() }
 
-    /** Desfazer da exclusão pelo detalhe, mostrado na tela de origem; só em memória (v1.8.0, E0-D). */
-    val taskUndoOffers: TaskUndoOffers by lazy { TaskUndoOffers(repository, appScope) }
+    /** Desfazer das exclusões que fecham a tela (tarefa e rotina), na origem; só em memória (E0-D, P8). */
+    val undoOffers: UndoOffers by lazy { UndoOffers(repository, routineRepository, appScope) }
 
     /**
      * Backup/restauro completo. Depois de restaurar (substitui tudo), reagenda os alarmes e

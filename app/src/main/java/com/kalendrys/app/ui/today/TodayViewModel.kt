@@ -1,4 +1,4 @@
-package com.kalendrys.app.ui.routines
+package com.kalendrys.app.ui.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -7,23 +7,26 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.NewTaskDraft
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.visibleProgressFor
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.DayOfWeek
@@ -45,12 +48,19 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class RoutinesViewModel(
+/**
+ * Estado da tela Hoje (ADR-0002, 14.4; v1.8.0, E2). Veio do antigo `RoutinesViewModel` com a mesma
+ * lógica; o filtro por categoria saiu (vai para "Todas as rotinas") e entrou o painel de nova tarefa
+ * do botão +, no mesmo molde do Calendário ([draftStore] é o rascunho único do app).
+ */
+class TodayViewModel(
     private val repository: RoutineRepository,
     private val taskRepository: TaskRepository,
-    private val categoryRepository: RoutineCategoryRepository,
     private val firstDayOfWeek: DayOfWeek,
     private val shoppingRepository: ShoppingRepository,
+    private val draftStore: NewTaskDraftStore,
+    /** Fonte única das pendências de hoje (E3): o mesmo retrato do widget Resumo e do resumo diário. */
+    private val todayRepository: TodayRepository,
 ) : ViewModel() {
 
     /** Um ponto na faixa da semana: a cor do bloco e se ele foi feito. */
@@ -58,7 +68,7 @@ class RoutinesViewModel(
 
     data class WeekDay(val date: LocalDate, val dots: List<DayDot>, val total: Int, val done: Int)
 
-    /** Uma tarefa do dia sem horário, para a faixa colapsável no topo. */
+    /** Uma tarefa de uma das seções (fora da trilha), com o estado de feita no dia mostrado. */
     data class DayTask(val task: Task, val done: Boolean)
 
     data class UiState(
@@ -67,14 +77,27 @@ class RoutinesViewModel(
         val selectedDate: LocalDate = LocalDate.now(),
         val week: List<WeekDay> = emptyList(),
         val timeline: List<DayTimeline.Item> = emptyList(),
-        /** Tarefas do dia sem horário; mostradas numa faixa, fora da trilha. */
-        val untimedTasks: List<DayTask> = emptyList(),
-        /** Alguma rotina ativa ou tarefa com data; sem nada a tela mostra o estado vazio. */
+        /**
+         * O retrato de hoje ([TodayOverview], o mesmo do widget Resumo), só quando o dia mostrado é
+         * hoje: progresso, próximo item e as pendências das seções saem dele, sem recalcular na tela.
+         */
+        val overview: TodayOverview? = null,
+        /** Pendentes atrasadas (só hoje; do [overview]). */
+        val overdueTasks: List<DayTask> = emptyList(),
+        /**
+         * Pendentes do dia SEM horário (as com horário ficam só na trilha). Hoje: do [overview]; em
+         * outro dia: as tarefas daquele dia ainda não feitas nele.
+         */
+        val dayTasks: List<DayTask> = emptyList(),
+        /** Pendentes sem data (só hoje; do [overview]); seção recolhida. */
+        val noDateTasks: List<DayTask> = emptyList(),
+        /**
+         * Concluídas no dia mostrado (pela data do REGISTRO), fora as já riscadas na trilha; cada uma
+         * pode ser desmarcada. Tarefa excluída não entra. Seção recolhida.
+         */
+        val completedTasks: List<DayTask> = emptyList(),
+        /** Alguma rotina ativa ou tarefa; sem nada a tela mostra o estado vazio (o primeiro uso). */
         val hasContent: Boolean = false,
-        /** Categorias existentes, para os chips de filtro (vazio = tela não mostra o filtro). */
-        val categories: List<RoutineCategory> = emptyList(),
-        /** Categoria do filtro ativo, ou null para "todas". */
-        val selectedCategoryId: Long? = null,
         /** Progresso de cada lista de compras (listId → 3/8), para blocos e tarefas da trilha (P8). */
         val listProgress: Map<Long, ShoppingProgress> = emptyMap(),
     ) {
@@ -85,13 +108,18 @@ class RoutinesViewModel(
 
         /** Dias futuros ainda não podem ser marcados como feitos. */
         val canComplete: Boolean get() = !selectedDate.isAfter(today)
+
+        /** Feitos hoje (tarefas e blocos), pelos números do [overview]. */
+        val doneToday: Int? get() = overview?.let { it.doneCount + it.routines.count { block -> block.done } }
+
+        /** Pendentes hoje (tarefas e blocos): o mesmo número do widget Resumo ([TodayOverview.pendingCount]). */
+        val pendingToday: Int? get() = overview?.pendingCount
     }
 
     /** Conclusão de rotina que o snackbar oferece desfazer. */
     data class Completed(val routineId: Long, val date: LocalDate)
 
     private val selectedDate = MutableStateFlow(LocalDate.now())
-    private val selectedCategoryId = MutableStateFlow<Long?>(null)
 
     /** Última leitura das conclusões de tarefa da semana visível, para desfazer pela trilha. */
     @Volatile
@@ -119,18 +147,15 @@ class RoutinesViewModel(
             ) { all, scheduled, overrides -> Triple(all, scheduled, overrides) },
             taskRepository.tasks,
             weekCompletions,
-            categoryRepository.categories,
-            combine(selectedDate, selectedCategoryId) { date, category -> date to category },
-        ) { sources, tasks, weekLogs, categories, selection ->
+            selectedDate,
+            todayRepository.observe(),
+        ) { sources, tasks, weekLogs, selected, todayOverview ->
             val (routines, scheduled, overrides) = sources
             val (weekStart, routineDone, taskCompletions) = weekLogs
-            val (selected, rawCategory) = selection
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
             if (selected.isBefore(weekStart) || !selected.isBefore(weekStart.plusDays(DAYS_IN_WEEK))) {
                 return@combine null
             }
-            // Se a categoria do filtro foi excluída, volta sozinho para "todas".
-            val category = rawCategory?.takeIf { id -> categories.any { it.id == id } }
             taskLogs = taskCompletions
             val zone = ZoneId.systemDefault()
             val taskDoneByDay = taskCompletions
@@ -138,29 +163,59 @@ class RoutinesViewModel(
                 .mapValues { (_, ids) -> ids.toSet() }
             val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
             val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
-            // Base da trilha = só as rotinas AGENDADAS (não pausadas); o filtro de categoria, quando
-            // ativo, restringe mais ainda. As tarefas (sem categoria) saem com filtro ativo.
-            val visibleRoutines =
-                if (category == null) scheduled else scheduled.filter { it.categoryId == category }
-            val visibleTasks = if (category == null) tasks else emptyList()
+            val today = LocalDate.now()
+            // Pulados ficam visíveis, marcados (P5): a tela os esmaece com a ação de desfazer.
+            val timeline = DayTimeline.build(
+                scheduled,
+                routineDoneToday,
+                selected,
+                zone,
+                tasks,
+                taskDoneToday,
+                overrides,
+                includeSkipped = true,
+            )
+            val byId = tasks.associateBy { it.id }
+            // Só hoje, e só o retrato do mesmo dia (na virada da meia-noite os dois andam separados por um instante).
+            val overview = todayOverview.takeIf { selected == today && it.date == selected }
+            val sections = if (overview != null) {
+                pendingSections(overview, byId)
+            } else {
+                PendingSections(
+                    day = tasks
+                        .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) && it.id !in taskDoneToday }
+                        .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
+                        .map { DayTask(it, done = false) },
+                )
+            }
+            // Concluídas pela data do REGISTRO no dia mostrado; as já riscadas na trilha não se repetem.
+            val struckInTrail = timeline
+                .filterIsInstance<DayTimeline.TaskItem>()
+                .filter { it.done }
+                .mapTo(HashSet()) { it.task.id }
             UiState(
                 isLoaded = true,
-                today = LocalDate.now(),
+                today = today,
                 selectedDate = selected,
-                // Pausada não entra na trilha nem nos dots; continua no calendário (gestão) para retomar.
+                // Base da trilha = só as rotinas AGENDADAS (não pausadas). Pausada não entra na trilha
+                // nem nos dots; continua em "Todas as rotinas" (gestão) para retomar.
                 week = (0 until DAYS_IN_WEEK).map { offset ->
                     val date = weekStart.plusDays(offset)
-                    weekDay(date, visibleRoutines, routineDone[date.toEpochDay()].orEmpty(), zone, overrides)
+                    weekDay(date, scheduled, routineDone[date.toEpochDay()].orEmpty(), zone, overrides)
                 },
-                timeline = DayTimeline.build(visibleRoutines, routineDoneToday, selected, zone, visibleTasks, taskDoneToday, overrides),
-                untimedTasks = visibleTasks
-                    .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
+                timeline = timeline,
+                overview = overview,
+                overdueTasks = sections.overdue,
+                dayTasks = sections.day,
+                noDateTasks = sections.noDate,
+                completedTasks = taskDoneToday
+                    .filter { it !in struckInTrail }
+                    .mapNotNull(byId::get)
                     .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
-                    .map { DayTask(it, it.id in taskDoneToday) },
-                // O estado vazio olha TODAS as rotinas (inclusive pausadas): ter uma pausada não é "sem rotinas".
-                hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
-                categories = categories,
-                selectedCategoryId = category,
+                    .map { DayTask(it, done = true) },
+                // O estado vazio olha TODAS as rotinas (inclusive pausadas: ter uma pausada não é "sem
+                // rotinas") e qualquer tarefa (as sem data agora têm seção na Hoje).
+                hasContent = routines.any { it.archivedAt == null } || tasks.isNotEmpty(),
             )
         }.filterNotNull()
 
@@ -173,9 +228,62 @@ class RoutinesViewModel(
     private val completedEvents = Channel<Completed>(Channel.BUFFERED)
     val completed: Flow<Completed> = completedEvents.receiveAsFlow()
 
+    /**
+     * Ocorrência pulada que o snackbar oferece desfazer (P5). [previous]: a exceção que o pular
+     * substituiu naquele dia (ex.: uma remarcação), `null` se não havia; o [undoSkip] a recoloca.
+     */
+    data class Skipped(val routineId: Long, val date: LocalDate, val previous: RoutineOverride? = null)
+
+    private val skippedEvents = Channel<Skipped>(Channel.BUFFERED)
+    val skipped: Flow<Skipped> = skippedEvents.receiveAsFlow()
+
     /** Conclusão de tarefa (id do log) que o snackbar oferece desfazer. */
     private val taskCompletedEvents = Channel<Long>(Channel.BUFFERED)
     val taskCompleted: Flow<Long> = taskCompletedEvents.receiveAsFlow()
+
+    // --- Painel de nova tarefa (botão +, P4): mesmo molde do Calendário ------------------------------
+
+    /** Listas para o "Usar lista existente" do painel de nova tarefa. */
+    val lists: StateFlow<List<ShoppingListSummary>> =
+        shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Rascunho único do painel de nova tarefa (compartilhado com Tarefas e Calendário); null = sem rascunho. */
+    val newTaskDraft: StateFlow<NewTaskDraft?> = draftStore.draft
+
+    init {
+        // Lista escolhida no rascunho e excluída no meio some da escolha. O Flow do Room só emite a
+        // lista de verdade (nunca um vazio provisório), então não apaga uma escolha válida.
+        viewModelScope.launch {
+            shoppingRepository.observeSummaries().collect { lists -> draftStore.keepListsIn(lists.mapTo(HashSet()) { it.id }) }
+        }
+    }
+
+    /** O painel abriu sugerindo [date] (o dia selecionado); a data do rascunho só muda se o usuário ainda não a escolheu. */
+    fun openNewTask(date: LocalDate?) = draftStore.open(date)
+
+    fun updateNewTask(transform: (NewTaskDraft) -> NewTaskDraft) = draftStore.update(transform)
+
+    /** Cancelar: descarta o rascunho. */
+    fun cancelNewTask() {
+        draftStore.discard()
+    }
+
+    /** Salvar: grava a tarefa do rascunho e o descarta. "Criar nova" cria a lista só ao salvar (ADR-0001, P2). */
+    fun saveNewTask() {
+        val draft = draftStore.discard() ?: return
+        if (draft.title.isBlank()) return
+        viewModelScope.launch {
+            taskRepository.addTask(
+                draft.title,
+                draft.notes,
+                draft.timing,
+                draft.location,
+                shoppingListId = shoppingRepository.resolveListId(draft.list),
+            )
+        }
+    }
+
+    // --- Dia e trilha ------------------------------------------------------------------------------
 
     private fun List<RoutineCompletion>.groupLogs(): Map<Long, Set<Long>> =
         groupBy({ it.epochDay }, { it.routineId }).mapValues { (_, ids) -> ids.toSet() }
@@ -208,15 +316,11 @@ class RoutinesViewModel(
 
     fun nextWeek() = select(selectedDate.value.plusWeeks(1))
 
-    /** Filtra a trilha por categoria; null mostra todas (rotinas + tarefas). */
-    fun selectCategory(categoryId: Long?) {
-        selectedCategoryId.value = categoryId
-    }
-
     /** Marca como feito (com "Desfazer" no snackbar) ou, se já estava feito, desmarca. */
     fun toggle(block: DayTimeline.Block) {
         val date = selectedDate.value
-        if (date.isAfter(LocalDate.now())) return
+        // Pulado não se conclui: primeiro desfaz o pular.
+        if (block.skipped || date.isAfter(LocalDate.now())) return
         viewModelScope.launch {
             if (block.done) {
                 repository.uncomplete(block.routine.id, date)
@@ -229,6 +333,33 @@ class RoutinesViewModel(
 
     fun undo(completed: Completed) {
         viewModelScope.launch { repository.uncomplete(completed.routineId, completed.date) }
+    }
+
+    /**
+     * Pular a ocorrência de [routineId] em [date] (P5): o MESMO [RoutineRepository.skipOccurrence] da
+     * tela de exceção (reagenda os alarmes), e avisa a tela para oferecer Desfazer ([skipped]), com a
+     * exceção que o pular substituiu. O bloco continua na trilha, marcado ([DayTimeline.Block.skipped]).
+     */
+    fun skip(routineId: Long, date: LocalDate) {
+        viewModelScope.launch {
+            val previous = repository.skipOccurrence(routineId, date.toEpochDay())
+            skippedEvents.send(Skipped(routineId, date, previous))
+        }
+    }
+
+    /**
+     * Desfazer da MENSAGEM, logo depois de pular: devolve o dia ao que era antes — tira o pular e
+     * recoloca a exceção anterior ([Skipped.previous], ex.: uma remarcação).
+     */
+    fun undoSkip(event: Skipped) {
+        viewModelScope.launch {
+            repository.restoreOccurrenceException(event.routineId, event.date.toEpochDay(), event.previous)
+        }
+    }
+
+    /** "Desfazer pular" do BLOCO esmaecido, a qualquer momento: só tira o pular (a exceção do dia). */
+    fun unskip(routineId: Long, date: LocalDate) {
+        viewModelScope.launch { repository.clearOccurrenceException(routineId, date.toEpochDay()) }
     }
 
     /**
@@ -269,6 +400,27 @@ class RoutinesViewModel(
     private fun epochDayOf(epochMillis: Long, zone: ZoneId): Long =
         Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate().toEpochDay()
 
+    /** As pendências de uma data, por seção. */
+    private data class PendingSections(
+        val overdue: List<DayTask> = emptyList(),
+        val day: List<DayTask> = emptyList(),
+        val noDate: List<DayTask> = emptyList(),
+    )
+
+    /**
+     * Divide as pendentes do [overview] (fonte única, a do widget) nas seções da Hoje, na ordem dele:
+     * atrasadas, de hoje SEM lembrete hoje e sem data. As com lembrete hoje ficam só na trilha. Uma
+     * pendente cuja tarefa não está mais na lista (excluída no instante) é pulada.
+     */
+    private fun pendingSections(overview: TodayOverview, byId: Map<Long, Task>): PendingSections {
+        fun List<TodayOverview.PendingTask>.rows() = mapNotNull { byId[it.taskId] }.map { DayTask(it, done = false) }
+        return PendingSections(
+            overdue = overview.pending.filter { it.overdue }.rows(),
+            day = overview.pending.filter { it.dated && !it.overdue && it.reminderToday == null }.rows(),
+            noDate = overview.pending.filter { !it.dated }.rows(),
+        )
+    }
+
     /** Só para desestruturar o resultado da consulta da semana. */
     private data class WeekLogs(
         val weekStart: LocalDate,
@@ -283,12 +435,13 @@ class RoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                RoutinesViewModel(
+                TodayViewModel(
                     app.routineRepository,
                     app.repository,
-                    app.routineCategoryRepository,
                     firstDayOfWeek(),
                     app.shoppingRepository,
+                    app.newTaskDraftStore,
+                    app.todayRepository,
                 )
             }
         }

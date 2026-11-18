@@ -103,6 +103,17 @@ class RoutineRepository(
     }
 
     /**
+     * Desfaz o [archive] (Desfazer de "Todas as rotinas", v1.8.0, E2): a rotina volta como está no
+     * banco, só sem a data de arquivamento, e os alarmes são refeitos pelo mesmo [change]. O
+     * catch-up antes de gravar impede que devolver às 9:20 o bloco das 9:00 o avise. O aviso que o
+     * arquivamento tirou da tela não volta. Rotina inexistente ou já ativa: nada muda.
+     */
+    suspend fun unarchive(routineId: Long): Unit = change {
+        val current = routineDao.byId(routineId) ?: return@change
+        if (current.archivedAt != null) routineDao.update(current.copy(archivedAt = null))
+    }
+
+    /**
      * "Pausar": a rotina para de agendar e avisar, mas a configuração e o histórico ficam
      * intactos. Distinta de arquivar (excluir): dá pra retomar depois. Reagenda sem ela e tira
      * da tela qualquer aviso já mostrado.
@@ -179,10 +190,34 @@ class RoutineRepository(
     suspend fun occurrenceOverride(routineId: Long, epochDay: Long): RoutineOverride? =
         overrideDao.all().firstOrNull { it.routineId == routineId && it.epochDay == epochDay }
 
-    /** Pular a ocorrência daquele dia: a rotina não acontece ali, mas continua ativa. */
-    suspend fun skipOccurrence(routineId: Long, epochDay: Long): Unit = change {
+    /**
+     * Pular a ocorrência daquele dia: a rotina não acontece ali, mas continua ativa. Uma exceção por
+     * dia (índice único): o `SKIP` substitui a que houver. Devolve a exceção ANTERIOR do dia (ex.: uma
+     * remarcação; `null` se não havia), lida no mesmo [change], para o Desfazer da mensagem recolocá-la
+     * ([restoreOccurrenceException]). Mesmo caminho para a tela de exceção, a notificação e a Hoje.
+     */
+    suspend fun skipOccurrence(routineId: Long, epochDay: Long): RoutineOverride? = change {
+        val previous = occurrenceOverride(routineId, epochDay)
         overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP))
         if (epochDay == LocalDate.now().toEpochDay()) notifications.cancel(routineId)
+        previous?.takeUnless { it.type == RoutineOverrideType.SKIP }
+    }
+
+    /**
+     * Desfazer da mensagem logo depois de pular (P5): devolve o dia ao que era ANTES do [skipOccurrence]
+     * — tira o `SKIP` e recoloca [previous] (a exceção que ele substituiu; `null` = nenhuma). Só age se
+     * o dia ainda está pulado: se outra alteração veio no meio, ela vence e nada muda. O "Desfazer
+     * pular" do bloco, mais tarde, é o [clearOccurrenceException] (só tira o pular).
+     */
+    suspend fun restoreOccurrenceException(routineId: Long, epochDay: Long, previous: RoutineOverride?): Unit = change {
+        val current = occurrenceOverride(routineId, epochDay)
+        if (current?.type != RoutineOverrideType.SKIP) return@change
+        if (previous != null && previous.routineId == routineId && previous.epochDay == epochDay) {
+            // Mesmo dia (índice único): substitui o SKIP pela anterior, com o id dela.
+            overrideDao.insert(previous)
+        } else {
+            overrideDao.delete(current)
+        }
     }
 
     /** Remarcar a ocorrência daquele dia para outro minuto e/ou outro dia. */

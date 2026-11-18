@@ -25,21 +25,17 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
-import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
-import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
-import com.kalendrys.app.ui.routines.RoutinesScreen
-import com.kalendrys.app.ui.routines.RoutinesViewModel
 import com.kalendrys.app.ui.tasks.TaskListScreen
 import com.kalendrys.app.ui.tasks.TaskViewModel
 import com.kalendrys.app.ui.theme.KalendrysTheme
+import com.kalendrys.app.ui.today.TodayScreen
+import com.kalendrys.app.ui.today.TodayViewModel
 import java.time.DayOfWeek
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -111,25 +107,8 @@ class ShoppingProgressTagFitTest {
         TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
     }
 
-    private fun routinesViewModel(): RoutinesViewModel = testDb.db.let { db ->
-        testDb.track(
-            RoutinesViewModel(
-                RoutineRepository(
-                    db.routineDao(),
-                    db.routineCompletionDao(),
-                    db.routineOverrideDao(),
-                    FakeRoutineAlarms(context),
-                    FakeRoutineNotifications(context),
-                    db.shoppingItemDao(),
-                    InMemoryRoutineCatchUpMark(),
-                ),
-                taskRepository(),
-                RoutineCategoryRepository(db),
-                DayOfWeek.SUNDAY,
-                ShoppingRepository(db),
-            ),
-        )
-    }
+    private fun routinesViewModel(): TodayViewModel =
+        testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
         testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), NewTaskDraftStore()))
@@ -174,9 +153,11 @@ class ShoppingProgressTagFitTest {
     fun `aba Rotinas mostra 2 de 3 inteiro com fonte 1_0, 1_3 e 2_0`() {
         val viewModel = routinesViewModel()
         showAtEachScale("Rotinas") {
-            RoutinesScreen(
+            TodayScreen(
                 onOpenRoutine = {},
                 onNewRoutine = {},
+
+                onOpenAllRoutines = {},
                 onOpenSettings = {},
                 onOpenTask = {},
                 onOpenException = { _, _ -> },

@@ -9,13 +9,19 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.TaskUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.testutil.FakeRoutineAlarms
+import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -32,7 +38,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,19 +46,22 @@ import org.robolectric.annotation.Config
 
 /**
  * Validade da oferta de Desfazer (A1 da revisão do NB-4) quando o app vai para o fundo SEM recriar a
- * tela (Home, tela apagada): o coletor continua vivo, preso na mensagem, e a tela de origem para de
- * desenhá-la (só a tela RESUMED desenha). Ao voltar, a mensagem reaparece com o tempo cheio.
+ * tela (Home, tela apagada): a tela de origem para de desenhar a mensagem (só a tela RESUMED desenha)
+ * e o coletor, que segue o mesmo ciclo de vida (o da Activity, no NavHost), para de esperar sem limpar
+ * a oferta (A1 do Esquadro). Ao voltar, confere o prazo pelo relógio de parede: dentro dele a mensagem
+ * reaparece com o tempo cheio; vencido, é limpa sem mostrar.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w360dp-h800dp-port")
-class TaskUndoOfferBackgroundTest {
+class UndoOfferBackgroundTest {
 
     @get:Rule
     val compose = createComposeRule()
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var repository: TaskRepository
-    private lateinit var offers: TaskUndoOffers
+    private lateinit var routines: RoutineRepository
+    private lateinit var offers: UndoOffers
     private var now = 0L
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -69,17 +77,29 @@ class TaskUndoOfferBackgroundTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        offers = TaskUndoOffers(repository, appScope) { now }
+        routines = RoutineRepository(
+            db.routineDao(),
+            db.routineCompletionDao(),
+            db.routineOverrideDao(),
+            FakeRoutineAlarms(context),
+            FakeRoutineNotifications(context),
+            db.shoppingItemDao(),
+            InMemoryRoutineCatchUpMark(),
+        )
+        offers = UndoOffers(repository, routines, appScope) { now }
         screen.registry.currentState = Lifecycle.State.RESUMED
         compose.setContent {
             KalendrysTheme {
-                // Como o KalendrysNavHost: o coletor fica fora da tela; a tela de origem desenha.
+                // Como o KalendrysNavHost: o coletor fica fora da tela; a tela de origem desenha. Os dois
+                // seguem o mesmo ciclo de vida (no app, o da Activity; a entrada da navegação o acompanha).
                 val app = remember { SnackbarHostState() }
-                TaskUndoOfferEffect(offers, app)
                 CompositionLocalProvider(
                     LocalAppSnackbarHostState provides app,
                     LocalLifecycleOwner provides screen,
-                ) { AppScaffold {} }
+                ) {
+                    UndoOfferEffect(offers, app)
+                    AppScaffold {}
+                }
             }
         }
         compose.mainClock.autoAdvance = false
@@ -112,11 +132,10 @@ class TaskUndoOfferBackgroundTest {
         task
     }
 
-    @Ignore("Achado da E1 (v1.8.0): a validade so e conferida antes de mostrar; remover o @Ignore com a correcao")
     @Test
     fun `sair pelo Home com a mensagem na tela e voltar depois do prazo nao oferece Desfazer`() {
         val task = deleted("Pagar conta")
-        offers.offer(task)
+        offers.offer(UndoTarget.DeletedTask(task))
         advance()
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
 
@@ -134,7 +153,7 @@ class TaskUndoOfferBackgroundTest {
     @Test
     fun `sair pelo Home e voltar dentro do prazo ainda mostra a mensagem`() {
         val task = deleted("Pagar conta")
-        offers.offer(task)
+        offers.offer(UndoTarget.DeletedTask(task))
         advance()
 
         lifecycle(Lifecycle.State.CREATED)
@@ -142,6 +161,65 @@ class TaskUndoOfferBackgroundTest {
         lifecycle(Lifecycle.State.RESUMED)
 
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
-        assertEquals(task, offers.pending.value?.task)
+        assertEquals(task, (offers.pending.value?.target as? UndoTarget.DeletedTask)?.task)
+    }
+
+    @Test
+    fun `tela apagada horas com o relogio acordado parado - ao voltar nao mostra e limpa`() {
+        val task = deleted("Pagar conta")
+        offers.offer(UndoTarget.DeletedTask(task))
+        advance()
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+
+        // Tela apagada: o tempo acordado (o do Compose) quase não anda, o de parede anda 3 h.
+        lifecycle(Lifecycle.State.CREATED)
+        assertEquals("sair da frente não limpa a oferta", task, (offers.pending.value?.target as? UndoTarget.DeletedTask)?.task)
+        now += 3 * 60 * 60 * 1_000L
+        lifecycle(Lifecycle.State.RESUMED)
+
+        assertEquals("vencida pelo relógio de parede, não reaparece", 0, shown())
+        assertNull("e é limpa ao voltar", offers.pending.value)
+        assertNull("sem Desfazer a tarefa continua excluída", runBlocking { testDb.db.taskDao().byId(task.id) })
+    }
+
+    @Test
+    fun `fora da frente a espera para sem limpar e dentro do prazo mostra de novo com Desfazer`() {
+        val task = deleted("Pagar conta")
+        offers.offer(UndoTarget.DeletedTask(task))
+        advance()
+
+        lifecycle(Lifecycle.State.CREATED)
+        // Fora da frente, mesmo passando os 10 s da mensagem longa, nada termina a oferta.
+        advance(15_000)
+        assertEquals(task, (offers.pending.value?.target as? UndoTarget.DeletedTask)?.task)
+        now += 20_000
+        lifecycle(Lifecycle.State.RESUMED)
+
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        compose.onNodeWithText("Desfazer").performClick()
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
+            runBlocking { testDb.db.taskDao().byId(task.id) } != null
+        }
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `oferta feita com a Activity fora da frente aparece ao voltar dentro do prazo`() {
+        // Excluir e apertar Home no mesmo instante: a oferta chega com o coletor já parado.
+        lifecycle(Lifecycle.State.CREATED)
+        val task = deleted("Pagar conta")
+        offers.offer(UndoTarget.DeletedTask(task))
+        advance(5_000)
+        assertEquals("fora da frente ninguém mostra nem limpa", 0, shown())
+        assertEquals(task, (offers.pending.value?.target as? UndoTarget.DeletedTask)?.task)
+
+        now += 10_000
+        lifecycle(Lifecycle.State.RESUMED)
+
+        // O coletor de dentro nasce com a oferta já pendente e a mostra (dentro dos 30 s).
+        compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
+        assertEquals(task, (offers.pending.value?.target as? UndoTarget.DeletedTask)?.task)
     }
 }
