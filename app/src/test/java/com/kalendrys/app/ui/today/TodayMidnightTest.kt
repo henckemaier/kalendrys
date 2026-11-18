@@ -12,6 +12,8 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -55,13 +57,21 @@ class TodayMidnightTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(): TodayViewModel {
+    /** Relógio de parede para a fonte que só lê a data ao começar (como o currentDate(); O-4). */
+    @Volatile
+    private var wallClockDay = wednesday
+
+    private fun viewModel(readsClock: Boolean = false): TodayViewModel {
         val today = TodayRepository(
             repos.tasks,
             repos.routines,
             repos.shopping,
-            dates = { dates },
-            clock = { dates.value.atTime(10, 0) },
+            dates = if (readsClock) {
+                { flow<LocalDate> { emit(wallClockDay); awaitCancellation() } }
+            } else {
+                { dates }
+            },
+            clock = { (if (readsClock) wallClockDay else dates.value).atTime(10, 0) },
         )
         return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today))
     }
@@ -135,6 +145,36 @@ class TodayMidnightTest {
             awaitState { it.selectedDate == wednesday && it.isShowingToday }
             dates.value = wednesday.plusDays(1)
             awaitState { it.selectedDate == wednesday.plusDays(1) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `acompanhando hoje, relogio trocado com a tela por tras e a volta a frente levam ao dia novo`() = runTest {
+        val vm = viewModel(readsClock = true)
+        vm.uiState.test {
+            awaitState { it.selectedDate == wednesday && it.isShowingToday }
+            // Relógio ou fuso trocado enquanto a Hoje estava por trás; ao voltar (RESUMED) ela relê.
+            wallClockDay = wednesday.plusDays(1)
+            vm.onResumed()
+            val state = awaitState { it.today == wednesday.plusDays(1) && it.overview?.date == wednesday.plusDays(1) }
+            assertEquals(wednesday.plusDays(1), state.selectedDate)
+            assertTrue(state.isShowingToday)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `dia escolhido continua escolhido quando a volta a frente traz outro dia`() = runTest {
+        val vm = viewModel(readsClock = true)
+        vm.uiState.test {
+            awaitState { it.selectedDate == wednesday }
+            vm.select(wednesday.minusDays(1))
+            awaitState { it.selectedDate == wednesday.minusDays(1) }
+            wallClockDay = wednesday.plusDays(1)
+            vm.onResumed()
+            val state = awaitState { it.today == wednesday.plusDays(1) }
+            assertEquals(wednesday.minusDays(1), state.selectedDate)
             cancelAndIgnoreRemainingEvents()
         }
     }

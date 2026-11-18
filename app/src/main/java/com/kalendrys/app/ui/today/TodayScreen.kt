@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
@@ -71,6 +73,8 @@ fun TodayScreen(
     var noDateExpanded by rememberSaveable { mutableStateOf(false) }
     var doneExpanded by rememberSaveable { mutableStateOf(false) }
 
+    // Relógio ou fuso trocado com a Hoje por trás: ao voltar, a data é relida (O-4).
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResumed() }
     LaunchedEffect(requestedDate) {
         if (requestedDate != null) {
             viewModel.select(requestedDate)
