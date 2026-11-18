@@ -16,10 +16,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Único coletor da oferta de Desfazer das exclusões que fecham a tela (tarefa pelo detalhe, v1.8.0
- * E0-D; rotina pelo editor, P8), chamado pelo `KalendrysNavHost`, que fica sempre composto. Enquanto
- * houver oferta pendente, mostra a mensagem do tipo dela ("Tarefa excluída" ou "Rotina excluída") com
- * Desfazer (a mesma [showUndo] do deslize na lista) em [hostState], que o
+ * Único coletor da oferta de Desfazer do app (exclusões que fecham a tela: tarefa pelo detalhe, v1.8.0
+ * E0-D, e rotina pelo editor, P8; excluir e concluir pela lista de Tarefas, E5), chamado pelo
+ * `KalendrysNavHost`, que fica sempre composto. Enquanto houver oferta pendente, mostra a mensagem do
+ * tipo dela ("Tarefa excluída", "Rotina excluída" ou "Tarefa concluída") com Desfazer ([showUndo]) em
+ * [hostState], que o
  * [AppScaffold][com.kalendrys.app.ui.components.AppScaffold] da tela à frente desenha. O coletor só
  * escolhe o texto e chama desfazer ou terminar; quem restaura é o [UndoOffers].
  *
@@ -44,6 +45,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal fun UndoOfferEffect(offers: UndoOffers, hostState: SnackbarHostState) {
     val taskMessage = stringResource(R.string.task_deleted)
     val routineMessage = stringResource(R.string.routine_deleted)
+    val completedMessage = stringResource(R.string.task_completed)
     val undoLabel = stringResource(R.string.undo)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(offers, hostState, lifecycle) {
@@ -64,6 +66,7 @@ internal fun UndoOfferEffect(offers: UndoOffers, hostState: SnackbarHostState) {
                     val message = when (offer.target) {
                         is UndoTarget.DeletedTask -> taskMessage
                         is UndoTarget.DeletedRoutine -> routineMessage
+                        is UndoTarget.CompletedTask -> completedMessage
                     }
                     // null = o prazo acabou com a mensagem na tela: o cancelamento a tira e a oferta é limpa.
                     // Sair da composição ou da frente cancela sem chegar aqui, e a oferta fica pendente.

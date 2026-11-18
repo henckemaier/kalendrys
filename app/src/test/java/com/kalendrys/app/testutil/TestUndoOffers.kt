@@ -22,18 +22,20 @@ fun testRoutineRepository(db: AppDatabase, alarms: FakeRoutineAlarms? = null): R
 }
 
 /**
- * [UndoOffers] de teste sobre o banco de [testDb]: tarefas num [TaskRepository] com agendador falso e
- * rotinas em [routines]. O restauro roda no [ViewModelTestDatabase.appScope], que o
- * [ViewModelTestDatabase.close] espera (ou cancela e espera) ANTES de fechar o banco: nenhum restauro
- * atrasado sobra para bater no banco fechado no teste seguinte.
+ * [UndoOffers] de teste sobre o banco de [testDb]: tarefas em [tasks] (por padrão, um [TaskRepository]
+ * com agendador falso) e rotinas em [routines]. A ação e o restauro rodam no
+ * [ViewModelTestDatabase.appScope], que o [ViewModelTestDatabase.close] espera (ou cancela e espera)
+ * ANTES de fechar o banco: nada atrasado sobra para bater no banco fechado no teste seguinte.
  */
 fun testUndoOffers(
     testDb: ViewModelTestDatabase,
     routines: RoutineRepository = testRoutineRepository(testDb.db),
     clock: () -> Long = { System.currentTimeMillis() },
-): UndoOffers {
+    tasks: TaskRepository = testTaskRepository(testDb.db),
+): UndoOffers = UndoOffers(tasks, routines, testDb.appScope(), clock)
+
+/** [TaskRepository] de teste sobre [db], com agendador falso. */
+fun testTaskRepository(db: AppDatabase): TaskRepository {
     val context = ApplicationProvider.getApplicationContext<Context>()
-    val db = testDb.db
-    val tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-    return UndoOffers(tasks, routines, testDb.appScope(), clock)
+    return TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
 }

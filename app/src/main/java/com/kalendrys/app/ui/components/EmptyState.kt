@@ -40,7 +40,9 @@ import com.kalendrys.app.ui.theme.Spacing
  * juntos (v1.8.0, E3: o vazio da Hoje oferece Nova tarefa e Nova rotina).
  *
  * Centralizado quando cabe; quando não cabe (paisagem, fonte grande), ROLA em vez de cortar: sem
- * isso, em paisagem de 360dp a ação de baixo ficava fora da tela (E3).
+ * isso, em paisagem de 360dp a ação de baixo ficava fora da tela (E3). Como ITEM de uma lista que
+ * rola (altura sem limite, ex.: o vazio da busca de Tarefas, E5), ocupa só a própria altura e quem
+ * rola é a lista.
  */
 @Composable
 fun EmptyState(
@@ -55,7 +57,9 @@ fun EmptyState(
     onSecondaryAction: (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        // Altura mínima = a área toda: o conteúdo fica no centro quando cabe e a rolagem só age quando falta espaço.
+        // Altura mínima = a área toda: o conteúdo fica no centro quando cabe e a rolagem só age quando
+        // falta espaço. Sem limite de altura (item de lista), não há área a preencher nem o que rolar aqui.
+        val bounded = constraints.hasBoundedHeight
         val minHeight = maxHeight
         EmptyStateContent(
             icon = icon,
@@ -66,10 +70,14 @@ fun EmptyState(
             onAction = onAction,
             secondaryActionLabel = secondaryActionLabel,
             onSecondaryAction = onSecondaryAction,
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .heightIn(min = minHeight),
+            modifier = if (bounded) {
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = minHeight)
+            } else {
+                Modifier.fillMaxWidth()
+            },
         )
     }
 }

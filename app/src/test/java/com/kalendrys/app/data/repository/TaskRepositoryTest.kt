@@ -546,17 +546,80 @@ class TaskRepositoryTest {
             timing = TaskTiming(date = LocalDate.now().minusDays(1), time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY),
             shoppingListId = listId,
         )
-        val alarmBefore = repository.nextReminderToDeliver(System.currentTimeMillis())
+        val now = at(LocalDate.now(), 11)
+        val alarmBefore = repository.nextReminderToDeliver(now)
         scheduler.reset()
 
-        val logId = repository.logCompletion(daily.id, completedAt = yesterdayAt(11))
+        // Depois das 10h de hoje: a notificação na tela é a de HOJE, e concluir ontem não a tira (NB-E4-A).
+        val logId = repository.logCompletion(daily.id, completedAt = yesterdayAt(11), now = now)
 
         assertTrue("alarme não mexido", scheduler.scheduled.isEmpty() && scheduler.cancelled.isEmpty())
         assertTrue("notificação da tela não tirada", scheduler.dismissed.isEmpty())
         assertEquals("lista não zerada", listOf(true, true), picked(listId))
         assertEquals(LocalDate.now().minusDays(1), java.time.Instant.ofEpochMilli(db.completionLogDao().byId(logId)!!.completedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
         // A conta do alarme só olha conclusões de hoje em diante: a ocorrência de hoje continua a próxima.
-        assertEquals(alarmBefore, repository.nextReminderToDeliver(System.currentTimeMillis()))
+        assertEquals(alarmBefore, repository.nextReminderToDeliver(now))
+    }
+
+    // --- NB-E4-A: a notificação na tela é a da ÚLTIMA ocorrência que já tocou ---
+
+    private suspend fun dailyAtTen() = repository.addTask(
+        "Remédio",
+        timing = TaskTiming(date = LocalDate.now().minusDays(5), time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY),
+    )
+
+    @Test
+    fun `antes do horario de hoje, concluir ontem tira a notificacao de ontem e o lembrete de hoje continua`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        val now = at(today, 9)
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(today.minusDays(1), 11), now = now)
+
+        assertEquals("a visível era a de ontem: sai", listOf(task.id), scheduler.dismissed)
+        // Caminho completo: o alarme de hoje continua marcado e a ocorrência de hoje continua pendente.
+        assertTrue("alarme não mexido", scheduler.scheduled.isEmpty() && scheduler.cancelled.isEmpty())
+        assertEquals(at(today, 10), repository.nextReminderToDeliver(now))
+        assertTrue(db.completionLogDao().all().none { java.time.Instant.ofEpochMilli(it.completedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == today })
+    }
+
+    @Test
+    fun `depois do horario de hoje, concluir ontem nao tira a notificacao de hoje`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(today.minusDays(1), 11), now = at(today, 11))
+
+        assertTrue(scheduler.dismissed.isEmpty())
+    }
+
+    @Test
+    fun `antes do horario de hoje, concluir anteontem nao tira a notificacao de ontem`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(today.minusDays(2), 11), now = at(today, 9))
+
+        assertTrue(scheduler.dismissed.isEmpty())
+        assertEquals(at(today, 10), repository.nextReminderToDeliver(at(today, 9)))
+    }
+
+    @Test
+    fun `retroativa sem ocorrencia na janela nao tira a notificacao`() = runTest {
+        // Repetida que começa hoje às 10h, concluída por ontem antes do horário: nada tocou desde ontem.
+        val today = LocalDate.now()
+        val task = repository.addTask(
+            "Nova",
+            timing = TaskTiming(date = today, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY),
+        )
+        scheduler.reset()
+
+        repository.logCompletion(task.id, completedAt = at(today.minusDays(1), 11), now = at(today, 9))
+
+        assertTrue(scheduler.dismissed.isEmpty())
     }
 
     @Test

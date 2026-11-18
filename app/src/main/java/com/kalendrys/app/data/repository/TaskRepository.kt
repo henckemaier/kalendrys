@@ -152,17 +152,25 @@ class TaskRepository(
      * notificação de lembrete já exibida da tarefa some. Tarefa repetida tem o alarme refeito para a
      * próxima ocorrência que será entregue (v1.8.0, E1: concluída hoje, o alarme de hoje sai).
      */
-    suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = alarmLock.withLock {
+    suspend fun logCompletion(
+        taskId: Long,
+        completedAt: Long = System.currentTimeMillis(),
+        now: Long = System.currentTimeMillis(),
+    ): Long = alarmLock.withLock {
         val zone = ZoneId.systemDefault()
         val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate()
         // Conclusão RETROATIVA (num dia anterior a hoje, pela Hoje): não tem efeito de hoje, a mesma regra
         // das rotinas (ShoppingReset.routineResets): não tira a notificação da tela, não zera a lista e
         // não mexe no alarme da próxima ocorrência. Nem conclusão adiantada (v1.8.0, decisão do Esquadro).
-        val retroactive = day.isBefore(LocalDate.now(zone))
+        val retroactive = day.isBefore(Instant.ofEpochMilli(now).atZone(zone).toLocalDate())
         val task = taskDao.byId(taskId)
-        // A notificação do lembrete sai, menos na retroativa de tarefa REPETIDA (a ocorrência de hoje é
-        // outra). A única que encerra não tem ocorrência de hoje: a dela sai (A1 da revisão do Esquadro).
-        if (!retroactive || task?.repeat == ReminderRepeat.NONE) scheduler.dismissNotification(taskId)
+        // A notificação na tela é sempre a da ÚLTIMA ocorrência que já tocou (um id por tarefa). Sai na
+        // conclusão de hoje e na da tarefa única (que encerra; A1 do Esquadro). Na retroativa de REPETIDA,
+        // sai só se o dia concluído é o dia dessa última ocorrência: antes do horário de hoje a visível é a
+        // de ontem, e deixá-la faria o "Concluir" dela gravar hoje e perder o lembrete de hoje (NB-E4-A).
+        val dismiss = !retroactive || task == null || task.repeat == ReminderRepeat.NONE ||
+            ReminderCatchUp.lastOccurrenceSince(task, day, now, zone)?.let { it.day(zone) == day } == true
+        if (dismiss) scheduler.dismissNotification(taskId)
         if (task != null && task.repeat == ReminderRepeat.NONE && isFinished(task)) {
             completionLogDao.latestForTask(taskId)?.let { return@withLock it.id }
         }

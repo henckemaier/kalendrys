@@ -31,6 +31,7 @@ import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.tasks.TaskListScreen
 import com.kalendrys.app.ui.tasks.TaskViewModel
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -111,7 +112,7 @@ class ShoppingProgressTagFitTest {
         testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), NewTaskDraftStore()))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), NewTaskDraftStore(), testUndoOffers(testDb)))
 
     private var fontScale by mutableFloatStateOf(1f)
 
