@@ -34,9 +34,9 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Oferta de Desfazer das exclusões que fecham a tela (v1.8.0: tarefa pelo detalhe, E0-D; rotina pelo
- * editor, P8; estado desde o NB-4): UMA pendente por vez, de qualquer tipo, até terminar; quem
- * restaura é o objeto (tarefa pelo restoreTask, rotina pelo unarchive).
+ * Oferta de Desfazer do app (v1.8.0: tarefa pelo detalhe, E0-D; rotina pelo editor, P8; excluir e
+ * concluir pela lista de Tarefas, E5; estado desde o NB-4): UMA pendente por vez, de qualquer tipo,
+ * até terminar; quem desfaz é o objeto (restoreTask, unarchive ou undoCompletion pelo registro).
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -293,5 +293,59 @@ class UndoOffersTest {
         fromScreenThenClose { offers.undo(routineOffer) }.join()
         assertNull(testDb.db.routineDao().byId(routine.id)!!.archivedAt)
         assertNull(offers.pending.value)
+    }
+
+    // --- E5: concluir pela lista de Tarefas também é uma operação do app ---
+
+    @Test
+    fun `concluir publica a oferta e o Desfazer apaga o registro e deixa a tarefa pendente`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+
+        offers.completeTask(task).join()
+        val offer = offers.pending.value!!
+        val logId = (offer.target as UndoTarget.CompletedTask).logId
+        assertEquals(task.id, testDb.db.completionLogDao().byId(logId)?.taskId)
+
+        offers.undo(offer).join()
+
+        assertNull("registro apagado", testDb.db.completionLogDao().byId(logId))
+        assertTrue("tarefa pendente", repository.observeCompletions(task.id).first().isEmpty())
+        assertEquals(task.id, repository.observeTask(task.id).first()?.id)
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `concluir e fechar a tela na hora ainda conclui e publica a oferta`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+
+        fromScreenThenClose { offers.completeTask(task) }.join()
+
+        val logId = (offers.pending.value?.target as UndoTarget.CompletedTask).logId
+        assertEquals(task.id, testDb.db.completionLogDao().byId(logId)?.taskId)
+    }
+
+    @Test
+    fun `exclusao seguida de conclusao - a segunda substitui e o Desfazer dela desfaz so a conclusao`() = runTest {
+        val offers = offers(this)
+        val deleted = repository.addTask("Excluída")
+        val done = repository.addTask("Concluída")
+
+        offers.deleteTask(deleted).join()
+        val deleteOffer = offers.pending.value!!
+        offers.completeTask(done).join()
+        val completeOffer = offers.pending.value!!
+        assertNotEquals(deleteOffer.id, completeOffer.id)
+        val logId = (completeOffer.target as UndoTarget.CompletedTask).logId
+
+        offers.undo(completeOffer).join()
+
+        assertNull("só a conclusão é desfeita", testDb.db.completionLogDao().byId(logId))
+        assertNull("a excluída continua excluída", repository.observeTask(deleted.id).first())
+        assertNull(offers.pending.value)
+        // A antiga, substituída, terminando depois não faz nada.
+        offers.finish(deleteOffer)
+        assertNull(repository.observeTask(deleted.id).first())
     }
 }

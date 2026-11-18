@@ -36,7 +36,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -75,17 +74,23 @@ import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.plus
-import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
-import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
 
+/**
+ * Lista de Tarefas. O Desfazer de excluir (deslize) e de concluir (círculo) é a oferta do app
+ * ([com.kalendrys.app.UndoOffers], v1.8.0 E5): a tela só pede a ação e a mensagem vem do coletor do
+ * `KalendrysNavHost`, desenhada pelo [AppScaffold]; por isso sobrevive a girar a tela. A tela não tem
+ * mensagem própria.
+ *
+ * Busca e chips são ITENS da lista (E5, 14.6): o campo de busca rolado para fora da tela perde o
+ * foco (o item sai da composição), mas o texto digitado fica, porque mora no ViewModel.
+ */
 @Composable
 fun TaskListScreen(
     onOpenTask: (Long) -> Unit,
@@ -104,22 +109,8 @@ fun TaskListScreen(
             onNewTaskOpened()
         }
     }
-    val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
-
-    val completedMessage = stringResource(R.string.task_completed)
-    val deletedMessage = stringResource(R.string.task_deleted)
-    val undoLabel = stringResource(R.string.undo)
-    LaunchedEffect(viewModel, snackbarHostState) {
-        viewModel.undoable.collectLatest { action ->
-            val message = when (action) {
-                is UndoableAction.Completed -> completedMessage
-                is UndoableAction.Deleted -> deletedMessage
-            }
-            if (snackbarHostState.showUndo(message, undoLabel)) viewModel.undo(action)
-        }
-    }
 
     val settingsLabel = stringResource(R.string.settings_title)
     AppScaffold(
@@ -137,7 +128,6 @@ fun TaskListScreen(
             )
         },
         hasFab = true,
-        snackbarHostState = snackbarHostState,
     ) { padding ->
         when {
             !state.isLoaded -> Unit
@@ -398,7 +388,7 @@ private fun SwipeableTaskRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Só o lado de excluir (deslize para a esquerda), com Desfazer no snackbar, como antes do
+    // Só o lado de excluir (deslize para a esquerda), com o Desfazer do app (E5), como antes do
     // SwipeRow: a linha fica fora da tela até o item sair da lista (removesRow). O tátil é do SwipeRow.
     val deleteAction = SwipeAction(
         label = stringResource(R.string.delete_task),
