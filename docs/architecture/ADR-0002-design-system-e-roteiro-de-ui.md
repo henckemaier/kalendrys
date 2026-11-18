@@ -1147,6 +1147,11 @@ excluída pelo editor. O objeto do app guarda uma oferta por vez, de um dos dois
 que sabe restaurar cada um; o coletor único só escolhe o texto. As demais regras (prazo, tela à
 frente, substituição) são as mesmas para os dois.
 
+**Excluir e oferecer é uma operação só, no escopo do app.** O próprio objeto exclui e publica a
+oferta; a tela só pede e fecha. Com a exclusão no escopo da tela, sair no instante entre excluir
+e oferecer deixava a exclusão sem Desfazer. A exclusão de rotina feita em "Todas as rotinas"
+passa pelo mesmo caminho, e a tela deixa de ter um Desfazer próprio.
+
 **Qual conclusão desfazer:** quando uma tarefa tem mais de uma conclusão no mesmo dia, desmarcar
 desfaz a **mais recente**. Desfazer a mais antiga devolvia a data errada e deixava um registro
 solto.
@@ -1196,6 +1201,10 @@ Detalha a seção 6.
   widget e não podia ser desmarcada. A seção "Hoje" fica só com as pendentes. Os pendentes vêm
   do `TodayOverview`; as concluídas, dos registros do dia. Dois testes de igualdade com o
   widget: pendentes e concluídas.
+- **"Feitas hoje" tem uma definição só:** tarefas que existem e têm registro de conclusão hoje.
+  O `TodayOverview` passa a contar assim, em vez de contar pelo estado da tarefa, que deixava de
+  fora a repetida concluída antes do dia dela e a tarefa reaberta para outra data. Vale para a
+  tela, o widget e o resumo diário.
 - **A tela inteira é uma lista:** a faixa da semana rola junto com o conteúdo. Resolve a
   paisagem pela raiz, sem depender da folga do FAB (12.4, S-1).
 - **Filtro por categoria (P3):** sai da Hoje e vai para "Todas as rotinas".
@@ -1210,6 +1219,13 @@ Detalha a seção 6.
 - **As ações do bloco valem para o dia da ocorrência, não para o dia mostrado.** Um bloco que
   chegou remarcado de outro dia pertence à ocorrência do dia de origem; pular, remarcar e
   desfazer agem nela. O bloco da timeline carrega esse dia, calculado no domínio.
+- **Concluir em dia passado grava no próprio dia** (decisão depois da E3). Antes, concluir uma
+  tarefa pela linha de um dia passado gravava a conclusão com o horário de agora: numa tarefa
+  repetida, isso concluía a ocorrência de hoje e deixava a do dia passado pendente. A conclusão
+  retroativa não tem efeito de hoje: não zera as marcações da lista anexada, não tira a
+  notificação que está na tela e não mexe no alarme da próxima ocorrência. É a regra que as
+  rotinas já seguiam. Exceção: tarefa única que a conclusão encerra tem a notificação retirada
+  mesmo assim, porque ela não tem ocorrência de hoje para preservar.
 - Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua visível, e para o
   leitor de tela concluir é uma ação da linha, com o estado na própria linha (mesmo padrão do
   item de lista, 12.4).
@@ -1218,6 +1234,10 @@ Detalha a seção 6.
   a restauração não acharia o destino.
 - **Título da barra:** na data de hoje, "Hoje"; em outro dia, o dia mostrado, com o botão "Hoje"
   ao lado para voltar.
+- **A Hoje acompanha a virada do dia.** A seleção é "acompanhando hoje" ou um dia escolhido. Em
+  "acompanhando hoje", passada a meia-noite a tela vai para o dia novo sozinha; um dia escolhido
+  que passa a ser o dia de hoje volta a acompanhar. O dia de hoje vem da mesma fonte de datas do
+  `TodayRepository`, não do relógio lido direto no ViewModel.
 - **Estado vazio:** a Hoje é a primeira tela de quem instala; o vazio fala do dia e oferece
   "Nova tarefa" e "Nova rotina". Para isso o `EmptyState` ganhou uma ação secundária opcional e
   passou a rolar quando o conteúdo não cabe, em vez de cortar; vale para todos os vazios.
@@ -1229,8 +1249,12 @@ Detalha a seção 6.
 
 ### 14.5 Timeline (D2)
 
-Faixa de 30 min e títulos longos com fonte 2.0: a altura do bloco sai do conteúdo, nunca de uma
-conta fixa. Teste de medida, como o do seletor de dias (13.2).
+Faixa de 30 min e títulos longos com fonte 2.0: a altura do bloco **nunca é menor que o
+conteúdo**. A duração da rotina dá a altura **mínima** da pílula (bloco mais longo continua mais
+alto, como sempre foi); o título inteiro e os horários podem fazer o bloco passar disso. O que
+sai é a altura fixa pela duração, que cortava o texto. Título sem limite de linhas e horário que
+quebra em vez de virar reticências. Teste de medida, como o do seletor de dias (13.2): sem
+reticências, sem corte na altura e cada linha dentro da caixa do texto.
 
 ### 14.6 Lista de tarefas
 
@@ -1301,6 +1325,9 @@ Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
   como concluída hoje e pendente na data nova ao mesmo tempo; as duas informações estão certas.
 - **Limitação conhecida:** conclusões adiantadas gravadas antes do banco 11 não têm a data e o
   lembrete anteriores; desfazê-las reabre a tarefa na data da conclusão e sem lembrete.
+- **Só registro:** quando a rotina também ocorre normalmente no dia para onde outra ocorrência
+  foi remarcada, as duas aparecem como um bloco só, que pertence à remarcada; pulada a
+  remarcada, a ocorrência própria do dia reaparece no horário normal.
 - **Adiamento no diagnóstico:** continua fora. Exige gravar o adiamento, que é dado novo com
   regras de reinício e de limpeza, para uma janela de 10 minutos. Candidato para a v1.9.0,
   junto com o adiamento que se perde ao reiniciar o aparelho, que é o ganho real.
