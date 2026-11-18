@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
@@ -60,6 +59,8 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class TaskListShellTest {
 
+    private val newTaskRequests = mutableListOf<java.time.LocalDate>()
+
     @get:Rule
     val compose = createComposeRule()
 
@@ -82,7 +83,6 @@ class TaskListShellTest {
             TaskViewModel(
                 repository,
                 ShoppingRepository(db),
-                NewTaskDraftStore(),
                 offers,
             ),
         )
@@ -93,7 +93,7 @@ class TaskListShellTest {
                     val app = remember { SnackbarHostState() }
                     CompositionLocalProvider(LocalAppSnackbarHostState provides app) {
                         UndoOfferEffect(offers, app)
-                        TaskListScreen(onOpenTask = {}, onOpenSettings = {}, viewModel = viewModel)
+                        TaskListScreen(onOpenTask = {}, onOpenSettings = {}, onNewTask = { newTaskRequests += it }, viewModel = viewModel)
                     }
                 }
             }
@@ -166,8 +166,9 @@ class TaskListShellTest {
         compose.onNodeWithContentDescription("Configurações").assertHasClickAction()
         compose.onNodeWithContentDescription("Nova tarefa").performClick()
 
-        // O FAB abre o painel de nova tarefa, como antes.
-        waitForText("Título")
+        // O painel mora no topo da navegação (E6): o FAB só pede, sugerindo hoje.
+        compose.waitForIdle()
+        assertEquals(listOf(java.time.LocalDate.now()), newTaskRequests)
     }
 
     // --- E5 (v1.8.0): Desfazer da lista pela oferta do app ---

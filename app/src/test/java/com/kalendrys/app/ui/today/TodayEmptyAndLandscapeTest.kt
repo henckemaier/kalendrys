@@ -79,6 +79,7 @@ class TodayEmptyAndLandscapeTest {
                         onOpenSettings = {},
                         onOpenTask = {},
                         onOpenException = { _, _ -> },
+                        onNewTask = { calls += "new task $it" },
                         viewModel = viewModel,
                     )
                 }
@@ -119,7 +120,8 @@ class TodayEmptyAndLandscapeTest {
         assertEquals(listOf("new routine"), calls)
 
         compose.onNode(emptyNewTask).performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Título").assertIsDisplayed()
+        // O painel mora no topo da navegação (E6): a tela só pede, com o dia mostrado.
+        assertEquals(listOf("new routine", "new task ${java.time.LocalDate.now()}"), calls)
     }
 
     private fun assertLandscapeShowsAndScrolls(fontScale: Float) {

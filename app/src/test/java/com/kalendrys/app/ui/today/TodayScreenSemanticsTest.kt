@@ -77,6 +77,7 @@ class TodayScreenSemanticsTest {
                     onOpenAllRoutines = { calls += "all routines" },
                     onOpenSettings = {},
                     onOpenTask = { calls += "task $it" },
+                    onNewTask = { calls += "new task $it" },
                     onOpenException = { id, _ -> calls += "exception $id" },
                     viewModel = viewModel,
                 )
@@ -189,12 +190,12 @@ class TodayScreenSemanticsTest {
     }
 
     @Test
-    fun `botao + abre o painel de nova tarefa`() {
-        compose.onAllNodesWithText("Título").assertCountEquals(0)
-
+    fun `botao + pede o painel de nova tarefa com o dia mostrado`() {
         compose.onNodeWithContentDescription("Nova tarefa em ", substring = true).performClick()
 
-        compose.onNodeWithText("Título").assertIsDisplayed()
+        // O painel mora no topo da navegação (E6): a tela só pede.
+        assertEquals(listOf("new task ${java.time.LocalDate.now()}"), calls)
+        compose.onAllNodesWithText("Título").assertCountEquals(0)
     }
 
     @Test

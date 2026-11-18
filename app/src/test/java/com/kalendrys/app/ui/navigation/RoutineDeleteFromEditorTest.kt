@@ -17,7 +17,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
@@ -154,7 +153,6 @@ class RoutineDeleteFromEditorTest {
                     tasks,
                     DayOfWeek.MONDAY,
                     shopping,
-                    NewTaskDraftStore(),
                     TodayRepository(tasks, routines, shopping),
                 )
             },
@@ -180,7 +178,7 @@ class RoutineDeleteFromEditorTest {
 
     @Test
     fun `excluir pelo editor aberto a partir do Calendario mostra a mensagem la e Desfazer devolve`() {
-        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db), NewTaskDraftStore()))
+        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db)))
         deleteFromEditorOver { CalendarScreen(onOpenTask = {}, onOpenRoutine = {}, onOpenSettings = {}, viewModel = calendar) }
     }
 

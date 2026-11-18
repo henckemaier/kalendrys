@@ -7,19 +7,14 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.domain.NewTaskDraft
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskFiltering
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskSchedule.Status
-import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.domain.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
@@ -32,12 +27,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 class TaskViewModel(
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val draftStore: NewTaskDraftStore,
     private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
@@ -130,48 +123,6 @@ class TaskViewModel(
         _filters.update { if (filter in it) it - filter else it + filter }
     }
 
-    /** Listas para o "Usar lista existente" do painel de nova tarefa. */
-    val lists: StateFlow<List<ShoppingListSummary>> =
-        shoppingRepository.observeSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Rascunho único do painel de nova tarefa (compartilhado com o Calendário); null = sem rascunho. */
-    val newTaskDraft: StateFlow<NewTaskDraft?> = draftStore.draft
-
-    init {
-        // Lista escolhida no rascunho e excluída no meio some da escolha. O Flow do Room só emite a
-        // lista de verdade (nunca um vazio provisório), então não apaga uma escolha válida.
-        viewModelScope.launch {
-            shoppingRepository.observeSummaries().collect { lists -> draftStore.keepListsIn(lists.mapTo(HashSet()) { it.id }) }
-        }
-    }
-
-    /** O painel abriu sugerindo [date]; a data do rascunho só muda se o usuário ainda não a escolheu. */
-    fun openNewTask(date: LocalDate?) = draftStore.open(date)
-
-    fun updateNewTask(transform: (NewTaskDraft) -> NewTaskDraft) = draftStore.update(transform)
-
-    /** Cancelar: descarta o rascunho. */
-    fun cancelNewTask() {
-        draftStore.discard()
-    }
-
-    /** Salvar: grava a tarefa do rascunho e o descarta. */
-    fun saveNewTask() {
-        val draft = draftStore.discard() ?: return
-        addTask(draft.title, draft.notes, draft.timing, draft.location, draft.list)
-    }
-
-    /**
-     * Cria a tarefa, já com a lista de compras escolhida no painel ([list]). "Criar nova" cria a
-     * lista aqui, só ao salvar (ADR-0001, P2).
-     */
-    fun addTask(title: String, notes: String, timing: TaskTiming, location: String, list: NewTaskList? = null) {
-        if (title.isBlank()) return
-        viewModelScope.launch {
-            repository.addTask(title, notes, timing, location, shoppingListId = shoppingRepository.resolveListId(list))
-        }
-    }
-
     /**
      * Círculo de concluir: concluir e oferecer o Desfazer é UMA operação do app (E5), no escopo dele,
      * para a mensagem sobreviver a girar a tela; quem mostra é o coletor do `KalendrysNavHost`.
@@ -208,7 +159,7 @@ class TaskViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskViewModel(app.repository, app.shoppingRepository, app.newTaskDraftStore, app.undoOffers)
+                TaskViewModel(app.repository, app.shoppingRepository, app.undoOffers)
             }
         }
     }

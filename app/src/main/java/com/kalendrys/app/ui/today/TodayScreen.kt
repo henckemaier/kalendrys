@@ -33,11 +33,9 @@ import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
-import com.kalendrys.app.ui.tasks.NewTaskSheet
 import com.kalendrys.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.LocalTime
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -59,6 +57,8 @@ fun TodayScreen(
     onOpenSettings: () -> Unit,
     onOpenTask: (Long) -> Unit,
     onOpenException: (routineId: Long, epochDay: Long) -> Unit,
+    /** Pede o painel de nova tarefa (hospedado no topo da navegação, E6) sugerindo o dia mostrado. */
+    onNewTask: (LocalDate) -> Unit = {},
     requestedDate: LocalDate? = null,
     onRequestedDateHandled: () -> Unit = {},
     viewModel: TodayViewModel = viewModel(factory = TodayViewModel.Factory),
@@ -67,8 +67,6 @@ fun TodayScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
-    // Dia sugerido ao painel de nova tarefa; null = painel fechado.
-    var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
     // Seções recolhíveis: fechadas por padrão; aberta/fechada é estado de tela.
     var noDateExpanded by rememberSaveable { mutableStateOf(false) }
     var doneExpanded by rememberSaveable { mutableStateOf(false) }
@@ -106,7 +104,7 @@ fun TodayScreen(
     val allRoutinesLabel = stringResource(R.string.today_all_routines)
     val newRoutineLabel = stringResource(R.string.new_routine)
     val newTaskLabel = stringResource(R.string.new_task)
-    val openNewTask = { newTaskEpochDay = state.selectedDate.toEpochDay() }
+    val openNewTask = { onNewTask(state.selectedDate) }
     AppScaffold(
         topBar = {
             AppTopBar(
@@ -198,30 +196,6 @@ fun TodayScreen(
         }
     }
 
-    newTaskEpochDay?.let { epochDay ->
-        // Rascunho único (o mesmo de Tarefas e do Calendário): a data vira o dia selecionado, a não ser
-        // que o usuário já a tenha escolhido no rascunho.
-        LaunchedEffect(epochDay) { viewModel.openNewTask(LocalDate.ofEpochDay(epochDay)) }
-        val lists by viewModel.lists.collectAsStateWithLifecycle()
-        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
-        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-        draft?.let {
-            NewTaskSheet(
-                draft = it,
-                onChange = viewModel::updateNewTask,
-                onSave = {
-                    viewModel.saveNewTask()
-                    newTaskEpochDay = null
-                },
-                onCancel = {
-                    viewModel.cancelNewTask()
-                    newTaskEpochDay = null
-                },
-                onDismiss = { newTaskEpochDay = null },
-                lists = lists,
-            )
-        }
-    }
 }
 
 /** "Qua, 18 nov": título da barra fora da data de hoje (mesmas tabelas pt-BR dos widgets). */

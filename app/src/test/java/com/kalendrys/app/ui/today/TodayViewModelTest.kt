@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.RoutineRepository
@@ -88,7 +87,6 @@ class TodayViewModelTest {
             taskRepository,
             DayOfWeek.MONDAY,
             shoppingRepository,
-            NewTaskDraftStore(),
             TodayRepository(taskRepository, routineRepository, shoppingRepository),
         ),
     )

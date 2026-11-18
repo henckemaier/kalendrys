@@ -84,18 +84,23 @@ internal fun NewTaskSheet(
         scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
     }
 
-    // Título fixo só em janela de altura normal (L29: rolando, o foco no campo Título o escondia sob
-    // a alça). Em janela baixa (o mesmo corte que recolhe o FAB) ele volta para a área que rola, como
-    // na v1.7.0: fixo, ele tirava a altura que o teclado deixa e o Salvar ficava fora de alcance (O-1).
-    val fixedHeader = !isCompactHeight(windowHeightDp())
-    val header = @Composable { modifier: Modifier ->
-        Text(stringResource(R.string.new_task), style = MaterialTheme.typography.titleLarge, modifier = modifier)
-    }
+    // Altura normal (L29): título fixo no topo, fora da área que rola (rolando, o foco no campo Título
+    // o escondia sob a alça), e Cancelar/Salvar no fim dos campos. Altura COMPACTA (o mesmo corte que
+    // recolhe o FAB; v1.8.0, E6, 14.7, fecha L29 e O-1): título, Cancelar e Salvar numa linha FIXA no
+    // topo e os campos rolam abaixo, então o Salvar fica sempre ao alcance, inclusive com o teclado e
+    // com o último campo focado. O painel é janela própria e cuida do próprio teclado (regra da E3).
+    val compact = isCompactHeight(windowHeightDp())
+    val cancel = { hideThen(onCancel) }
+    val save = { hideThen(onSave) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        if (fixedHeader) {
-            header(
-                Modifier
+        if (compact) {
+            CompactTopRow(canSave = draft.canSave, onCancel = cancel, onSave = save)
+        } else {
+            Text(
+                stringResource(R.string.new_task),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 16.dp),
@@ -109,7 +114,6 @@ internal fun NewTaskSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!fixedHeader) header(Modifier)
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = { value -> onChange { it.copy(title = value) } },
@@ -145,15 +149,17 @@ internal fun NewTaskSheet(
                     onClear = { onChange { it.copy(list = null) } },
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            ) {
-                TextButton(onClick = { hideThen(onCancel) }) {
-                    Text(stringResource(R.string.cancel))
-                }
-                Button(onClick = { hideThen(onSave) }, enabled = draft.canSave) {
-                    Text(stringResource(R.string.save))
+            if (!compact) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    TextButton(onClick = cancel) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(onClick = save, enabled = draft.canSave) {
+                        Text(stringResource(R.string.save))
+                    }
                 }
             }
         }
@@ -174,6 +180,36 @@ internal fun NewTaskSheet(
             },
             onDismiss = { showListPicker = false },
         )
+    }
+}
+
+/**
+ * Linha fixa do painel em altura compacta (E6): título, Cancelar e, por ÚLTIMO, Salvar (regra da barra,
+ * 12.4). Quem cede espaço com fonte grande é o TÍTULO (reticências); os botões ficam com a largura
+ * deles e nunca cortam.
+ */
+@Composable
+private fun CompactTopRow(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 16.dp, bottom = 8.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.new_task),
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onCancel) {
+            Text(stringResource(R.string.cancel), maxLines = 1, softWrap = false)
+        }
+        Button(onClick = onSave, enabled = canSave) {
+            Text(stringResource(R.string.save), maxLines = 1, softWrap = false)
+        }
     }
 }
 

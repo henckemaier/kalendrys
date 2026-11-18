@@ -41,12 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,7 +76,6 @@ import com.kalendrys.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.Dispatchers
 
 /**
  * Lista de Tarefas. O Desfazer de excluir (deslize) e de concluir (círculo) é a oferta do app
@@ -95,20 +90,13 @@ import kotlinx.coroutines.Dispatchers
 fun TaskListScreen(
     onOpenTask: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    openNewTask: Boolean = false,
-    onNewTaskOpened: () -> Unit = {},
+    /** Pede o painel de nova tarefa (hospedado no topo da navegação, E6) sugerindo hoje. */
+    onNewTask: (LocalDate) -> Unit = {},
     viewModel: TaskViewModel = viewModel(factory = TaskViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filters by viewModel.filters.collectAsStateWithLifecycle()
-    var showNewTask by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(openNewTask) {
-        if (openNewTask) {
-            showNewTask = true
-            onNewTaskOpened()
-        }
-    }
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
 
@@ -124,7 +112,7 @@ fun TaskListScreen(
             CollapsingFab(
                 text = stringResource(R.string.new_task),
                 expanded = fabExpanded,
-                onClick = { showNewTask = true },
+                onClick = { onNewTask(LocalDate.now()) },
             )
         },
         hasFab = true,
@@ -137,7 +125,7 @@ fun TaskListScreen(
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
                 actionLabel = stringResource(R.string.new_task),
-                onAction = { showNewTask = true },
+                onAction = { onNewTask(LocalDate.now()) },
                 modifier = Modifier.padding(padding),
             )
             // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas
@@ -217,29 +205,6 @@ fun TaskListScreen(
         }
     }
 
-    if (showNewTask) {
-        // Abre (ou reabre, depois de girar) o rascunho único; sugere hoje se a data não foi escolhida.
-        LaunchedEffect(Unit) { viewModel.openNewTask(LocalDate.now()) }
-        val lists by viewModel.lists.collectAsStateWithLifecycle()
-        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
-        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-        draft?.let {
-            NewTaskSheet(
-                draft = it,
-                onChange = viewModel::updateNewTask,
-                onSave = {
-                    viewModel.saveNewTask()
-                    showNewTask = false
-                },
-                onCancel = {
-                    viewModel.cancelNewTask()
-                    showNewTask = false
-                },
-                onDismiss = { showNewTask = false },
-                lists = lists,
-            )
-        }
-    }
 }
 
 /** Campo de busca filled, no estilo dos cards da lista; o X aparece quando há texto. */
