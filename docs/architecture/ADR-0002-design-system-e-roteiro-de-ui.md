@@ -1152,6 +1152,12 @@ oferta; a tela só pede e fecha. Com a exclusão no escopo da tela, sair no inst
 e oferecer deixava a exclusão sem Desfazer. A exclusão de rotina feita em "Todas as rotinas"
 passa pelo mesmo caminho, e a tela deixa de ter um Desfazer próprio.
 
+**Terceiro tipo de oferta (E5): tarefa concluída na lista de tarefas.** Concluir e oferecer é
+operação do mesmo objeto; desfazer é pelo registro da conclusão. A regra de uma oferta por vez
+vale entre tipos: uma ação nova substitui a mensagem da anterior, que fica sem Desfazer.
+**Pendência para a v1.9.0:** concluir e pular na Hoje ainda usam mensagem própria da tela e
+não sobrevivem a girar; levar para o mesmo caminho.
+
 **Qual conclusão desfazer:** quando uma tarefa tem mais de uma conclusão no mesmo dia, desmarcar
 desfaz a **mais recente**. Desfazer a mais antiga devolvia a data errada e deixava um registro
 solto.
@@ -1225,7 +1231,11 @@ Detalha a seção 6.
   retroativa não tem efeito de hoje: não zera as marcações da lista anexada, não tira a
   notificação que está na tela e não mexe no alarme da próxima ocorrência. É a regra que as
   rotinas já seguiam. Exceção: tarefa única que a conclusão encerra tem a notificação retirada
-  mesmo assim, porque ela não tem ocorrência de hoje para preservar.
+  mesmo assim, porque ela não tem ocorrência de hoje para preservar. Na repetida, a notificação
+  na tela é sempre a da **última ocorrência que já tocou** (o identificador é um por tarefa): a
+  conclusão retroativa a tira quando conclui o dia dessa ocorrência, e a deixa quando a que
+  está na tela é de outro dia. Sem isso, a notificação de ontem ficava depois de ontem ser
+  concluído, e tocar em "Concluir" nela concluía a ocorrência de hoje antes da hora.
 - Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua visível, e para o
   leitor de tela concluir é uma ação da linha, com o estado na própria linha (mesmo padrão do
   item de lista, 12.4).
@@ -1259,7 +1269,13 @@ reticências, sem corte na altura e cada linha dentro da caixa do texto.
 ### 14.6 Lista de tarefas
 
 Busca e filtros viram itens da lista e rolam junto. Fecha os dois limites de paisagem com fonte
-2.0 registrados na 12.4 e na 13.9.
+2.0 registrados na 12.4 e na 13.9. Consequências aceitas: os filtros deixam de ficar sempre à
+vista, e o campo de busca perde o foco se for rolado para fora da tela (o texto digitado fica).
+Os auxiliares de cabeçalho fixo da casca (`splitTop`, `ScreenPadding`) saem, por não terem mais
+uso.
+
+O Desfazer de concluir e de excluir na lista de tarefas passa para a oferta do app (14.2), e a
+tela deixa de ter mensagem própria; com isso ele sobrevive a girar a tela e a trocar de aba.
 
 ### 14.7 Painel de nova tarefa num lugar só
 
@@ -1328,6 +1344,13 @@ Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
 - **Só registro:** quando a rotina também ocorre normalmente no dia para onde outra ocorrência
   foi remarcada, as duas aparecem como um bloco só, que pertence à remarcada; pulada a
   remarcada, a ocorrência própria do dia reaparece no horário normal.
+- **Só registro:** pular um bloco remarcado troca a remarcação por pular no dia de origem. O
+  bloco some do dia mostrado e aparece esmaecido só no dia de origem; no dia mostrado fica a
+  mensagem com Desfazer. É consequência de haver uma exceção por dia, e é o desejado.
+- **v1.9.0, com a lista de tarefas (D1):** a aba Tarefas mostra cada tarefa uma vez, pelo estado
+  atual, então "Concluídas hoje" ali não é a mesma lista de "Concluídas" da Hoje (14.4), que é
+  pelo registro do dia. Uma repetida concluída fora do dia aparece como concluída na Hoje e
+  como próxima na aba Tarefas. Decidir na reforma da lista se as duas se igualam.
 - **Adiamento no diagnóstico:** continua fora. Exige gravar o adiamento, que é dado novo com
   regras de reinício e de limpeza, para uma janela de 10 minutos. Candidato para a v1.9.0,
   junto com o adiamento que se perde ao reiniciar o aparelho, que é o ganho real.
