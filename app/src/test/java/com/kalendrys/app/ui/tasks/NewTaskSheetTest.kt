@@ -16,18 +16,16 @@ import com.kalendrys.app.domain.NewTaskDraft
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Título do painel de nova tarefa.
- * - L29 (O-2 da Coruja, v1.6.2): em janela de altura normal o "Nova tarefa" fica fixo fora da área
- *   que rola; rolando, o foco no campo Título o escondia sob a alça de arrastar.
- * - O-1 da matriz v1.7.1: em janela BAIXA (o corte que recolhe o FAB) o título fixo tirava a altura
- *   que o teclado deixa e o Salvar ficava fora de alcance; ali ele volta para a área que rola.
+ * Título do painel de nova tarefa em janela de altura NORMAL (L29, O-2 da Coruja, v1.6.2): o "Nova
+ * tarefa" fica fixo fora da área que rola; rolando, o foco no campo Título o escondia sob a alça de
+ * arrastar. A janela BAIXA (o corte que recolhe o FAB) mudou na v1.8.0 (E6, 14.7): linha fixa com
+ * título, Cancelar e Salvar no topo; ver [NewTaskSheetCompactTest].
  */
 @RunWith(AndroidJUnit4::class)
 class NewTaskSheetTest {
@@ -86,20 +84,4 @@ class NewTaskSheetTest {
         titleStaysFixedAfterScrollingToTheEnd()
     }
 
-    @Test
-    @Config(sdk = [34], qualifiers = "w800dp-h360dp-land")
-    fun `janela baixa rola o titulo junto e o Salvar fica alcancavel`() {
-        render(fontScale = 1f)
-        val before = top("Nova tarefa")
-        compose.onNodeWithText("Salvar").performScrollTo().assertIsDisplayed()
-        // O título está dentro da área que rola: subiu junto com os campos.
-        assertTrue(top("Nova tarefa") < before)
-    }
-
-    @Test
-    @Config(sdk = [34], qualifiers = "w800dp-h360dp-land")
-    fun `janela baixa com fonte 2_0 ainda alcanca o Salvar`() {
-        render(fontScale = 2f)
-        compose.onNodeWithText("Salvar").performScrollTo().assertIsDisplayed()
-    }
 }
