@@ -59,7 +59,7 @@ class TodayTimelineMeasureTest {
             today = LocalDate.now(),
             selectedDate = LocalDate.now(),
             timeline = listOf(
-                DayTimeline.Block(routine, done = false, startMinute = routine.startMinute, linkAbove = DayTimeline.Link.SOLID, linkBelow = DayTimeline.Link.SOLID),
+                DayTimeline.Block(routine, done = false, startMinute = routine.startMinute, linkAbove = DayTimeline.Link.SOLID, linkBelow = DayTimeline.Link.SOLID, occurrenceDate = LocalDate.now()),
             ),
         )
         val actions = TrailActions({}, {}, { _, _ -> }, {}, { _, _ -> }, {}, {})

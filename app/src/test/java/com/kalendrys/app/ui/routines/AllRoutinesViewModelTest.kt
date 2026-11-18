@@ -148,7 +148,6 @@ class AllRoutinesViewModelTest {
         }
     }
 
-    @Test
     /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
     private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
         withTimeoutOrNull(TIMEOUT_MS) { undoOffers.pending.first { it != null } }
