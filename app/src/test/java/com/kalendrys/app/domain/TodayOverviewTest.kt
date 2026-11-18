@@ -219,4 +219,52 @@ class TodayOverviewTest {
         val shown = overview.pending.mapNotNull { it.listProgress } + overview.routines.mapNotNull { it.listProgress }
         assertTrue(ShoppingProgress(0, 4) !in shown)
     }
+
+    // --- NB-E3-A: feitas hoje = tarefa que existe com registro de conclusão hoje, contada uma vez ---
+
+    private fun doneCount(tasks: List<Task>, logs: List<CompletionLog>) = TodayOverview.build(
+        tasks = tasks,
+        completions = logs,
+        now = now,
+        zone = zone,
+        lastCompletions = logs.groupBy { it.taskId }.mapValues { (_, l) -> l.maxOf { it.completedAt } },
+    ).doneCount
+
+    @Test
+    fun `repetida de amanha concluida hoje conta 1`() {
+        val weekly = task(1, "Tirar o lixo", reminder = now.plusDays(1).withHour(19), repeat = ReminderRepeat.WEEKLY)
+
+        assertEquals(1, doneCount(listOf(weekly), listOf(done(1, now.minusHours(1)))))
+    }
+
+    @Test
+    fun `unica reaberta para outra data depois de concluida hoje conta 1`() {
+        // Concluída hoje e depois com a data mudada para daqui a 3 dias (reabre: não está encerrada).
+        val reopened = Task(id = 1, title = "Levar o carro", dueDate = now.toLocalDate().plusDays(3).toEpochDay())
+
+        assertEquals(1, doneCount(listOf(reopened), listOf(done(1, now.minusHours(1)))))
+    }
+
+    @Test
+    fun `excluida conta 0 e duas conclusoes hoje contam 1`() {
+        val daily = task(1, "Remédio", reminder = now.minusDays(5).withHour(7), repeat = ReminderRepeat.DAILY)
+        // A tarefa 2 foi excluída: o registro dela fica no histórico, mas ela não existe mais.
+        val logs = listOf(done(1, now.minusHours(2)), done(1, now.minusHours(1)), done(2, now.minusHours(1)))
+
+        assertEquals(1, doneCount(listOf(daily), logs))
+        assertEquals(setOf(1L), TodayOverview.doneTodayIds(listOf(daily), logs, now.toLocalDate(), zone))
+    }
+
+    @Test
+    fun `registro gravado em ontem (conclusao retroativa) nao conta hoje, o de hoje conta`() {
+        val tasks = listOf(
+            task(1, "Ontem", reminder = now.minusDays(5).withHour(7), repeat = ReminderRepeat.DAILY),
+            task(2, "Hoje", reminder = now.minusDays(5).withHour(7), repeat = ReminderRepeat.DAILY),
+        )
+        // A 1 foi marcada na Hoje com o dia de ontem selecionado: o registro fica no dia de ontem.
+        val logs = listOf(done(1, now.minusDays(1).withHour(12)), done(2, now.minusHours(1)))
+
+        assertEquals(setOf(2L), TodayOverview.doneTodayIds(tasks, logs, now.toLocalDate(), zone))
+        assertEquals(1, doneCount(tasks, logs))
+    }
 }
