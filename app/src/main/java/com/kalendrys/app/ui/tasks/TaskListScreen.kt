@@ -417,6 +417,9 @@ private fun TaskRow(
             // em vez de um círculo que não age, o ícone de repetição no mesmo espaço de 48dp, decorativo
             // (sem toque nem descrição próprios; a repetição já é lida na linha). Tocar ali abre a
             // tarefa, como o resto da linha, e o leitor de tela não encontra um Concluir desabilitado.
+            // A data de uma repetida na lista nunca fica no passado (C-1): TaskSchedule.status não dá
+            // OVERDUE para quem se repete, e a data de "Próximas" é a próxima ocorrência (a partir de
+            // amanhã). Por isso "diferente de hoje" aqui quer dizer "depois de hoje".
             val repeatsLater = !done && task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today
             if (repeatsLater) {
                 Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {

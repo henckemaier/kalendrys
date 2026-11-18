@@ -12,6 +12,9 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskTiming
+import java.time.LocalDate
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
@@ -196,5 +199,25 @@ class TaskViewModelTest {
         assertNull("a excluída continua excluída", db.taskDao().byId(deleted.id))
         assertTrue(db.taskDao().byId(done.id) != null)
         assertNull(undoOffers.pending.value)
+    }
+
+    // --- C-1 (v1.8.0): repetida nunca fica atrasada na lista ---
+
+    @Test
+    fun `repetida com data no passado nunca vai para Atrasadas - a fora do dia vai para Proximas com a proxima data`() = runTest {
+        val today = LocalDate.now()
+        // 10 dias atrás: a semanal não cai hoje (10 não é múltiplo de 7); a diária cai todo dia.
+        taskRepository.addTask("Semanal", timing = TaskTiming(date = today.minusDays(10), repeat = ReminderRepeat.WEEKLY))
+        taskRepository.addTask("Diária", timing = TaskTiming(date = today.minusDays(10), repeat = ReminderRepeat.DAILY))
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.upcoming.size + it.dueToday.size == 2 }
+
+            assertTrue("nenhuma repetida em Atrasadas", state.overdue.isEmpty())
+            val weekly = state.upcoming.single { it.task.title == "Semanal" }
+            assertTrue("data de Próximas depois de hoje: ${weekly.date}", weekly.date!!.isAfter(today))
+            assertEquals(listOf("Diária"), state.dueToday.map { it.task.title })
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }
