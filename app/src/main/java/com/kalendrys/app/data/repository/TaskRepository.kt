@@ -159,8 +159,10 @@ class TaskRepository(
         // das rotinas (ShoppingReset.routineResets): não tira a notificação da tela, não zera a lista e
         // não mexe no alarme da próxima ocorrência. Nem conclusão adiantada (v1.8.0, decisão do Esquadro).
         val retroactive = day.isBefore(LocalDate.now(zone))
-        if (!retroactive) scheduler.dismissNotification(taskId)
         val task = taskDao.byId(taskId)
+        // A notificação do lembrete sai, menos na retroativa de tarefa REPETIDA (a ocorrência de hoje é
+        // outra). A única que encerra não tem ocorrência de hoje: a dela sai (A1 da revisão do Esquadro).
+        if (!retroactive || task?.repeat == ReminderRepeat.NONE) scheduler.dismissNotification(taskId)
         if (task != null && task.repeat == ReminderRepeat.NONE && isFinished(task)) {
             completionLogDao.latestForTask(taskId)?.let { return@withLock it.id }
         }

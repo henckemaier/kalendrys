@@ -563,8 +563,11 @@ class TaskRepositoryTest {
     fun `unica atrasada concluida no dia dela fica encerrada, sem conclusao adiantada`() = runTest {
         val yesterday = LocalDate.now().minusDays(1)
         val task = repository.addTask("Pagar conta", timing = TaskTiming(date = yesterday, time = LocalTime.of(9, 0)))
+        scheduler.reset()
 
         val logId = repository.logCompletion(task.id, completedAt = yesterdayAt(11))
+        // A notificação do lembrete atrasado (na tela) sai: a única encerra e não tem ocorrência de hoje.
+        assertEquals(listOf(task.id), scheduler.dismissed)
 
         val after = db.taskDao().byId(task.id)!!
         assertEquals(yesterday.toEpochDay(), after.dueDate)
