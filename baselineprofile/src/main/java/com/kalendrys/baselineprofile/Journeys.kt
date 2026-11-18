@@ -50,9 +50,15 @@ private fun MacrobenchmarkScope.waitForAny(selectors: List<BySelector>, timeoutM
 /**
  * Toca na aba e espera a tela dela. Numa tela interna (detalhe, editor, lista aberta) a barra de abas
  * some: volta com o Voltar até a barra aparecer. Já na aba, não faz nada.
+ *
+ * Os marcadores são ITENS da lista (a busca de Tarefas, o progresso da Hoje): com a lista rolada eles
+ * saem da tela, e tocar na aba já selecionada não volta ao topo. Por isso, antes de concluir que não
+ * está na aba, rola a lista ao topo (NB-E7-A da revisão do Lince).
  */
 private fun MacrobenchmarkScope.openTab(tab: Tab) {
     repeat(MAX_TAB_ATTEMPTS) {
+        if (waitForAny(tab.markers, timeoutMs = 0)) return
+        scrollToTop()
         if (waitForAny(tab.markers, timeoutMs = 0)) return
         val label = device.findObject(By.text(tab.label))
         if (label != null) {
@@ -185,8 +191,13 @@ fun MacrobenchmarkScope.browseTasks() {
         device.waitForIdle()
         device.findObject(By.desc("Limpar busca"))?.click()
         device.waitForIdle()
-        // Fecha o teclado sem sair da aba.
-        if (!device.hasObject(By.text("Buscar tarefas"))) device.pressBack()
+        // Fecha o teclado sem sair da aba: depois do Limpar a dica volta e o foco continua no campo, então
+        // a dica não diz nada do teclado (NB-E7-B). Voltar só com o teclado aberto; sem ele, o Voltar
+        // sairia da aba.
+        if (isKeyboardShown()) {
+            device.pressBack()
+            device.waitForIdle()
+        }
     }
     if (clickInList(SAMPLE_TASKS.first())) {
         device.wait(Until.hasObject(By.text("Detalhes da tarefa")), TIMEOUT_MS)
@@ -194,6 +205,18 @@ fun MacrobenchmarkScope.browseTasks() {
     }
     openTab(Tab.TASKS)
 }
+
+/**
+ * O teclado está na tela, pelo estado do serviço de entrada (o UiAutomator não o vê como objeto).
+ * Na dúvida (dump sem o campo esperado), diz que não está, e a jornada não aperta Voltar.
+ */
+private fun MacrobenchmarkScope.isKeyboardShown(): Boolean {
+    val dump = runCatching { device.executeShellCommand("dumpsys input_method") }.getOrDefault("")
+    return KEYBOARD_SHOWN_MARKERS.any { it in dump }
+}
+
+/** Como o dumpsys do input_method diz que o teclado está aberto, conforme a versão do Android. */
+private val KEYBOARD_SHOWN_MARKERS = listOf("mInputShown=true", "isInputViewShown=true", "mIsInputViewShown=true")
 
 /** A faixa da semana da Hoje: a área rolável mais baixa (a lista principal é a mais alta). */
 private fun MacrobenchmarkScope.weekStrip(): UiObject2? =
