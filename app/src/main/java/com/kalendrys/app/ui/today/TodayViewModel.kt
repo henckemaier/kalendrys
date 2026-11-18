@@ -377,8 +377,7 @@ class TodayViewModel(
                 // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
                 // A data e a hora vêm do mesmo relógio do TodayRepository (sem relógio direto aqui).
                 val clock = todayRepository.now()
-                val completedAt = if (date == now) clock.toInstant().toEpochMilli()
-                else date.atTime(clock.toLocalTime()).atZone(clock.zone).toInstant().toEpochMilli()
+                val completedAt = TaskSchedule.completionInstantOn(date, clock)
                 taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt, now = clock.toInstant().toEpochMilli()))
             }
         }

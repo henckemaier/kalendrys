@@ -107,21 +107,44 @@ class TaskRepository(
     }
 
     /**
-     * Tarefa para reexibir num adiamento ("Adiar"): a versão atual do banco, ou `null` se ela foi
-     * excluída, encerrada ou (recorrente) já concluída hoje. Só lê — não mexe em alarmes nem no
-     * banco; o alarme one-off do adiamento é agendado fora, pelo próprio receiver.
+     * Tarefa da notificação de lembrete (reexibir depois de "Adiar", "Concluir"): a versão atual do
+     * banco, ou `null` se ela foi excluída, encerrada ou (recorrente) já concluída NO DIA DA OCORRÊNCIA
+     * que a notificação mostra ([occurrenceDay]; null em notificação antiga, sem o dia = hoje). Assim,
+     * concluir ontem pela Hoje e depois pela notificação de ontem não grava duas vezes (NB-E5-A). Só
+     * lê: não mexe em alarmes nem no banco.
      */
-    suspend fun taskForReminder(taskId: Long, now: Long = System.currentTimeMillis()): Task? {
+    suspend fun taskForReminder(taskId: Long, now: Long = System.currentTimeMillis(), occurrenceDay: LocalDate? = null): Task? {
         val task = taskDao.byId(taskId) ?: return null
         if (task.repeat == ReminderRepeat.NONE) return task.takeUnless { isFinished(task) }
         val zone = ZoneId.systemDefault()
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        val doneToday = completionLogDao.isCompletedBetween(
+        val day = occurrenceDay ?: Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val doneThatDay = completionLogDao.isCompletedBetween(
             taskId = taskId,
-            start = today.atStartOfDay(zone).toInstant().toEpochMilli(),
-            end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+            start = day.atStartOfDay(zone).toInstant().toEpochMilli(),
+            end = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
         )
-        return task.takeUnless { doneToday }
+        return task.takeUnless { doneThatDay }
+    }
+
+    /**
+     * "Concluir" da notificação de lembrete (NB-E5-A da v1.8.0). A notificação sabe de qual ocorrência
+     * é ([occurrenceDay], o dia em que ela tocou). Tarefa REPETIDA com dia anterior a hoje grava a
+     * conclusão NAQUELE dia, pelo mesmo caminho da conclusão retroativa da Hoje
+     * ([TaskSchedule.completionInstantOn] + [logCompletion]): hoje continua pendente e o alarme de hoje
+     * intacto. Dia de hoje, tarefa única ou notificação sem o dia: agora, como sempre.
+     *
+     * Guardada pelo dia da ocorrência ([taskForReminder]): já concluída nesse dia, única encerrada ou
+     * excluída não grava de novo. Devolve se gravou.
+     */
+    suspend fun completeFromReminder(taskId: Long, occurrenceDay: LocalDate?, now: Long = System.currentTimeMillis()): Boolean {
+        val task = taskForReminder(taskId, now, occurrenceDay) ?: return false
+        val completedAt = if (task.repeat != ReminderRepeat.NONE && occurrenceDay != null) {
+            TaskSchedule.completionInstantOn(occurrenceDay, Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()))
+        } else {
+            now
+        }
+        logCompletion(taskId, completedAt, now)
+        return true
     }
 
     /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */

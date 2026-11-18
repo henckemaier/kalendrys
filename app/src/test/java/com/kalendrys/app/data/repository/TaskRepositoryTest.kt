@@ -642,6 +642,103 @@ class TaskRepositoryTest {
         assertEquals(yesterday.toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
     }
 
+    // --- NB-E5-A: "Concluir" da notificação grava no dia da ocorrência que ela mostra ---
+
+    private fun dayOf(millis: Long) = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
+    /** Diária das 10h; as conclusões gravadas, pelo dia. */
+    private suspend fun logDays(taskId: Long) = db.completionLogDao().all().filter { it.taskId == taskId }.map { dayOf(it.completedAt) }
+
+    private suspend fun assertTodayPendingAndAlarmIntact(taskId: Long, now: Long, todayAlarm: Long) {
+        val today = dayOf(now)
+        assertTrue("hoje continua pendente", today !in logDays(taskId))
+        assertTrue("alarme de hoje intacto", scheduler.scheduled.isEmpty() && scheduler.cancelled.isEmpty())
+        assertEquals(todayAlarm, repository.nextReminderToDeliver(now))
+    }
+
+    @Test
+    fun `notificacao de ontem entregue atrasada, Concluir grava ontem e hoje fica pendente`() = runTest {
+        // Ocorrência de ontem entregue tarde (catch-up logo depois da meia-noite): a notificação é de ontem.
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        val now = at(today, 0) + 40 * 60_000L
+        scheduler.reset()
+
+        assertTrue(repository.completeFromReminder(task.id, today.minusDays(1), now = now))
+
+        assertEquals(listOf(today.minusDays(1)), logDays(task.id))
+        assertTodayPendingAndAlarmIntact(task.id, now, at(today, 10))
+    }
+
+    @Test
+    fun `notificacao de ontem que ficou na tela, Concluir hoje antes do horario grava ontem`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        val now = at(today, 9)
+        scheduler.reset()
+
+        assertTrue(repository.completeFromReminder(task.id, today.minusDays(1), now = now))
+
+        assertEquals(listOf(today.minusDays(1)), logDays(task.id))
+        assertTodayPendingAndAlarmIntact(task.id, now, at(today, 10))
+    }
+
+    @Test
+    fun `horario editado depois da notificacao de ontem, Concluir grava ontem pelo dia da notificacao`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        // A pessoa mudou o horário para as 11h depois que a de ontem tocou: o dia vem da notificação.
+        repository.updateTask(
+            TaskTiming(date = today.minusDays(5), time = LocalTime.of(11, 0), repeat = ReminderRepeat.DAILY)
+                .applyTo(db.taskDao().byId(task.id)!!, java.time.ZoneId.systemDefault()),
+        )
+        val now = at(today, 9)
+        scheduler.reset()
+
+        assertTrue(repository.completeFromReminder(task.id, today.minusDays(1), now = now))
+
+        assertEquals(listOf(today.minusDays(1)), logDays(task.id))
+        assertTodayPendingAndAlarmIntact(task.id, now, at(today, 11))
+    }
+
+    @Test
+    fun `Concluir duas vezes, ou pela Hoje e depois pela notificacao, nao duplica`() = runTest {
+        val task = dailyAtTen()
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        val now = at(today, 9)
+
+        // Pela Hoje (conclusão retroativa) e depois pela notificação de ontem.
+        repository.logCompletion(task.id, completedAt = at(yesterday, 18), now = now)
+        assertEquals(false, repository.completeFromReminder(task.id, yesterday, now = now))
+        // E pela notificação duas vezes, num outro dia.
+        assertTrue(repository.completeFromReminder(task.id, today.minusDays(2), now = now))
+        assertEquals(false, repository.completeFromReminder(task.id, today.minusDays(2), now = now))
+
+        assertEquals(listOf(today.minusDays(2), yesterday), logDays(task.id).sorted())
+    }
+
+    @Test
+    fun `tarefa unica atrasada concluida pela notificacao conclui agora`() = runTest {
+        val today = LocalDate.now()
+        val task = repository.addTask("Pagar conta", timing = TaskTiming(date = today.minusDays(1), time = LocalTime.of(10, 0)))
+        val now = at(today, 9)
+
+        assertTrue(repository.completeFromReminder(task.id, today.minusDays(1), now = now))
+
+        assertEquals(listOf(now), db.completionLogDao().all().filter { it.taskId == task.id }.map { it.completedAt })
+    }
+
+    @Test
+    fun `notificacao sem o dia conclui agora, como sempre`() = runTest {
+        val task = dailyAtTen()
+        val now = at(LocalDate.now(), 11)
+
+        assertTrue(repository.completeFromReminder(task.id, occurrenceDay = null, now = now))
+
+        assertEquals(listOf(now), db.completionLogDao().all().filter { it.taskId == task.id }.map { it.completedAt })
+    }
+
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
 
     @Test

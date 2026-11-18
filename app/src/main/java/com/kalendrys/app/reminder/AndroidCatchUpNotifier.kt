@@ -13,6 +13,8 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.widget.KalendrysWidgets
+import java.time.Instant
+import java.time.ZoneId
 
 /** Saídas do [ReminderCatchUpRunner] no aparelho: notificações de lembrete, agregado e widgets. */
 class AndroidCatchUpNotifier(
@@ -20,8 +22,9 @@ class AndroidCatchUpNotifier(
     private val shoppingRepository: ShoppingRepository,
 ) : ReminderCatchUpRunner.Notifier {
 
-    override suspend fun showReminder(task: Task) {
-        ReminderNotifications.show(context, task, shoppingRepository.progressOf(task.shoppingListId))
+    override suspend fun showReminder(task: Task, firedAt: Long) {
+        val occurrenceDay = Instant.ofEpochMilli(firedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        ReminderNotifications.show(context, task, shoppingRepository.progressOf(task.shoppingListId), occurrenceDay)
     }
 
     /** Uma notificação agregada ("N lembretes perdidos") no canal de lembretes; tocar abre o app. */
