@@ -74,8 +74,8 @@ import com.kalendrys.app.ui.components.SwipeRow
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.rememberFabExpanded
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.showUndo
-import com.kalendrys.app.ui.components.splitTop
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
@@ -139,7 +139,6 @@ fun TaskListScreen(
         hasFab = true,
         snackbarHostState = snackbarHostState,
     ) { padding ->
-        val screen = padding.splitTop(horizontal = Spacing.l)
         when {
             !state.isLoaded -> Unit
             // Sem nenhuma tarefa criada: vazio "comece por aqui" (sem busca nem filtros).
@@ -151,46 +150,55 @@ fun TaskListScreen(
                 onAction = { showNewTask = true },
                 modifier = Modifier.padding(padding),
             )
-            // Busca e chips ficam fixos acima da lista (como hoje): só o topo do preenchimento vai
-            // para a coluna; laterais e fundo (insets, largura máxima e folga do FAB) seguem para a
-            // busca, os chips e o contentPadding da lista, que rola por baixo da barra do sistema.
-            else -> Column(modifier = Modifier.padding(top = screen.top)) {
-                val start = screen.start
-                val end = screen.end
-                val listPadding = screen.list
-                TaskSearchBar(
-                    query = query,
-                    onQueryChange = viewModel::setQuery,
-                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s),
+            // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas
+            // (antes ficavam fixos acima dela, e em paisagem com fonte 2.0 não sobrava tarefa visível
+            // no 1º quadro). O preenchimento da casca vai inteiro para o contentPadding: topo, laterais
+            // (com a margem da tela) e fundo (insets, largura máxima e folga do FAB). O teclado já
+            // encolhe a casca (adjustResize, B-1): o campo focado no topo da lista fica acima dele.
+            else -> {
+                val today = state.today
+                val todayLabel = remember(today) { weekdayDateLabel(today) }
+                val sections = listOf(
+                    Triple("overdue", R.string.section_overdue, state.overdue),
+                    Triple("today", R.string.section_today, state.dueToday),
+                    Triple("upcoming", R.string.section_upcoming, state.upcoming),
+                    Triple("no_date", R.string.section_no_date, state.noDate),
+                    Triple("done", R.string.section_done_today, state.doneToday),
                 )
-                TaskFilterChips(
-                    selected = filters,
-                    onToggle = viewModel::toggleFilter,
-                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s, bottom = Spacing.s),
-                )
-                if (state.isEmpty) {
-                    // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto.
-                    EmptyState(
-                        icon = Icons.Outlined.SearchOff,
-                        title = stringResource(R.string.empty_search_title),
-                        message = stringResource(R.string.empty_search_message),
-                    )
-                } else {
-                    val today = state.today
-                    val todayLabel = remember(today) { weekdayDateLabel(today) }
-                    val sections = listOf(
-                        Triple("overdue", R.string.section_overdue, state.overdue),
-                        Triple("today", R.string.section_today, state.dueToday),
-                        Triple("upcoming", R.string.section_upcoming, state.upcoming),
-                        Triple("no_date", R.string.section_no_date, state.noDate),
-                        Triple("done", R.string.section_done_today, state.doneToday),
-                    )
-                    val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = listPadding,
-                    ) {
+                val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = padding.plus(horizontal = Spacing.l),
+                ) {
+                    // Chaves estáveis: digitar filtra a lista abaixo sem recriar o campo (o foco e o
+                    // teclado continuam).
+                    item(key = TASK_SEARCH_KEY, contentType = "search") {
+                        TaskSearchBar(
+                            query = query,
+                            onQueryChange = viewModel::setQuery,
+                            modifier = Modifier.padding(top = Spacing.s),
+                        )
+                    }
+                    item(key = TASK_FILTERS_KEY, contentType = "filters") {
+                        TaskFilterChips(
+                            selected = filters,
+                            onToggle = viewModel::toggleFilter,
+                            modifier = Modifier.padding(top = Spacing.s, bottom = Spacing.s),
+                        )
+                    }
+                    if (state.isEmpty) {
+                        // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto, como item
+                        // (a lista rola até a mensagem com fonte grande).
+                        item(key = "empty_search", contentType = "empty_search") {
+                            EmptyState(
+                                icon = Icons.Outlined.SearchOff,
+                                title = stringResource(R.string.empty_search_title),
+                                message = stringResource(R.string.empty_search_message),
+                                modifier = Modifier.padding(top = Spacing.xl),
+                            )
+                        }
+                    } else {
                         item(key = "today_label", contentType = "today") {
                             Text(
                                 text = todayLabel,
@@ -545,3 +553,7 @@ private fun MetaItem(icon: ImageVector, text: String, color: Color) {
 }
 
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/** Chaves estáveis da busca e dos chips na lista (E5): o campo não é recriado quando a lista filtra. */
+internal const val TASK_SEARCH_KEY = "search"
+internal const val TASK_FILTERS_KEY = "filters"
