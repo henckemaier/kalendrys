@@ -178,4 +178,45 @@ class TodayContentViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // --- C1 da revisão da E3: tarefa SEM DATA com lembrete para hoje ---------------------------------
+
+    @Test
+    fun `o app nao cria tarefa sem data com lembrete - sem data o horario nao vira lembrete`() = runTest {
+        // Painel de nova tarefa e editor do detalhe gravam pelo TaskTiming: sem data, nada de lembrete.
+        val timing = TaskTiming(date = null, time = LocalTime.of(9, 0))
+        assertEquals(null, timing.reminderAt(zone))
+
+        val created = repos.tasks.addTask("Sem data com horário", timing = timing)
+        val stored = testDb.db.taskDao().byId(created.id)!!
+        assertEquals(null, stored.dueDate)
+        assertEquals(null, stored.reminderAt)
+    }
+
+    @Test
+    fun `sem data com lembrete hoje (backup adulterado) aparece uma vez so, em Sem data`() = runTest {
+        // Único jeito de existir: um backup editado à mão (todo backup do app tem a data do lembrete).
+        val id = testDb.db.taskDao().insert(
+            com.kalendrys.app.data.local.entity.Task(
+                title = "Lembrete solto",
+                dueDate = null,
+                reminderAt = millisAt(today, LocalTime.of(23, 0)),
+            ),
+        )
+        val vm = viewModel()
+        vm.uiState.test {
+            val state = awaitState { it.overview != null }
+            val overview = repos.today.current()
+
+            // Sem data, a tarefa não "acontece" em dia nenhum: nem a trilha nem o retrato a põem no horário.
+            assertEquals(emptyList<Long>(), state.trailTasks().map { it.task.id })
+            assertEquals(null, overview.pending.single { it.taskId == id }.reminderToday)
+            assertEquals(listOf(id), state.noDateTasks.map { it.task.id })
+            // Uma vez só: os pendentes da tela batem com o widget.
+            val onScreen = state.overdueTasks.size + state.dayTasks.size + state.noDateTasks.size +
+                state.trailTasks().count { !it.done } + state.activeBlocks().count { !it.done }
+            assertEquals(overview.pendingCount, onScreen)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
