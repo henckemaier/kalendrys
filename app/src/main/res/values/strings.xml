@@ -84,8 +84,8 @@
     <string name="all_routines_more">Mais opções para %1$s</string>
     <string name="all_routines_pause">Pausar</string>
     <string name="all_routines_resume">Retomar</string>
-    <string name="all_routines_archive">Arquivar</string>
-    <string name="all_routines_archived">Rotina arquivada</string>
+    <string name="all_routines_archive">Excluir rotina</string>
+    <string name="all_routines_archived">Rotina excluída</string>
     <string name="all_routines_days_none">Sem dias</string>
     <string name="routine_free_time">Tempo livre · %1$s</string>
     <string name="routine_time_range">%1$s–%2$s (%3$s)</string>

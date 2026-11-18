@@ -40,7 +40,7 @@ import org.robolectric.annotation.Config
 /**
  * Semântica de "Todas as rotinas" (ADR-0002, 14.9, critério de toda tela nova): um nó por linha,
  * estado (Pausada) e papel expostos, toda ação com equivalente acessível, cabeçalhos marcados. E o
- * Desfazer do arquivar devolve a rotina.
+ * Desfazer do "Excluir rotina" (arquivar por baixo, P8) devolve a rotina.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -134,8 +134,8 @@ class AllRoutinesScreenSemanticsTest {
         assertEquals("Pausada", stateOf(violao))
         assertNull(stateOf(treino))
 
-        assertEquals(listOf("Pausar", "Arquivar"), actionLabels(treino))
-        assertEquals(listOf("Retomar", "Arquivar"), actionLabels(violao))
+        assertEquals(listOf("Pausar", "Excluir rotina"), actionLabels(treino))
+        assertEquals(listOf("Retomar", "Excluir rotina"), actionLabels(violao))
     }
 
     @Test
@@ -148,17 +148,17 @@ class AllRoutinesScreenSemanticsTest {
     fun `acao Pausar da linha pausa e Retomar devolve`() {
         runAction(treino, "Pausar")
         compose.waitUntil(TIMEOUT_MS) { stateOf(treino) == "Pausada" }
-        assertEquals(listOf("Retomar", "Arquivar"), actionLabels(treino))
+        assertEquals(listOf("Retomar", "Excluir rotina"), actionLabels(treino))
 
         runAction(treino, "Retomar")
         compose.waitUntil(TIMEOUT_MS) { stateOf(treino) == null }
     }
 
     @Test
-    fun `arquivar pela acao da linha avisa e Desfazer devolve a rotina`() {
-        runAction(treino, "Arquivar")
+    fun `excluir pela acao da linha avisa e Desfazer devolve a rotina`() {
+        runAction(treino, "Excluir rotina")
         compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasTestTag(rowTag(treino))).fetchSemanticsNodes().isEmpty() }
-        compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasText("Rotina arquivada")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasText("Rotina excluída")).fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNode(hasText("Desfazer") and hasClickAction()).performClick()
 

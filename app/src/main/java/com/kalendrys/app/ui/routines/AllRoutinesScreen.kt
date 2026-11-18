@@ -75,9 +75,10 @@ import kotlinx.coroutines.flow.collectLatest
 
 /**
  * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): ativas e pausadas, com o filtro por categoria
- * (P3) e o FAB "Nova rotina" (P4). Tocar na linha edita; pausar, retomar e arquivar ficam no menu de
+ * (P3) e o FAB "Nova rotina" (P4). Tocar na linha edita; pausar, retomar e excluir ficam no menu de
  * três pontos e, para o leitor de tela, como ações da própria linha (um nó por linha, 14.9).
- * Arquivar oferece Desfazer no aviso da própria tela.
+ * "Excluir rotina" (P8, decisão do usuário; por baixo é o arquivar) oferece Desfazer no aviso da
+ * própria tela.
  */
 @Composable
 fun AllRoutinesScreen(
