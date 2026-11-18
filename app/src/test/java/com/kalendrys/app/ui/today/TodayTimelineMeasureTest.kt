@@ -87,10 +87,22 @@ class TodayTimelineMeasureTest {
         return results.single()
     }
 
+    /**
+     * "Sem corte" medido no que aparece: nenhuma linha com reticências, nada cortado na altura e cada
+     * linha terminando dentro da caixa. NÃO usa `hasVisualOverflow`: o horário de uma linha só, com
+     * `weight(1f, fill = false)`, tem a caixa encolhida ao texto (129px) enquanto o parágrafo é
+     * diagramado na largura da restrição (178px), e o `didOverflowWidth` acusa sem haver corte
+     * (diagnóstico da E4: linha de 0 a 128px numa caixa de 129px).
+     */
     private fun assertWhole(label: String, node: SemanticsNode) {
         val layout = node.layout()
-        assertFalse("$label: texto fora da caixa", layout.hasVisualOverflow)
         assertTrue("$label: linha com reticências", (0 until layout.lineCount).none { layout.isLineEllipsized(it) })
+        assertFalse("$label: cortado na altura", layout.didOverflowHeight)
+        val boxWidth = layout.size.width
+        (0 until layout.lineCount).forEach { line ->
+            val right = layout.getLineRight(line)
+            assertTrue("$label: linha $line termina em $right, fora da caixa de $boxWidth", right <= boxWidth + 0.5f)
+        }
     }
 
     private fun Rect.contains(other: Rect) =
