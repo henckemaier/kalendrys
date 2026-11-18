@@ -53,7 +53,7 @@ class ShoppingRepository(private val database: AppDatabase) {
     suspend fun list(listId: Long): ShoppingList? = listDao.byId(listId)
 
     /** Cria uma lista avulsa e devolve o id. Nome vazio não é aceito (a UI valida antes). */
-    suspend fun createList(name: String): Long = listDao.insert(ShoppingList(name = name.trim()))
+    suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name))
 
     /**
      * Id da lista a gravar na nova tarefa: a existente escolhida, ou a nova criada AGORA (no salvar).

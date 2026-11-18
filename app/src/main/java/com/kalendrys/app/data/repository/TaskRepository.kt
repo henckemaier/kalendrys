@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.dao.CompletionLogDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderCatchUp
 import com.kalendrys.app.domain.ReminderRepeat
@@ -65,21 +66,41 @@ class TaskRepository(
     /** Conclusões da tarefa, da mais recente para a mais antiga. */
     fun observeCompletions(taskId: Long): Flow<List<CompletionLog>> = completionLogDao.observeForTask(taskId)
 
+    /**
+     * Cria a tarefa e agenda o lembrete. Com [newListName] não em branco, cria TAMBÉM uma lista nova
+     * ([ShoppingList.named], a mesma regra do [ShoppingRepository.createList]) e vincula a tarefa a ela,
+     * as duas gravações numa transação só ([TaskDao.insertTaskWithNewList], v1.8.0 E6): falhar a tarefa
+     * não deixa lista avulsa. Nesse caso [shoppingListId] é ignorado. Nome em branco não cria lista.
+     * Catch-up e agendamento ficam fora da transação, como sempre.
+     */
     suspend fun addTask(
         title: String,
         notes: String = "",
         timing: TaskTiming = TaskTiming(date = null),
         location: String = "",
-        /** Lista de compras anexada já na criação (ADR-0001, P2), ou null. */
+        /** Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. */
         shoppingListId: Long? = null,
+        /** Nome da lista NOVA a criar junto com a tarefa ("Criar nova" no painel), ou null. */
+        newListName: String? = null,
     ): Task {
         closeReminderWindow()
+        val newList = newListName?.takeIf { it.isNotBlank() }?.let(ShoppingList::named)
         val task = timing.applyTo(
-            Task(title = title.trim(), notes = notes.trim(), location = location.trim(), shoppingListId = shoppingListId),
+            Task(
+                title = title.trim(),
+                notes = notes.trim(),
+                location = location.trim(),
+                shoppingListId = if (newList != null) null else shoppingListId,
+            ),
             ZoneId.systemDefault(),
         )
         return alarmLock.withLock {
-            val saved = task.copy(id = taskDao.insert(task))
+            val saved = if (newList == null) {
+                task.copy(id = taskDao.insert(task))
+            } else {
+                // A transação troca o vínculo pelo da lista gravada: relê para devolver a tarefa como ficou.
+                checkNotNull(taskDao.byId(taskDao.insertTaskWithNewList(newList, task)))
+            }
             scheduleNext(saved)
             saved
         }
