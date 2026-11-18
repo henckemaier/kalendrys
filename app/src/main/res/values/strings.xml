@@ -10,6 +10,34 @@
     <string name="today_state_done">Feita</string>
     <string name="today_state_pending">Pendente</string>
     <string name="today_block_exception">Pular ou remarcar este dia</string>
+    <!-- Conteúdo da Hoje (ADR-0002, 14.4; v1.8.0, E3). -->
+    <string name="today_skip_day">Pular este dia</string>
+    <string name="today_reschedule_day">Remarcar este dia</string>
+    <string name="today_state_skipped">Pulado</string>
+    <string name="today_undo_skip">Desfazer pular</string>
+    <string name="today_routine_skipped">Rotina pulada neste dia</string>
+    <string name="today_progress_title">Progresso do dia</string>
+    <!-- Sem plural: em pt-BR o Android trata 0 como singular ("0 de 5 feito"). -->
+    <string name="today_progress_done">Feitos: %1$d de %2$d</string>
+    <plurals name="today_progress_pending">
+        <item quantity="one">%d pendente</item>
+        <item quantity="other">%d pendentes</item>
+    </plurals>
+    <string name="today_progress_none_pending">Nada pendente</string>
+    <string name="today_next_title">A seguir</string>
+    <string name="today_next_none">Nada agendado</string>
+    <string name="today_next_tomorrow_at">Amanhã, %1$s</string>
+    <string name="today_section_overdue">Atrasadas</string>
+    <string name="today_section_today">Hoje</string>
+    <string name="today_section_day">Tarefas do dia</string>
+    <string name="today_section_no_date">Sem data</string>
+    <string name="today_section_done">Concluídas</string>
+    <string name="today_section_expanded">Aberta</string>
+    <string name="today_section_collapsed">Recolhida</string>
+    <string name="today_section_expand">Mostrar %1$s</string>
+    <string name="today_section_collapse">Recolher %1$s</string>
+    <string name="today_empty_title">Nada no seu dia ainda</string>
+    <string name="today_empty_message">Aqui aparecem as tarefas e as rotinas de hoje. Comece por uma tarefa ou crie uma rotina que se repete.</string>
     <string name="tab_calendar">Calendário</string>
 
     <!-- Comuns -->
@@ -96,10 +124,6 @@
     <string name="routine_week_previous">Semana anterior</string>
     <string name="routine_week_next">Próxima semana</string>
     <string name="routine_day_a11y">%1$s, %2$d de %3$d rotinas feitas</string>
-    <string name="routines_day_tasks">Tarefas do dia</string>
-    <string name="routines_day_tasks_today">Tarefas de hoje</string>
-    <string name="routines_day_tasks_expand">Mostrar tarefas do dia</string>
-    <string name="routines_day_tasks_collapse">Ocultar tarefas do dia</string>
     <string name="task_complete">Concluir %1$s</string>
     <string name="task_uncomplete">Desmarcar %1$s</string>
 

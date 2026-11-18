@@ -71,7 +71,8 @@ internal fun TodayWeekStrip(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                // Na lista da Hoje a margem lateral já vem do contentPadding.
+                .padding(bottom = 8.dp),
         ) {
             for (offset in 0L until 7L) {
                 val date = weekStart.plusDays(offset)

@@ -17,6 +17,7 @@ import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.DayTimeline
@@ -25,6 +26,7 @@ import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.visibleProgressFor
 import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.DayOfWeek
@@ -57,6 +59,8 @@ class TodayViewModel(
     private val firstDayOfWeek: DayOfWeek,
     private val shoppingRepository: ShoppingRepository,
     private val draftStore: NewTaskDraftStore,
+    /** Fonte única das pendências de hoje (E3): o mesmo retrato do widget Resumo e do resumo diário. */
+    private val todayRepository: TodayRepository,
 ) : ViewModel() {
 
     /** Um ponto na faixa da semana: a cor do bloco e se ele foi feito. */
@@ -64,7 +68,7 @@ class TodayViewModel(
 
     data class WeekDay(val date: LocalDate, val dots: List<DayDot>, val total: Int, val done: Int)
 
-    /** Uma tarefa do dia sem horário, para a faixa colapsável no topo. */
+    /** Uma tarefa de uma das seções (fora da trilha), com o estado de feita no dia mostrado. */
     data class DayTask(val task: Task, val done: Boolean)
 
     data class UiState(
@@ -73,9 +77,26 @@ class TodayViewModel(
         val selectedDate: LocalDate = LocalDate.now(),
         val week: List<WeekDay> = emptyList(),
         val timeline: List<DayTimeline.Item> = emptyList(),
-        /** Tarefas do dia sem horário; mostradas numa faixa, fora da trilha. */
-        val untimedTasks: List<DayTask> = emptyList(),
-        /** Alguma rotina ativa ou tarefa com data; sem nada a tela mostra o estado vazio. */
+        /**
+         * O retrato de hoje ([TodayOverview], o mesmo do widget Resumo), só quando o dia mostrado é
+         * hoje: progresso, próximo item e as pendências das seções saem dele, sem recalcular na tela.
+         */
+        val overview: TodayOverview? = null,
+        /** Pendentes atrasadas (só hoje; do [overview]). */
+        val overdueTasks: List<DayTask> = emptyList(),
+        /**
+         * Pendentes do dia SEM horário (as com horário ficam só na trilha). Hoje: do [overview]; em
+         * outro dia: as tarefas daquele dia ainda não feitas nele.
+         */
+        val dayTasks: List<DayTask> = emptyList(),
+        /** Pendentes sem data (só hoje; do [overview]); seção recolhida. */
+        val noDateTasks: List<DayTask> = emptyList(),
+        /**
+         * Concluídas no dia mostrado (pela data do REGISTRO), fora as já riscadas na trilha; cada uma
+         * pode ser desmarcada. Tarefa excluída não entra. Seção recolhida.
+         */
+        val completedTasks: List<DayTask> = emptyList(),
+        /** Alguma rotina ativa ou tarefa; sem nada a tela mostra o estado vazio (o primeiro uso). */
         val hasContent: Boolean = false,
         /** Progresso de cada lista de compras (listId → 3/8), para blocos e tarefas da trilha (P8). */
         val listProgress: Map<Long, ShoppingProgress> = emptyMap(),
@@ -87,6 +108,12 @@ class TodayViewModel(
 
         /** Dias futuros ainda não podem ser marcados como feitos. */
         val canComplete: Boolean get() = !selectedDate.isAfter(today)
+
+        /** Feitos hoje (tarefas e blocos), pelos números do [overview]. */
+        val doneToday: Int? get() = overview?.let { it.doneCount + it.routines.count { block -> block.done } }
+
+        /** Pendentes hoje (tarefas e blocos): o mesmo número do widget Resumo ([TodayOverview.pendingCount]). */
+        val pendingToday: Int? get() = overview?.pendingCount
     }
 
     /** Conclusão de rotina que o snackbar oferece desfazer. */
@@ -121,7 +148,8 @@ class TodayViewModel(
             taskRepository.tasks,
             weekCompletions,
             selectedDate,
-        ) { sources, tasks, weekLogs, selected ->
+            todayRepository.observe(),
+        ) { sources, tasks, weekLogs, selected, todayOverview ->
             val (routines, scheduled, overrides) = sources
             val (weekStart, routineDone, taskCompletions) = weekLogs
             // Logo após trocar de semana a consulta antiga ainda não foi refeita: espera a nova.
@@ -135,9 +163,39 @@ class TodayViewModel(
                 .mapValues { (_, ids) -> ids.toSet() }
             val routineDoneToday = routineDone[selected.toEpochDay()].orEmpty()
             val taskDoneToday = taskDoneByDay[selected.toEpochDay()].orEmpty()
+            val today = LocalDate.now()
+            // Pulados ficam visíveis, marcados (P5): a tela os esmaece com a ação de desfazer.
+            val timeline = DayTimeline.build(
+                scheduled,
+                routineDoneToday,
+                selected,
+                zone,
+                tasks,
+                taskDoneToday,
+                overrides,
+                includeSkipped = true,
+            )
+            val byId = tasks.associateBy { it.id }
+            // Só hoje, e só o retrato do mesmo dia (na virada da meia-noite os dois andam separados por um instante).
+            val overview = todayOverview.takeIf { selected == today && it.date == selected }
+            val sections = if (overview != null) {
+                pendingSections(overview, byId)
+            } else {
+                PendingSections(
+                    day = tasks
+                        .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) && it.id !in taskDoneToday }
+                        .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
+                        .map { DayTask(it, done = false) },
+                )
+            }
+            // Concluídas pela data do REGISTRO no dia mostrado; as já riscadas na trilha não se repetem.
+            val struckInTrail = timeline
+                .filterIsInstance<DayTimeline.TaskItem>()
+                .filter { it.done }
+                .mapTo(HashSet()) { it.task.id }
             UiState(
                 isLoaded = true,
-                today = LocalDate.now(),
+                today = today,
                 selectedDate = selected,
                 // Base da trilha = só as rotinas AGENDADAS (não pausadas). Pausada não entra na trilha
                 // nem nos dots; continua em "Todas as rotinas" (gestão) para retomar.
@@ -145,23 +203,19 @@ class TodayViewModel(
                     val date = weekStart.plusDays(offset)
                     weekDay(date, scheduled, routineDone[date.toEpochDay()].orEmpty(), zone, overrides)
                 },
-                // Pulados ficam visíveis, marcados (P5): a tela os esmaece com a ação de desfazer.
-                timeline = DayTimeline.build(
-                    scheduled,
-                    routineDoneToday,
-                    selected,
-                    zone,
-                    tasks,
-                    taskDoneToday,
-                    overrides,
-                    includeSkipped = true,
-                ),
-                untimedTasks = tasks
-                    .filter { it.reminderAt == null && TaskSchedule.occursOn(it, selected) }
+                timeline = timeline,
+                overview = overview,
+                overdueTasks = sections.overdue,
+                dayTasks = sections.day,
+                noDateTasks = sections.noDate,
+                completedTasks = taskDoneToday
+                    .filter { it !in struckInTrail }
+                    .mapNotNull(byId::get)
                     .sortedBy { it.title.lowercase(AppLocale.LOCALE) }
-                    .map { DayTask(it, it.id in taskDoneToday) },
-                // O estado vazio olha TODAS as rotinas (inclusive pausadas): ter uma pausada não é "sem rotinas".
-                hasContent = routines.any { it.archivedAt == null } || tasks.any { it.dueDate != null },
+                    .map { DayTask(it, done = true) },
+                // O estado vazio olha TODAS as rotinas (inclusive pausadas: ter uma pausada não é "sem
+                // rotinas") e qualquer tarefa (as sem data agora têm seção na Hoje).
+                hasContent = routines.any { it.archivedAt == null } || tasks.isNotEmpty(),
             )
         }.filterNotNull()
 
@@ -346,6 +400,27 @@ class TodayViewModel(
     private fun epochDayOf(epochMillis: Long, zone: ZoneId): Long =
         Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate().toEpochDay()
 
+    /** As pendências de uma data, por seção. */
+    private data class PendingSections(
+        val overdue: List<DayTask> = emptyList(),
+        val day: List<DayTask> = emptyList(),
+        val noDate: List<DayTask> = emptyList(),
+    )
+
+    /**
+     * Divide as pendentes do [overview] (fonte única, a do widget) nas seções da Hoje, na ordem dele:
+     * atrasadas, de hoje SEM lembrete hoje e sem data. As com lembrete hoje ficam só na trilha. Uma
+     * pendente cuja tarefa não está mais na lista (excluída no instante) é pulada.
+     */
+    private fun pendingSections(overview: TodayOverview, byId: Map<Long, Task>): PendingSections {
+        fun List<TodayOverview.PendingTask>.rows() = mapNotNull { byId[it.taskId] }.map { DayTask(it, done = false) }
+        return PendingSections(
+            overdue = overview.pending.filter { it.overdue }.rows(),
+            day = overview.pending.filter { it.dated && !it.overdue && it.reminderToday == null }.rows(),
+            noDate = overview.pending.filter { !it.dated }.rows(),
+        )
+    }
+
     /** Só para desestruturar o resultado da consulta da semana. */
     private data class WeekLogs(
         val weekStart: LocalDate,
@@ -366,6 +441,7 @@ class TodayViewModel(
                     firstDayOfWeek(),
                     app.shoppingRepository,
                     app.newTaskDraftStore,
+                    app.todayRepository,
                 )
             }
         }

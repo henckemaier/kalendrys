@@ -25,14 +25,11 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
-import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
-import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.tasks.TaskListScreen
 import com.kalendrys.app.ui.tasks.TaskViewModel
@@ -110,25 +107,8 @@ class ShoppingProgressTagFitTest {
         TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
     }
 
-    private fun routinesViewModel(): TodayViewModel = testDb.db.let { db ->
-        testDb.track(
-            TodayViewModel(
-                RoutineRepository(
-                    db.routineDao(),
-                    db.routineCompletionDao(),
-                    db.routineOverrideDao(),
-                    FakeRoutineAlarms(context),
-                    FakeRoutineNotifications(context),
-                    db.shoppingItemDao(),
-                    InMemoryRoutineCatchUpMark(),
-                ),
-                taskRepository(),
-                DayOfWeek.SUNDAY,
-                ShoppingRepository(db),
-                NewTaskDraftStore(),
-            ),
-        )
-    }
+    private fun routinesViewModel(): TodayViewModel =
+        testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
         testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), NewTaskDraftStore()))

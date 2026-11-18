@@ -25,6 +25,7 @@ import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.ViewModelTestDatabase
@@ -148,7 +149,17 @@ class RoutineDeleteFromEditorTest {
     @Test
     fun `excluir pelo editor aberto a partir da Hoje mostra a mensagem na Hoje e Desfazer devolve`() {
         val today = testDb.track(
-            TodayViewModel(routines, tasks, DayOfWeek.MONDAY, ShoppingRepository(testDb.db), NewTaskDraftStore()),
+            run {
+                val shopping = ShoppingRepository(testDb.db)
+                TodayViewModel(
+                    routines,
+                    tasks,
+                    DayOfWeek.MONDAY,
+                    shopping,
+                    NewTaskDraftStore(),
+                    TodayRepository(tasks, routines, shopping),
+                )
+            },
         )
         deleteFromEditorOver {
             TodayScreen(

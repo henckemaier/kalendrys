@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
@@ -85,6 +86,7 @@ class TodayViewModelTest {
             DayOfWeek.MONDAY,
             shoppingRepository,
             NewTaskDraftStore(),
+            TodayRepository(taskRepository, routineRepository, shoppingRepository),
         ),
     )
 
@@ -153,11 +155,15 @@ class TodayViewModelTest {
 
         val viewModel = viewModel()
         viewModel.uiState.test {
-            // Espera a trilha de hoje com a tarefa concluída (as duas conclusões já carregadas).
-            val state = awaitState { s -> s.untimedTasks.any { it.task.id == id && it.done } }
-            viewModel.toggleTask(state.untimedTasks.single { it.task.id == id }.task, done = true)
-            // Desfeita a B, a tarefa volta para +3 e sai da trilha de hoje.
-            awaitState { s -> s.untimedTasks.none { it.task.id == id } }
+            // Espera a tarefa entre as Concluídas de hoje (as duas conclusões já carregadas).
+            val state = awaitState { s -> s.completedTasks.any { it.task.id == id && it.done } }
+            viewModel.toggleTask(state.completedTasks.single { it.task.id == id }.task, done = true)
+            // Desfeita a B, a tarefa volta para +3 e não é pendente de hoje. Ela continua em Concluídas pelo
+            // registro A, que também é de hoje (E3: Concluídas vai pela data do REGISTRO).
+            awaitState { s ->
+                s.dayTasks.none { it.task.id == id } &&
+                    s.completedTasks.any { it.task.id == id && it.task.dueDate == today.plusDays(3).toEpochDay() }
+            }
             cancelAndIgnoreRemainingEvents()
         }
         Triple(id, a, b)

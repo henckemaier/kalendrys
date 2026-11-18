@@ -21,16 +21,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
-import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.TaskTiming
-import com.kalendrys.app.testutil.FakeReminderScheduler
-import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.DayOfWeek
@@ -68,26 +61,14 @@ class TodayScreenSemanticsTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
-        val db = testDb.db
-        val routines = RoutineRepository(
-            db.routineDao(),
-            db.routineCompletionDao(),
-            db.routineOverrideDao(),
-            FakeRoutineAlarms(context),
-            FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
-            InMemoryRoutineCatchUpMark(),
-        )
-        val tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        val repos = TodayRepositories(context, testDb.db)
         val today = LocalDate.now()
         runBlocking {
-            routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
-            tasks.addTask("Ligar para o banco", timing = TaskTiming(date = today, time = LocalTime.of(23, 0)))
-            tasks.addTask("Comprar pão", timing = TaskTiming(date = today))
+            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
+            repos.tasks.addTask("Ligar para o banco", timing = TaskTiming(date = today, time = LocalTime.of(23, 0)))
+            repos.tasks.addTask("Comprar pão", timing = TaskTiming(date = today))
         }
-        viewModel = testDb.track(
-            TodayViewModel(routines, tasks, DayOfWeek.SUNDAY, ShoppingRepository(db), NewTaskDraftStore()),
-        )
+        viewModel = testDb.track(repos.viewModel(DayOfWeek.SUNDAY))
         compose.setContent {
             KalendrysTheme {
                 TodayScreen(
@@ -112,8 +93,10 @@ class TodayScreenSemanticsTest {
         condition()
     }
 
-    /** O nó (mesclado) da linha que mostra [text]. */
-    private fun row(text: String): SemanticsNode = compose.onNode(hasText(text, substring = true)).fetchSemanticsNode()
+    /** O nó (mesclado) da LINHA que mostra [text]: a que tem estado (o "A seguir" também pode citar o título). */
+    private fun row(text: String): SemanticsNode =
+        compose.onNode(hasText(text, substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+            .fetchSemanticsNode()
 
     private fun SemanticsNode.texts(): List<String> = config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
 
@@ -127,21 +110,27 @@ class TodayScreenSemanticsTest {
         // Um nó só: o título e o horário estão no mesmo nó.
         assertTrue("textos ${block.texts()}", block.texts().any { it.startsWith("07:00") })
         assertEquals("Pendente", block.config[SemanticsProperties.StateDescription])
-        assertEquals(listOf<String?>("Concluir Treino"), block.actionLabels())
+        // E3: "Pular este dia" também é ação direta da linha (além do menu do segurar).
+        assertEquals(listOf<String?>("Concluir Treino", "Pular este dia"), block.actionLabels())
         assertNotNull("tocar abre", block.config.getOrNull(SemanticsActions.OnClick))
         assertEquals("Pular ou remarcar este dia", block.config[SemanticsActions.OnLongClick].label)
         // O círculo não é um segundo nó com a mesma ação.
         compose.onAllNodes(hasContentDescription("Concluir Treino")).assertCountEquals(0)
 
         // Concluir pela ação de acessibilidade muda o estado e o rótulo da ação.
-        compose.runOnIdle { block.config[SemanticsActions.CustomActions].single().action() }
+        compose.runOnIdle { block.action("Concluir Treino").action() }
         waitFor { row("Treino").config.getOrNull(SemanticsProperties.StateDescription) == "Feita" }
-        assertEquals(listOf<String?>("Desmarcar Treino"), row("Treino").actionLabels())
+        assertEquals(listOf<String?>("Desmarcar Treino", "Pular este dia"), row("Treino").actionLabels())
 
-        // Segurar pela ação acessível abre a exceção do dia.
+        // Segurar pela ação acessível abre o menu; "Remarcar este dia" abre a exceção do dia.
         compose.runOnIdle { row("Treino").config[SemanticsActions.OnLongClick].action?.invoke() }
+        compose.onNodeWithText("Pular este dia").assertIsDisplayed()
+        compose.onNodeWithText("Remarcar este dia").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue("chamadas $calls", calls.any { it.startsWith("exception ") }) }
     }
+
+    private fun SemanticsNode.action(label: String) =
+        config[SemanticsActions.CustomActions].single { it.label == label }
 
     @Test
     fun `tarefa da trilha e tarefa sem horario sao um no cada, com estado e concluir acessivel`() {
@@ -153,18 +142,24 @@ class TodayScreenSemanticsTest {
             compose.onAllNodes(hasContentDescription("Concluir $title")).assertCountEquals(0)
         }
 
+        // E3: concluída sai de "Hoje" e vai para "Concluídas" (recolhida); aberta, a linha é Feita e desmarcável.
         compose.runOnIdle { row("Comprar pão").config[SemanticsActions.CustomActions].single().action() }
-        waitFor { row("Comprar pão").config.getOrNull(SemanticsProperties.StateDescription) == "Feita" }
+        waitFor { compose.onAllNodes(hasText("Comprar pão")).fetchSemanticsNodes().isEmpty() }
+        val done = compose.onNode(heading and hasText("Concluídas")).fetchSemanticsNode()
+        compose.runOnIdle { done.config[SemanticsActions.OnClick].action?.invoke() }
+        waitFor { compose.onAllNodes(hasText("Comprar pão")).fetchSemanticsNodes().isNotEmpty() }
+        assertEquals("Feita", row("Comprar pão").config[SemanticsProperties.StateDescription])
         assertEquals(listOf<String?>("Desmarcar Comprar pão"), row("Comprar pão").actionLabels())
     }
 
     @Test
-    fun `cabecalho das tarefas do dia e marcado como titulo`() {
-        val header = row("Tarefas de hoje")
+    fun `secao Hoje e marcada como titulo, com a contagem no mesmo no`() {
+        val header = compose.onNode(heading and hasText("Hoje") and hasText("1")).fetchSemanticsNode()
 
         assertNotNull(header.config.getOrNull(SemanticsProperties.Heading))
-        assertNotNull("recolher/mostrar acessível", header.config.getOrNull(SemanticsActions.OnClick))
     }
+
+    private val heading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
 
     @Test
     fun `dias da semana sao abas com o selecionado marcado e o deslize tem acoes equivalentes`() {
@@ -188,7 +183,8 @@ class TodayScreenSemanticsTest {
         waitFor { viewModel.uiState.value.selectedDate == LocalDate.now().plusDays(1) }
         waitFor { compose.onAllNodesWithText("Treino").fetchSemanticsNodes().isNotEmpty() }
 
-        assertEquals(emptyList<String?>(), row("Treino").actionLabels())
+        // Sem concluir em dia futuro; pular o dia continua possível (como na tela de exceção).
+        assertEquals(listOf<String?>("Pular este dia"), row("Treino").actionLabels())
         assertEquals("Pendente", row("Treino").config[SemanticsProperties.StateDescription])
     }
 

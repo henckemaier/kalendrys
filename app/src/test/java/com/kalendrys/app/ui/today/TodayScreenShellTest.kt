@@ -10,14 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.NewTaskDraftStore
-import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
-import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.testutil.FakeReminderScheduler
-import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.DayOfWeek
@@ -51,23 +44,7 @@ class TodayScreenShellTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        viewModel = testDb.track(
-            TodayViewModel(
-                RoutineRepository(
-                    db.routineDao(),
-                    db.routineCompletionDao(),
-                    db.routineOverrideDao(),
-                    FakeRoutineAlarms(context),
-                    FakeRoutineNotifications(context),
-                    db.shoppingItemDao(),
-                    InMemoryRoutineCatchUpMark(),
-                ),
-                TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
-                DayOfWeek.SUNDAY,
-                ShoppingRepository(db),
-                NewTaskDraftStore(),
-            ),
-        )
+        viewModel = testDb.track(TodayRepositories(context, db).viewModel(DayOfWeek.SUNDAY))
     }
 
     @After

@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
@@ -35,17 +39,141 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
+import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
+import com.kalendrys.app.ui.theme.Spacing
 import com.kalendrys.app.ui.today.TodayViewModel.DayTask
+import com.kalendrys.app.ui.today.TodayViewModel.UiState
+
+/** Seções recolhíveis da Hoje; aberta/fechada é estado de tela (sobrevive a girar). */
+internal class SectionsState(
+    val noDateExpanded: Boolean,
+    val doneExpanded: Boolean,
+    val onToggleNoDate: () -> Unit,
+    val onToggleDone: () -> Unit,
+)
+
+/**
+ * As tarefas fora da trilha, na ordem do 14.4 (depois da trilha): Atrasadas, Hoje (ou "Tarefas do
+ * dia" em outro dia), Sem data (recolhida) e Concluídas (recolhida). Seção vazia não aparece.
+ */
+internal fun LazyListScope.todaySections(
+    state: UiState,
+    sections: SectionsState,
+    onOpenTask: (Long) -> Unit,
+    onToggleTask: (Task, Boolean) -> Unit,
+) {
+    taskSection("overdue", R.string.today_section_overdue, state.overdueTasks, state, onOpenTask, onToggleTask)
+    taskSection(
+        "day",
+        if (state.isShowingToday) R.string.today_section_today else R.string.today_section_day,
+        state.dayTasks,
+        state,
+        onOpenTask,
+        onToggleTask,
+    )
+    taskSection(
+        "no_date",
+        R.string.today_section_no_date,
+        state.noDateTasks,
+        state,
+        onOpenTask,
+        onToggleTask,
+        expanded = sections.noDateExpanded,
+        onToggleExpanded = sections.onToggleNoDate,
+    )
+    taskSection(
+        "done",
+        R.string.today_section_done,
+        state.completedTasks,
+        state,
+        onOpenTask,
+        onToggleTask,
+        expanded = sections.doneExpanded,
+        onToggleExpanded = sections.onToggleDone,
+    )
+}
+
+/** Uma seção: cabeçalho (título e contagem) e as linhas; com [onToggleExpanded], recolhível. */
+private fun LazyListScope.taskSection(
+    key: String,
+    titleRes: Int,
+    tasks: List<DayTask>,
+    state: UiState,
+    onOpenTask: (Long) -> Unit,
+    onToggleTask: (Task, Boolean) -> Unit,
+    expanded: Boolean = true,
+    onToggleExpanded: (() -> Unit)? = null,
+) {
+    if (tasks.isEmpty()) return
+    item(key = "section_$key", contentType = "section_header") {
+        TaskSectionHeader(
+            title = stringResource(titleRes),
+            count = tasks.size,
+            expanded = expanded,
+            onToggleExpanded = onToggleExpanded,
+        )
+    }
+    if (!expanded) return
+    items(items = tasks, key = { "${key}_${it.task.id}" }, contentType = { "section_task" }) { dayTask ->
+        DayTaskRow(
+            dayTask = dayTask,
+            listProgress = state.progressFor(dayTask.task.shoppingListId),
+            canComplete = state.canComplete,
+            onOpen = { onOpenTask(dayTask.task.id) },
+            onToggle = { onToggleTask(dayTask.task, dayTask.done) },
+        )
+    }
+}
+
+/**
+ * Cabeçalho de seção (marcado como título). Recolhível ([onToggleExpanded]): o estado
+ * aberta/recolhida e a ação de abrir/recolher ficam no mesmo nó, no padrão do "Marcados (n)" das
+ * listas (12.4).
+ */
+@Composable
+private fun TaskSectionHeader(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggleExpanded: (() -> Unit)?,
+) {
+    if (onToggleExpanded == null) {
+        SectionHeader(title = title, count = count, contentPadding = SectionHeaderPadding)
+        return
+    }
+    val stateLabel = stringResource(if (expanded) R.string.today_section_expanded else R.string.today_section_collapsed)
+    val actionLabel = stringResource(if (expanded) R.string.today_section_collapse else R.string.today_section_expand, title)
+    SectionHeader(
+        title = title,
+        count = count,
+        contentPadding = SectionHeaderPadding,
+        onClick = onToggleExpanded,
+        onClickLabel = actionLabel,
+        trailing = {
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .semantics { stateDescription = stateLabel },
+    )
+}
+
+private val SectionHeaderPadding = PaddingValues(start = Spacing.s, end = Spacing.s, top = Spacing.m, bottom = Spacing.xs)
 
 /**
  * Uma tarefa pontual na trilha. Destaque OPOSTO ao do bloco de rotina (pílula sólida + círculo):
@@ -63,13 +191,17 @@ internal fun TaskRow(
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val task = item.task
     val timeColumnWidth = timeColumnWidth()
+    val toggleLabel = taskToggleLabel(item.done, task.title)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .clip(MaterialTheme.shapes.medium)
-            .timelineRowSemantics(rowStateLabel(item.done), taskToggleLabel(item.done, task.title), canComplete, onToggle)
+            .timelineRowSemantics(
+                rowStateLabel(item.done),
+                if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
+            )
             .clickable(onClick = onOpen),
     ) {
         Box(
@@ -116,39 +248,7 @@ internal fun TaskRow(
     }
 }
 
-/** Cabeçalho recolhível das tarefas sem horário: marcado como título para o leitor de tela. */
-@Composable
-internal fun DayTasksHeader(
-    title: String,
-    count: Int,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .semantics { heading() }
-            .clickable(onClick = onToggle)
-            .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-    ) {
-        Text(
-            text = "$title · $count",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Icon(
-            imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-            contentDescription = stringResource(
-                if (expanded) R.string.routines_day_tasks_collapse else R.string.routines_day_tasks_expand,
-            ),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
+/** Uma tarefa de seção: losango, título e o círculo de concluir/desmarcar. */
 @Composable
 internal fun DayTaskRow(
     dayTask: DayTask,
@@ -159,12 +259,16 @@ internal fun DayTaskRow(
 ) {
     val accent = MaterialTheme.colorScheme.secondary
     val task = dayTask.task
+    val toggleLabel = taskToggleLabel(dayTask.done, task.title)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.small)
-            .timelineRowSemantics(rowStateLabel(dayTask.done), taskToggleLabel(dayTask.done, task.title), canComplete, onToggle)
+            .timelineRowSemantics(
+                rowStateLabel(dayTask.done),
+                if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
+            )
             .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
     ) {

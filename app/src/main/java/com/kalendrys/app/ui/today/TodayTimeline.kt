@@ -11,26 +11,26 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -69,7 +70,6 @@ import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.domain.ShoppingProgress
-import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
@@ -77,7 +77,6 @@ import com.kalendrys.app.ui.routines.routineTimeRange
 import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.today.TodayViewModel.UiState
-import java.time.LocalTime
 
 internal val RowPadding = 6.dp
 // Largura MÍNIMA da coluna de horas; com fonte grande ela cresce para caber "00:00" numa linha (ver timeColumnWidth).
@@ -89,126 +88,98 @@ private val PillWidth = 48.dp
 private val PillShape = CircleShape
 // O losango (16.dp girado 45°) ocupa ~22.6.dp na diagonal; a trilha abre essa folga para a linha.
 internal val DiamondTrackGap = 24.dp
+/** Bloco pulado (P5): esmaecido, mas o controle de desfazer fica com a cor cheia. */
+private const val SkippedAlpha = 0.45f
 
-/** A timeline do dia selecionado: tarefas sem horário (recolhíveis) no topo e a trilha de blocos. */
-@Composable
-internal fun TodayTimeline(
-    state: UiState,
-    listState: LazyListState,
-    onOpenRoutine: (Long) -> Unit,
-    onOpenTask: (Long) -> Unit,
-    onOpenException: (Long, Long) -> Unit,
-    onToggle: (DayTimeline.Block) -> Unit,
-    onToggleTask: (Task, Boolean) -> Unit,
-    contentPadding: PaddingValues,
-    modifier: Modifier = Modifier,
-) {
-    val now = rememberCurrentMinute()
-    // Muda a cada minuto; cada linha recebe só um Boolean e só recompõe quando o bloco entra ou sai de andamento.
-    val nowMinute = remember(now) { LocalTime.now().let { it.hour * 60 + it.minute } }
-    var tasksExpanded by rememberSaveable { mutableStateOf(true) }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxSize(),
-        // Sem espaçamento entre itens: as linhas de ligação passam de um bloco para o outro.
-        contentPadding = contentPadding,
-    ) {
-        if (state.untimedTasks.isNotEmpty()) {
-            item(key = "today_tasks_header", contentType = "tasks_header") {
-                DayTasksHeader(
-                    title = if (state.isShowingToday) {
-                        stringResource(R.string.routines_day_tasks_today)
-                    } else {
-                        stringResource(R.string.routines_day_tasks)
-                    },
-                    count = state.untimedTasks.size,
-                    expanded = tasksExpanded,
-                    onToggle = { tasksExpanded = !tasksExpanded },
-                )
-            }
-            if (tasksExpanded) {
-                items(
-                    items = state.untimedTasks,
-                    key = { "band_${it.task.id}" },
-                    contentType = { "band_task" },
-                ) { dayTask ->
-                    DayTaskRow(
-                        dayTask = dayTask,
-                        listProgress = state.progressFor(dayTask.task.shoppingListId),
-                        canComplete = state.canComplete,
-                        onOpen = { onOpenTask(dayTask.task.id) },
-                        onToggle = { onToggleTask(dayTask.task, dayTask.done) },
-                    )
-                }
-            }
+/** O que a trilha faz com cada item; a tela liga ao ViewModel e à navegação. */
+internal class TrailActions(
+    val onOpenRoutine: (Long) -> Unit,
+    val onOpenTask: (Long) -> Unit,
+    /** "Remarcar este dia": a tela de exceção da ocorrência (rotina, dia). */
+    val onReschedule: (Long, Long) -> Unit,
+    val onToggle: (DayTimeline.Block) -> Unit,
+    val onToggleTask: (Task, Boolean) -> Unit,
+    /** "Pular este dia" (menu do bloco): o mesmo `skipOccurrence` da tela de exceção. */
+    val onSkip: (DayTimeline.Block) -> Unit,
+    /** "Desfazer pular" do próprio bloco: só tira o pular. */
+    val onUnskip: (DayTimeline.Block) -> Unit,
+)
+
+/**
+ * A trilha do dia selecionado, como itens da lista única da Hoje (a faixa da semana e as seções vêm
+ * antes e depois, na mesma lista). Sem espaçamento entre itens: as linhas de ligação passam de um
+ * bloco para o outro.
+ */
+internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: TrailActions) {
+    if (state.timeline.isEmpty()) {
+        item(key = "empty_day", contentType = "empty_day") {
+            Text(
+                text = stringResource(R.string.routines_empty_day),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp),
+            )
         }
-        if (state.timeline.isEmpty() && state.untimedTasks.isEmpty()) {
-            item(key = "empty_day", contentType = "empty_day") {
-                Text(
-                    text = stringResource(R.string.routines_empty_day),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp),
-                )
+    }
+    items(
+        items = state.timeline,
+        key = { it.key },
+        contentType = {
+            when (it) {
+                is DayTimeline.Block -> "block"
+                is DayTimeline.Gap -> "gap"
+                is DayTimeline.TaskItem -> "task"
             }
-        }
-        items(
-            items = state.timeline,
-            key = { it.key },
-            contentType = {
-                when (it) {
-                    is DayTimeline.Block -> "block"
-                    is DayTimeline.Gap -> "gap"
-                    is DayTimeline.TaskItem -> "task"
-                }
-            },
-        ) { item ->
-            when (item) {
-                is DayTimeline.Block -> BlockRow(
+        },
+    ) { item ->
+        when (item) {
+            is DayTimeline.Block -> {
+                // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar nem pular.
+                val editable = item.routine.archivedAt == null
+                BlockRow(
                     block = item,
                     listProgress = state.progressFor(item.routine.shoppingListId),
-                    inProgress = state.isShowingToday && nowMinute >= item.startMinute && nowMinute < item.endMinute,
+                    inProgress = !item.skipped && state.isShowingToday &&
+                        nowMinute >= item.startMinute && nowMinute < item.endMinute,
                     canComplete = state.canComplete,
-                    // Rotina excluída: o bloco fica nos dias passados, mas não há mais o que editar.
-                    onOpen = if (item.routine.archivedAt == null) ({ onOpenRoutine(item.routine.id) }) else null,
-                    // Pressionar e segurar numa ocorrência abre a exceção (pular/remarcar só aquele dia).
-                    onLongPress = if (item.routine.archivedAt == null) {
-                        ({ onOpenException(item.routine.id, state.selectedDate.toEpochDay()) })
+                    onOpen = if (editable) ({ actions.onOpenRoutine(item.routine.id) }) else null,
+                    onSkip = if (editable && !item.skipped) ({ actions.onSkip(item) }) else null,
+                    onReschedule = if (editable) {
+                        ({ actions.onReschedule(item.routine.id, state.selectedDate.toEpochDay()) })
                     } else {
                         null
                     },
-                    onToggle = { onToggle(item) },
-                )
-                is DayTimeline.Gap -> GapRow(item)
-                is DayTimeline.TaskItem -> TaskRow(
-                    item = item,
-                    listProgress = state.progressFor(item.task.shoppingListId),
-                    canComplete = state.canComplete,
-                    onOpen = { onOpenTask(item.task.id) },
-                    onToggle = { onToggleTask(item.task, item.done) },
+                    onToggle = { actions.onToggle(item) },
+                    onUnskip = { actions.onUnskip(item) },
                 )
             }
+            is DayTimeline.Gap -> GapRow(item)
+            is DayTimeline.TaskItem -> TaskRow(
+                item = item,
+                listProgress = state.progressFor(item.task.shoppingListId),
+                canComplete = state.canComplete,
+                onOpen = { actions.onOpenTask(item.task.id) },
+                onToggle = { actions.onToggleTask(item.task, item.done) },
+            )
         }
     }
 }
 
 /**
- * Semântica de uma linha da timeline (ADR-0002, 14.9; mesmo padrão da C1 da lista de compras): UM nó
- * com o conteúdo, o estado ([state], "Feita"/"Pendente") e concluir/desmarcar como ação de
- * acessibilidade ([toggleLabel]), só quando o dia aceita ([canComplete]). O círculo continua tocável,
- * mas fica fora da leitura ([clearAndSetSemantics] nele), para a ação não aparecer duas vezes.
+ * Semântica de uma linha (ADR-0002, 14.9; mesmo padrão da C1 da lista de compras): UM nó com o
+ * conteúdo, o estado ([state]: "Feita", "Pendente", "Pulado") e as ações de acessibilidade da linha
+ * ([actions]: concluir/desmarcar, pular, desfazer pular). Os controles visíveis (círculo, desfazer)
+ * continuam tocáveis, mas ficam fora da leitura ([clearAndSetSemantics] neles), para a ação não
+ * aparecer duas vezes.
  */
-internal fun Modifier.timelineRowSemantics(
-    state: String,
-    toggleLabel: String,
-    canComplete: Boolean,
-    onToggle: () -> Unit,
-): Modifier = semantics(mergeDescendants = true) {
-    stateDescription = state
-    if (canComplete) {
-        customActions = listOf(CustomAccessibilityAction(toggleLabel) { onToggle(); true })
+internal fun Modifier.timelineRowSemantics(state: String, actions: List<CustomAccessibilityAction>): Modifier =
+    semantics(mergeDescendants = true) {
+        stateDescription = state
+        if (actions.isNotEmpty()) customActions = actions
     }
-}
+
+/** Ação de acessibilidade de uma linha. */
+internal fun rowAction(label: String, onAction: () -> Unit) = CustomAccessibilityAction(label) { onAction(); true }
 
 @Composable
 internal fun rowStateLabel(done: Boolean): String =
@@ -217,6 +188,12 @@ internal fun rowStateLabel(done: Boolean): String =
 /** A pílula cresce com a duração: 30 min ou menos é um círculo, a partir de ~1h40 para de crescer. */
 private fun pillHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).coerceIn(48f, 160f).dp
 
+/**
+ * Bloco de rotina. Tocar abre a rotina; segurar abre um menu curto ancorado no bloco com "Pular este
+ * dia" e "Remarcar este dia" (no leitor de tela, o segurar tem rótulo e "Pular este dia" também é
+ * ação direta da linha). Pulado (P5): esmaecido, sem concluir, com o desfazer VISÍVEL no lugar do
+ * círculo (alvo de 48dp, não depende de segurar) e "Desfazer pular" como ação da linha.
+ */
 @Composable
 private fun BlockRow(
     block: DayTimeline.Block,
@@ -224,136 +201,202 @@ private fun BlockRow(
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
-    onLongPress: (() -> Unit)?,
+    onSkip: (() -> Unit)?,
+    onReschedule: (() -> Unit)?,
     onToggle: () -> Unit,
+    onUnskip: () -> Unit,
 ) {
     val routine = block.routine
+    val skipped = block.skipped
     val tone = routineTone(RoutineColor.fromKey(routine.color))
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val pillHeight = pillHeight(routine.durationMinutes)
     val hasDuration = routine.durationMinutes > 0
     val timeColumnWidth = timeColumnWidth()
+    var menuOpen by rememberSaveable(block.key) { mutableStateOf(false) }
+    val hasMenu = onSkip != null || onReschedule != null
+
     val toggleLabel = stringResource(
         if (block.done) R.string.routine_uncomplete else R.string.routine_complete,
         routine.title,
     )
-    val exceptionLabel = stringResource(R.string.today_block_exception)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .clip(MaterialTheme.shapes.medium)
-            .timelineRowSemantics(rowStateLabel(block.done), toggleLabel, canComplete, onToggle)
-            .then(
-                if (onOpen != null) {
-                    Modifier.combinedClickable(
-                        onClick = onOpen,
-                        onLongClick = onLongPress,
-                        onLongClickLabel = if (onLongPress != null) exceptionLabel else null,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        Column(
-            verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,
-            modifier = Modifier
-                .width(timeColumnWidth)
-                .fillMaxHeight()
-                .padding(vertical = RowPadding + 2.dp)
-                .clearAndSetSemantics {},
-        ) {
-            TimeLabel(minuteOfDayLabel(block.startMinute))
-            if (hasDuration) {
-                TimeLabel(minuteOfDayLabel(block.endMinute))
-            }
+    val skipLabel = stringResource(R.string.today_skip_day)
+    val rescheduleLabel = stringResource(R.string.today_reschedule_day)
+    val undoSkipLabel = stringResource(R.string.today_undo_skip)
+    val menuLabel = stringResource(R.string.today_block_exception)
+    val stateLabel = if (skipped) stringResource(R.string.today_state_skipped) else rowStateLabel(block.done)
+    val rowActions = buildList {
+        if (skipped) {
+            add(rowAction(undoSkipLabel, onUnskip))
+        } else {
+            if (canComplete) add(rowAction(toggleLabel, onToggle))
+            if (onSkip != null) add(rowAction(skipLabel, onSkip))
         }
-        Box(
-            contentAlignment = Alignment.Center,
+    }
+    val contentAlpha = if (skipped) Modifier.alpha(SkippedAlpha) else Modifier
+
+    Box {
+        Row(
             modifier = Modifier
-                .width(TrackWidth)
-                .fillMaxHeight()
-                .drawBehind { drawLinks(block.linkAbove, block.linkBelow, pillHeight.toPx(), lineColor) },
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+                .clip(MaterialTheme.shapes.medium)
+                .timelineRowSemantics(stateLabel, rowActions)
+                .then(
+                    if (onOpen != null) {
+                        Modifier.combinedClickable(
+                            onClick = onOpen,
+                            onLongClick = if (hasMenu) ({ menuOpen = true }) else null,
+                            onLongClickLabel = if (hasMenu) menuLabel else null,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
+            Column(
+                verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,
+                modifier = Modifier
+                    .width(timeColumnWidth)
+                    .fillMaxHeight()
+                    .padding(vertical = RowPadding + 2.dp)
+                    .then(contentAlpha)
+                    .clearAndSetSemantics {},
+            ) {
+                TimeLabel(minuteOfDayLabel(block.startMinute))
+                if (hasDuration) {
+                    TimeLabel(minuteOfDayLabel(block.endMinute))
+                }
+            }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .padding(vertical = RowPadding)
-                    .size(width = PillWidth, height = pillHeight)
-                    .clip(PillShape)
-                    .background(tone.fill)
-                    .then(
-                        if (inProgress) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, PillShape) else Modifier,
-                    ),
+                    .width(TrackWidth)
+                    .fillMaxHeight()
+                    .drawBehind { drawLinks(block.linkAbove, block.linkBelow, pillHeight.toPx(), lineColor) },
             ) {
-                Icon(
-                    imageVector = RoutineIcon.fromKey(routine.icon).imageVector,
-                    contentDescription = null,
-                    tint = tone.onFill,
-                )
-            }
-        }
-        Column(
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier
-                .weight(1f)
-                .align(Alignment.CenterVertically)
-                .padding(start = 8.dp, top = RowPadding, bottom = RowPadding),
-        ) {
-            if (inProgress) {
-                Text(
-                    text = stringResource(R.string.routine_now),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = routineTimeRange(block.startMinute, routine.durationMinutes),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    // M-1: o horário cede espaço (reticências) para o sino e o 2/3 ficarem inteiros.
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (routine.remind) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .padding(vertical = RowPadding)
+                        .size(width = PillWidth, height = pillHeight)
+                        .then(contentAlpha)
+                        .clip(PillShape)
+                        .background(tone.fill)
+                        .then(
+                            if (inProgress) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, PillShape) else Modifier,
+                        ),
+                ) {
                     Icon(
-                        imageVector = Icons.Outlined.Notifications,
-                        contentDescription = stringResource(R.string.routine_reminds),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(start = 4.dp)
-                            .size(14.dp),
+                        imageVector = RoutineIcon.fromKey(routine.icon).imageVector,
+                        contentDescription = null,
+                        tint = tone.onFill,
                     )
                 }
-                if (listProgress != null) {
-                    ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))
+            }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .align(Alignment.CenterVertically)
+                    .padding(start = 8.dp, top = RowPadding, bottom = RowPadding)
+                    .then(contentAlpha),
+            ) {
+                if (inProgress) {
+                    Text(
+                        text = stringResource(R.string.routine_now),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = routineTimeRange(block.startMinute, routine.durationMinutes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // M-1: o horário cede espaço (reticências) para o sino e o 2/3 ficarem inteiros.
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (routine.remind && !skipped) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = stringResource(R.string.routine_reminds),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 4.dp)
+                                .size(14.dp),
+                        )
+                    }
+                    if (listProgress != null) {
+                        ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+                Text(
+                    text = routine.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (block.done || skipped) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    textDecoration = if (block.done) TextDecoration.LineThrough else null,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (skipped) {
+                // Desfazer pular visível (48dp), com a cor cheia; a ação acessível é a da linha.
+                IconButton(
+                    onClick = onUnskip,
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .clearAndSetSemantics {},
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Undo,
+                        contentDescription = null,
+                        tint = tone.accent,
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = onToggle,
+                    enabled = canComplete,
+                    // Concluir já é ação do nó da linha (timelineRowSemantics); o círculo é só o alvo de toque.
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .clearAndSetSemantics {},
+                ) {
+                    Icon(
+                        imageVector = if (block.done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = null,
+                        tint = if (canComplete) tone.accent else tone.accent.copy(alpha = 0.38f),
+                    )
                 }
             }
-            Text(
-                text = routine.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (block.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                textDecoration = if (block.done) TextDecoration.LineThrough else null,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
-        IconButton(
-            onClick = onToggle,
-            enabled = canComplete,
-            // Concluir já é ação do nó da linha (timelineRowSemantics); o círculo é só o alvo de toque.
-            modifier = Modifier
-                .align(Alignment.CenterVertically)
-                .clearAndSetSemantics {},
-        ) {
-            Icon(
-                imageVector = if (block.done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
-                contentDescription = null,
-                tint = if (canComplete) tone.accent else tone.accent.copy(alpha = 0.38f),
-            )
+        // Menu do segurar, ancorado no bloco. Fecha no voltar (preditivo, inclusive) sem navegar.
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (onSkip != null) {
+                DropdownMenuItem(
+                    text = { Text(skipLabel) },
+                    onClick = {
+                        menuOpen = false
+                        onSkip()
+                    },
+                )
+            }
+            if (onReschedule != null) {
+                DropdownMenuItem(
+                    text = { Text(rescheduleLabel) },
+                    onClick = {
+                        menuOpen = false
+                        onReschedule()
+                    },
+                )
+            }
         }
     }
 }
