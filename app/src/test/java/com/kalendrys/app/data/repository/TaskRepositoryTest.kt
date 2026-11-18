@@ -532,6 +532,50 @@ class TaskRepositoryTest {
         assertTrue("o alarme marcado é cancelado", task.id in scheduler.cancelled)
     }
 
+
+    // --- Conclusão retroativa (dia anterior a hoje, pela Hoje): sem efeito de hoje ---
+
+    private fun yesterdayAt(hour: Int) =
+        LocalDate.now().minusDays(1).atTime(hour, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test
+    fun `repetida concluida ontem nao mexe no alarme, na notificacao nem na lista`() = runTest {
+        val listId = listWithPickedItems()
+        val daily = repository.addTask(
+            "Remédio",
+            timing = TaskTiming(date = LocalDate.now().minusDays(1), time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY),
+            shoppingListId = listId,
+        )
+        val alarmBefore = repository.nextReminderToDeliver(System.currentTimeMillis())
+        scheduler.reset()
+
+        val logId = repository.logCompletion(daily.id, completedAt = yesterdayAt(11))
+
+        assertTrue("alarme não mexido", scheduler.scheduled.isEmpty() && scheduler.cancelled.isEmpty())
+        assertTrue("notificação da tela não tirada", scheduler.dismissed.isEmpty())
+        assertEquals("lista não zerada", listOf(true, true), picked(listId))
+        assertEquals(LocalDate.now().minusDays(1), java.time.Instant.ofEpochMilli(db.completionLogDao().byId(logId)!!.completedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
+        // A conta do alarme só olha conclusões de hoje em diante: a ocorrência de hoje continua a próxima.
+        assertEquals(alarmBefore, repository.nextReminderToDeliver(System.currentTimeMillis()))
+    }
+
+    @Test
+    fun `unica atrasada concluida no dia dela fica encerrada, sem conclusao adiantada`() = runTest {
+        val yesterday = LocalDate.now().minusDays(1)
+        val task = repository.addTask("Pagar conta", timing = TaskTiming(date = yesterday, time = LocalTime.of(9, 0)))
+
+        val logId = repository.logCompletion(task.id, completedAt = yesterdayAt(11))
+
+        val after = db.taskDao().byId(task.id)!!
+        assertEquals(yesterday.toEpochDay(), after.dueDate)
+        assertNull(db.completionLogDao().byId(logId)!!.previousDueDate)
+        assertTrue(com.kalendrys.app.domain.TaskSchedule.isFinished(after, db.completionLogDao().lastCompletion(task.id), java.time.ZoneId.systemDefault()))
+        // Desfazer pelo id do registro.
+        repository.undoCompletion(logId)
+        assertNull(db.completionLogDao().byId(logId))
+        assertEquals(yesterday.toEpochDay(), db.taskDao().byId(task.id)!!.dueDate)
+    }
+
     // --- NB-3: concluir de novo uma tarefa única encerrada não cria outro registro ---
 
     @Test

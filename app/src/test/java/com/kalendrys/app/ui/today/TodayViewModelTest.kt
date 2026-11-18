@@ -17,6 +17,7 @@ import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -25,6 +26,7 @@ import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
@@ -356,5 +358,30 @@ class TodayViewModelTest {
             assertEquals(treino.id, state.block("Treino").routine.id)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- Concluir num dia passado grava NO PRÓPRIO DIA (decisão do Esquadro, v1.8.0) ---
+
+    @Test
+    fun `repetida concluida pela linha de ontem fica feita ontem e hoje continua pendente`() = runTest {
+        val yesterday = LocalDate.now().minusDays(1)
+        val id = taskRepository.addTask("Remédio", timing = TaskTiming(date = yesterday, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY)).id
+        val viewModel = viewModel()
+        viewModel.select(yesterday)
+        viewModel.uiState.test {
+            awaitState { s -> s.selectedDate == yesterday }
+            viewModel.toggleTask(db.taskDao().byId(id)!!, done = false)
+            awaitState { s -> s.selectedDate == yesterday }
+            cancelAndIgnoreRemainingEvents()
+        }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5_000) { while (db.completionLogDao().all().none { it.taskId == id }) kotlinx.coroutines.delay(20) }
+        }
+        val log = db.completionLogDao().all().single { it.taskId == id }
+        assertEquals(yesterday, Instant.ofEpochMilli(log.completedAt).atZone(ZoneId.systemDefault()).toLocalDate())
+        // Números de hoje (o retrato do widget): a tarefa de hoje continua pendente.
+        val overview = com.kalendrys.app.data.repository.TodayRepository(taskRepository, routineRepository, shoppingRepository).current()
+        assertEquals(true, overview.pending.any { it.taskId == id })
+        assertEquals(0, overview.doneCount)
     }
 }

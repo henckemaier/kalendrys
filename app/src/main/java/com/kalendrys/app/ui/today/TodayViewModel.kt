@@ -32,6 +32,7 @@ import com.kalendrys.app.ui.components.firstDayOfWeek
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -373,7 +374,10 @@ class TodayViewModel(
             if (done) {
                 taskLogFor(task.id, date)?.let { taskRepository.undoCompletion(it) }
             } else {
-                taskCompletedEvents.send(taskRepository.logCompletion(task.id))
+                // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
+                val completedAt = if (date == LocalDate.now()) System.currentTimeMillis()
+                else date.atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt))
             }
         }
     }
