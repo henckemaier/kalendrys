@@ -145,7 +145,8 @@ internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: T
                     onOpen = if (editable) ({ actions.onOpenRoutine(item.routine.id) }) else null,
                     onSkip = if (editable && !item.skipped) ({ actions.onSkip(item) }) else null,
                     onReschedule = if (editable) {
-                        ({ actions.onReschedule(item.routine.id, state.selectedDate.toEpochDay()) })
+                        // A exceção mora no dia da ocorrência (o de origem, se veio remarcado de outro dia).
+                        ({ actions.onReschedule(item.routine.id, item.occurrenceDate.toEpochDay()) })
                     } else {
                         null
                     },
@@ -185,8 +186,14 @@ internal fun rowAction(label: String, onAction: () -> Unit) = CustomAccessibilit
 internal fun rowStateLabel(done: Boolean): String =
     stringResource(if (done) R.string.today_state_done else R.string.today_state_pending)
 
-/** A pílula cresce com a duração: 30 min ou menos é um círculo, a partir de ~1h40 para de crescer. */
-private fun pillHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).coerceIn(48f, 160f).dp
+/**
+ * Altura MÍNIMA da pílula pela duração (v1.8.0, E4, 14.5, A1 do Esquadro): 30 min ou menos é um
+ * círculo (48dp), cresce com a duração e para em ~1h40 (160dp), para o bloco longo continuar mais
+ * alto que o curto. É só o mínimo: o bloco toma a altura do MAIOR entre conteúdo (horários, faixa,
+ * título inteiro) e pílula, então com fonte grande ou título longo ele passa disso sem cortar nem
+ * sobrepor, e a pílula acompanha a altura do bloco.
+ */
+private fun pillMinHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).coerceIn(48f, 160f).dp
 
 /**
  * Bloco de rotina. Tocar abre a rotina; segurar abre um menu curto ancorado no bloco com "Pular este
@@ -210,7 +217,6 @@ private fun BlockRow(
     val skipped = block.skipped
     val tone = routineTone(RoutineColor.fromKey(routine.color))
     val lineColor = MaterialTheme.colorScheme.outlineVariant
-    val pillHeight = pillHeight(routine.durationMinutes)
     val hasDuration = routine.durationMinutes > 0
     val timeColumnWidth = timeColumnWidth()
     var menuOpen by rememberSaveable(block.key) { mutableStateOf(false) }
@@ -273,13 +279,18 @@ private fun BlockRow(
                 modifier = Modifier
                     .width(TrackWidth)
                     .fillMaxHeight()
-                    .drawBehind { drawLinks(block.linkAbove, block.linkBelow, pillHeight.toPx(), lineColor) },
+                    // A pílula ocupa a altura do bloco menos o respiro: as ligações vão só no respiro.
+                    .drawBehind {
+                        drawLinks(block.linkAbove, block.linkBelow, size.height - 2 * RowPadding.toPx(), lineColor)
+                    },
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .padding(vertical = RowPadding)
-                        .size(width = PillWidth, height = pillHeight)
+                        .width(PillWidth)
+                        .heightIn(min = pillMinHeight(routine.durationMinutes))
+                        .fillMaxHeight()
                         .then(contentAlpha)
                         .clip(PillShape)
                         .background(tone.fill)
@@ -314,9 +325,8 @@ private fun BlockRow(
                         text = routineTimeRange(block.startMinute, routine.durationMinutes),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // M-1: o horário cede espaço (reticências) para o sino e o 2/3 ficarem inteiros.
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros; com fonte grande
+                        // ele QUEBRA em mais linhas em vez de virar reticências (E4: sem corte).
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (routine.remind && !skipped) {
@@ -342,8 +352,7 @@ private fun BlockRow(
                         MaterialTheme.colorScheme.onSurface
                     },
                     textDecoration = if (block.done) TextDecoration.LineThrough else null,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    // Título inteiro (E4): o bloco cresce com ele; sem limite de linhas nem reticências.
                 )
             }
             if (skipped) {

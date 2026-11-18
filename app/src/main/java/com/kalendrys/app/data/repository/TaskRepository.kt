@@ -153,8 +153,16 @@ class TaskRepository(
      * próxima ocorrência que será entregue (v1.8.0, E1: concluída hoje, o alarme de hoje sai).
      */
     suspend fun logCompletion(taskId: Long, completedAt: Long = System.currentTimeMillis()): Long = alarmLock.withLock {
-        scheduler.dismissNotification(taskId)
+        val zone = ZoneId.systemDefault()
+        val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate()
+        // Conclusão RETROATIVA (num dia anterior a hoje, pela Hoje): não tem efeito de hoje, a mesma regra
+        // das rotinas (ShoppingReset.routineResets): não tira a notificação da tela, não zera a lista e
+        // não mexe no alarme da próxima ocorrência. Nem conclusão adiantada (v1.8.0, decisão do Esquadro).
+        val retroactive = day.isBefore(LocalDate.now(zone))
         val task = taskDao.byId(taskId)
+        // A notificação do lembrete sai, menos na retroativa de tarefa REPETIDA (a ocorrência de hoje é
+        // outra). A única que encerra não tem ocorrência de hoje: a dela sai (A1 da revisão do Esquadro).
+        if (!retroactive || task?.repeat == ReminderRepeat.NONE) scheduler.dismissNotification(taskId)
         if (task != null && task.repeat == ReminderRepeat.NONE && isFinished(task)) {
             completionLogDao.latestForTask(taskId)?.let { return@withLock it.id }
         }
@@ -162,22 +170,21 @@ class TaskRepository(
         var logId: Long? = null
         if (task != null && task.repeat == ReminderRepeat.NONE) {
             scheduler.cancel(taskId)
-            val zone = ZoneId.systemDefault()
-            val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate().toEpochDay()
-            if (task.dueDate != null && task.dueDate > day) {
+            val dayEpoch = day.toEpochDay()
+            if (!retroactive && task.dueDate != null && task.dueDate > dayEpoch) {
                 // Data e lembrete sobrescritos vão no próprio registro, na mesma transação da tarefa.
                 logId = completionLogDao.rewriteAndInsert(
-                    task.copy(dueDate = day, reminderAt = null),
-                    log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = day),
+                    task.copy(dueDate = dayEpoch, reminderAt = null),
+                    log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = dayEpoch),
                 )
             }
         }
         val id = logId ?: completionLogDao.insert(log)
         // Repetida: o alarme passa para a próxima ocorrência que será ENTREGUE (a de hoje, concluída,
         // a entrega descartaria). Única: já foi cancelada acima e fica encerrada.
-        if (task != null && task.repeat != ReminderRepeat.NONE) scheduleNext(task)
+        if (task != null && task.repeat != ReminderRepeat.NONE && !retroactive) scheduleNext(task)
         val listId = task?.shoppingListId
-        if (listId != null && ShoppingReset.taskResets(task.repeat)) {
+        if (listId != null && !retroactive && ShoppingReset.taskResets(task.repeat)) {
             shoppingItemDao.resetPicked(listId, ShoppingReset.taskKey(id))
         }
         id

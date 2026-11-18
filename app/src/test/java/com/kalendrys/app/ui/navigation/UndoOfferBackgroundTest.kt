@@ -30,9 +30,6 @@ import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -63,7 +60,8 @@ class UndoOfferBackgroundTest {
     private lateinit var routines: RoutineRepository
     private lateinit var offers: UndoOffers
     private var now = 0L
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Escopo do "app" para o restauro, drenado pelo testDb.close() antes de fechar o banco.
+    private lateinit var appScope: CoroutineScope
 
     /** Ciclo de vida da tela de origem (no app, o da entrada da navegação, que segue a Activity). */
     private val screen = object : LifecycleOwner {
@@ -75,6 +73,7 @@ class UndoOfferBackgroundTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
+        appScope = testDb.appScope()
         val db = testDb.db
         repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         routines = RoutineRepository(
@@ -107,7 +106,6 @@ class UndoOfferBackgroundTest {
 
     @After
     fun tearDown() {
-        appScope.cancel()
         testDb.close()
     }
 

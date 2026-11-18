@@ -16,6 +16,7 @@ data class TodayOverview(
     val date: LocalDate,
     /** Tarefas para hoje (atrasadas, do dia e sem data): primeiro as com lembrete hoje, por horário. */
     val pending: List<PendingTask>,
+    /** Tarefas feitas hoje, pelo registro de conclusão de hoje ([doneTodayIds]). */
     val doneCount: Int,
     /** Blocos de rotina de hoje, em ordem de horário, feitos ou não. */
     val routines: List<RoutineBlock> = emptyList(),
@@ -80,9 +81,7 @@ data class TodayOverview(
             listProgress: Map<Long, ShoppingProgress> = emptyMap(),
         ): TodayOverview {
             val today = now.toLocalDate()
-            val doneToday = completions
-                .filter { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() == today }
-                .mapTo(HashSet()) { it.taskId }
+            val doneToday = doneTodayIds(tasks, completions, today, zone)
             val routinesDoneToday = routineCompletions
                 .filter { it.epochDay == today.toEpochDay() }
                 .mapTo(HashSet()) { it.routineId }
@@ -172,10 +171,25 @@ data class TodayOverview(
             return TodayOverview(
                 date = today,
                 pending = pending,
-                doneCount = statuses.values.count { it == TaskSchedule.Status.DONE_TODAY },
+                // Pelo REGISTRO de hoje, não pelo estado (NB-E3-A): a mesma conta das Concluídas da Hoje.
+                doneCount = doneToday.size,
                 routines = routineBlocks,
                 nextUp = listOfNotNull(nextTaskReminder, nextRoutine).minByOrNull { it.at },
             )
+        }
+
+        /**
+         * Feitas hoje (NB-E3-A), a definição ÚNICA da Hoje, do widget Resumo e do resumo diário:
+         * as tarefas que EXISTEM em [tasks] e têm registro de conclusão em [today] (no [zone]), cada
+         * uma contada uma vez. Vale qualquer tarefa concluída hoje, mesmo uma repetida de outro dia
+         * ou uma reaberta para outra data; excluída não conta (não está em [tasks]); duas conclusões
+         * no dia contam uma; registro gravado em outro dia (conclusão retroativa) não conta hoje.
+         */
+        fun doneTodayIds(tasks: List<Task>, completions: List<CompletionLog>, today: LocalDate, zone: ZoneId): Set<Long> {
+            val existing = tasks.mapTo(HashSet()) { it.id }
+            return completions
+                .filter { it.taskId in existing && Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() == today }
+                .mapTo(HashSet()) { it.taskId }
         }
 
         private val PENDING_TODAY = listOf(

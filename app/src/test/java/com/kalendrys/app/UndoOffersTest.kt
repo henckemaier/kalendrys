@@ -17,6 +17,10 @@ import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -206,7 +210,7 @@ class UndoOffersTest {
         offers.offer(UndoTarget.DeletedRoutine(routine.id))
         offers.undo(offers.pending.value!!).join()
 
-        assertEquals(task, repository.observeTask(task.id).first())
+        assertEquals(task.id, repository.observeTask(task.id).first()?.id)
         assertNull(testDb.db.routineDao().byId(routine.id)!!.archivedAt)
     }
 
@@ -239,5 +243,55 @@ class UndoOffersTest {
         assertEquals(UndoOffers.VALIDITY_MS - 12_000, offers.remainingMs(offer))
         now += 60 * 60 * 1_000L
         assertEquals(0L, offers.remainingMs(offer))
+    }
+
+    // --- NB-E3-C: excluir e oferecer é uma operação só, no escopo do app ---
+
+    /** Pede [request] de dentro de um escopo de "tela" e o cancela na hora, como fechar a tela. */
+    private fun fromScreenThenClose(request: () -> Job): Job {
+        val screen = CoroutineScope(Job())
+        var job: Job? = null
+        screen.launch(start = CoroutineStart.UNDISPATCHED) { job = request() }
+        screen.cancel()
+        return job!!
+    }
+
+    @Test
+    fun `excluir tarefa e fechar a tela na hora ainda exclui e publica a oferta`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+
+        fromScreenThenClose { offers.deleteTask(task) }.join()
+
+        assertNull(repository.observeTask(task.id).first())
+        assertEquals(UndoTarget.DeletedTask(task), offers.pending.value?.target)
+    }
+
+    @Test
+    fun `excluir rotina e fechar a tela na hora ainda arquiva e publica a oferta`() = runTest {
+        val offers = offers(this)
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+
+        fromScreenThenClose { offers.deleteRoutine(routine) }.join()
+
+        assertTrue(testDb.db.routineDao().byId(routine.id)!!.archivedAt != null)
+        assertEquals(UndoTarget.DeletedRoutine(routine.id), offers.pending.value?.target)
+    }
+
+    @Test
+    fun `Desfazer e sair na hora ainda restaura os dois tipos`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+        offers.deleteTask(task).join()
+        val taskOffer = offers.pending.value!!
+        fromScreenThenClose { offers.undo(taskOffer) }.join()
+        assertEquals(task.id, repository.observeTask(task.id).first()?.id)
+
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        offers.deleteRoutine(routine).join()
+        val routineOffer = offers.pending.value!!
+        fromScreenThenClose { offers.undo(routineOffer) }.join()
+        assertNull(testDb.db.routineDao().byId(routine.id)!!.archivedAt)
+        assertNull(offers.pending.value)
     }
 }

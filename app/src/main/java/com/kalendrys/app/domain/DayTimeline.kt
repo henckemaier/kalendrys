@@ -52,6 +52,12 @@ object DayTimeline {
         override val startMinute: Int,
         val linkAbove: Link,
         val linkBelow: Link,
+        /**
+         * Dia da OCORRÊNCIA: o dia em que mora a exceção dela (`RoutineOverride.epochDay`). É o dia
+         * de ORIGEM quando o bloco veio remarcado de outro dia (A1 do Esquadro na E3); nos outros casos,
+         * o próprio dia mostrado. Pular, Remarcar e Desfazer pular agem neste dia, não no mostrado.
+         */
+        val occurrenceDate: LocalDate,
         /** Ocorrência pulada (`SKIP`) naquele dia: só vem com `includeSkipped`; ver [DayTimeline]. */
         val skipped: Boolean = false,
     ) : Item {
@@ -108,6 +114,8 @@ object DayTimeline {
                         startMinute = routine.startMinute,
                         linkAbove = Link.NONE,
                         linkBelow = Link.NONE,
+                        // O SKIP mora no próprio dia mostrado.
+                        occurrenceDate = date,
                         skipped = true,
                     )
                 }
@@ -115,12 +123,13 @@ object DayTimeline {
             }
             val start = RoutineSchedule.startOn(routine, date, ov)
             val startMinute = start.hour * 60 + start.minute
+            val occurrenceDate = occurrenceDateOf(date, ov)
             entries += Entry(
                 startMinute = startMinute,
                 endMinute = startMinute + routine.durationMinutes,
                 isRoutine = true,
                 orderId = routine.id,
-            ) { above, below -> Block(routine, routine.id in doneIds, startMinute, above, below) }
+            ) { above, below -> Block(routine, routine.id in doneIds, startMinute, above, below, occurrenceDate) }
         }
         tasks.forEach { task ->
             val time = TaskSchedule.reminderOn(task, date, zone) ?: return@forEach
@@ -165,6 +174,17 @@ object DayTimeline {
             items += entry.toItem(linkAbove, linkBelow)
         }
         return withSkipped(items, skippedBlocks)
+    }
+
+    /**
+     * Dia da ocorrência que aparece em [date]: o de ORIGEM se ela veio remarcada de outro dia (a
+     * mesma remarcação de entrada que o [RoutineSchedule.occursOn] e o [RoutineSchedule.startOn]
+     * honram primeiro); senão, o próprio [date].
+     */
+    private fun occurrenceDateOf(date: LocalDate, overrides: List<RoutineOverride>): LocalDate {
+        val epochDay = date.toEpochDay()
+        val inbound = overrides.firstOrNull { it.type == RoutineOverrideType.RESCHEDULE && it.newEpochDay == epochDay }
+        return if (inbound != null && inbound.epochDay != epochDay) LocalDate.ofEpochDay(inbound.epochDay) else date
     }
 
     /**

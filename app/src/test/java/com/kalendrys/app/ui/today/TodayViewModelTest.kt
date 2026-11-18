@@ -13,9 +13,11 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskSchedule
+import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -24,6 +26,7 @@ import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
@@ -306,5 +309,79 @@ class TodayViewModelTest {
             assertEquals(false, treino.id in db.routineCompletionDao().doneOn(today.toEpochDay()))
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- A1 do Esquadro na E3: bloco remarcado vindo de outro dia age no dia de ORIGEM ---
+
+    @Test
+    fun `pular bloco remarcado de ontem troca a remarcacao por pular na origem e Desfazer a devolve`() = runTest {
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        // Só no dia da semana de ontem; a de ontem foi remarcada para hoje às 15:30.
+        val treino = routineRepository.add(
+            Routine(title = "Treino", startMinute = 600, createdAt = 0, daysOfWeek = RoutineDays.bit(yesterday.dayOfWeek)),
+        )
+        routineRepository.rescheduleOccurrence(treino.id, yesterday.toEpochDay(), newStartMinute = 930, newEpochDay = today.toEpochDay())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val shown = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }.block("Treino")
+            assertEquals(yesterday, shown.occurrenceDate)
+            assertEquals(930, shown.startMinute)
+
+            // A tela passa o dia da ocorrência (block.occurrenceDate), não o mostrado.
+            vm.skip(treino.id, shown.occurrenceDate)
+            awaitState { state -> state.timeline.none { it is DayTimeline.Block && it.routine.id == treino.id } }
+            val event = vm.skipped.first()
+            assertEquals(yesterday, event.date)
+            assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
+            assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, yesterday.toEpochDay())?.type)
+            assertNull("nenhum pular inútil no dia mostrado", routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
+
+            vm.undoSkip(event)
+            val back = awaitState { state -> state.timeline.any { it is DayTimeline.Block && it.routine.id == treino.id } }
+            assertEquals(930, back.block("Treino").startMinute)
+            assertEquals(yesterday, back.block("Treino").occurrenceDate)
+            assertEquals(RoutineOverrideType.RESCHEDULE, routineRepository.occurrenceOverride(treino.id, yesterday.toEpochDay())?.type)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `bloco do proprio dia segue com o dia mostrado`() = runTest {
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val vm = viewModel()
+
+        vm.uiState.test {
+            val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            assertEquals(LocalDate.now(), state.block("Treino").occurrenceDate)
+            assertEquals(treino.id, state.block("Treino").routine.id)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // --- Concluir num dia passado grava NO PRÓPRIO DIA (decisão do Esquadro, v1.8.0) ---
+
+    @Test
+    fun `repetida concluida pela linha de ontem fica feita ontem e hoje continua pendente`() = runTest {
+        val yesterday = LocalDate.now().minusDays(1)
+        val id = taskRepository.addTask("Remédio", timing = TaskTiming(date = yesterday, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY)).id
+        val viewModel = viewModel()
+        viewModel.select(yesterday)
+        viewModel.uiState.test {
+            awaitState { s -> s.selectedDate == yesterday }
+            viewModel.toggleTask(db.taskDao().byId(id)!!, done = false)
+            awaitState { s -> s.selectedDate == yesterday }
+            cancelAndIgnoreRemainingEvents()
+        }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5_000) { while (db.completionLogDao().all().none { it.taskId == id }) kotlinx.coroutines.delay(20) }
+        }
+        val log = db.completionLogDao().all().single { it.taskId == id }
+        assertEquals(yesterday, Instant.ofEpochMilli(log.completedAt).atZone(ZoneId.systemDefault()).toLocalDate())
+        // Números de hoje (o retrato do widget): a tarefa de hoje continua pendente.
+        val overview = com.kalendrys.app.data.repository.TodayRepository(taskRepository, routineRepository, shoppingRepository).current()
+        assertEquals(true, overview.pending.any { it.taskId == id })
+        assertEquals(0, overview.doneCount)
     }
 }

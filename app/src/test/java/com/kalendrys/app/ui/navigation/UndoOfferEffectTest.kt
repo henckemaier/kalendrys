@@ -36,10 +36,7 @@ import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -72,8 +69,8 @@ class UndoOfferEffectTest {
     /** Relógio da validade da oferta (o tempo da mensagem é o mainClock do Compose). */
     private var now = 0L
 
-    // Escopo do "app" para o restauro: próprio, fora do Dispatchers.Main (que outros testes trocam).
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Escopo do "app" para o restauro, drenado pelo testDb.close() antes de fechar o banco.
+    private lateinit var appScope: CoroutineScope
     private var generation by mutableIntStateOf(0)
     private var present by mutableStateOf(true)
     private val own = SnackbarHostState()
@@ -85,6 +82,7 @@ class UndoOfferEffectTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
+        appScope = testDb.appScope()
         val db = testDb.db
         repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         routines = RoutineRepository(
@@ -117,7 +115,6 @@ class UndoOfferEffectTest {
 
     @After
     fun tearDown() {
-        appScope.cancel()
         testDb.close()
     }
 
@@ -432,5 +429,27 @@ class UndoOfferEffectTest {
         waitRestored(task.id)
 
         assertEquals(true, archivedAt(routineId) != null)
+    }
+
+    @Test
+    fun `Desfazer e sair na hora - o coletor some logo depois do toque e a rotina volta mesmo assim`() {
+        val routineId = deletedRoutine("Treino")
+        offers.offer(UndoTarget.DeletedRoutine(routineId))
+        advance()
+
+        compose.onNodeWithText("Desfazer").performClick()
+        // Um quadro: o coletor recebe o toque e pede o restauro ao objeto. Logo em seguida sai da
+        // composição (tela fechando), com o restauro ainda em voo no escopo do app.
+        frames(1)
+        compose.runOnUiThread {
+            present = false
+            Snapshot.sendApplyNotifications()
+        }
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
+            archivedAt(routineId) == null
+        }
+        assertNull(offers.pending.value)
     }
 }

@@ -13,6 +13,9 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -43,6 +46,7 @@ class AllRoutinesViewModelTest {
     private lateinit var alarms: FakeRoutineAlarms
     private lateinit var repository: RoutineRepository
     private lateinit var categories: RoutineCategoryRepository
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -61,6 +65,7 @@ class AllRoutinesViewModelTest {
             InMemoryRoutineCatchUpMark(),
         )
         categories = RoutineCategoryRepository(db)
+        undoOffers = testUndoOffers(testDb, repository)
     }
 
     @After
@@ -69,7 +74,7 @@ class AllRoutinesViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(AllRoutinesViewModel(repository, categories))
+    private fun viewModel() = testDb.track(AllRoutinesViewModel(repository, categories, undoOffers))
 
     private suspend fun ReceiveTurbine<AllRoutinesViewModel.UiState>.awaitState(
         predicate: (AllRoutinesViewModel.UiState) -> Boolean,
@@ -143,8 +148,13 @@ class AllRoutinesViewModelTest {
         }
     }
 
+    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(TIMEOUT_MS) { undoOffers.pending.first { it != null } }
+    }
+
     @Test
-    fun `arquivar tira da lista, avisa para Desfazer e desfazer devolve a rotina`() = runTest {
+    fun `excluir tira da lista, publica a oferta do app e o Desfazer dela devolve a rotina`() = runTest {
         val treino = repository.add(routine("Treino", 7))
         val vm = viewModel()
 
@@ -153,12 +163,13 @@ class AllRoutinesViewModelTest {
             alarms.reset()
             vm.archive(treino)
             awaitState { it.active.isEmpty() }
-            assertEquals(AllRoutinesViewModel.Archived(treino.id), vm.archived.first())
+            val offer = awaitOffer()
+            assertEquals(UndoTarget.DeletedRoutine(treino.id), offer?.target)
             assertTrue(db.routineDao().byId(treino.id)!!.archivedAt != null)
-            awaitScheduled("arquivar reagenda")
+            awaitScheduled("excluir reagenda")
 
             alarms.reset()
-            vm.undoArchive(treino.id)
+            undoOffers.undo(offer!!).join()
             awaitState { it.activeTitles == listOf("Treino") }
             assertNull(db.routineDao().byId(treino.id)!!.archivedAt)
             awaitScheduled("desfazer reagenda")
@@ -167,7 +178,7 @@ class AllRoutinesViewModelTest {
     }
 
     @Test
-    fun `desfazer o arquivamento de uma pausada a devolve pausada`() = runTest {
+    fun `desfazer a exclusao de uma pausada a devolve pausada`() = runTest {
         val violao = repository.add(routine("Violão", 19))
         repository.pause(violao)
         val vm = viewModel()
@@ -176,7 +187,7 @@ class AllRoutinesViewModelTest {
             val paused = awaitState { it.pausedTitles == listOf("Violão") }.paused.single().routine
             vm.archive(paused)
             awaitState { it.paused.isEmpty() }
-            vm.undoArchive(violao.id)
+            undoOffers.undo(awaitOffer()!!).join()
             val back = awaitState { it.pausedTitles == listOf("Violão") }
             assertTrue(back.active.isEmpty())
             cancelAndIgnoreRemainingEvents()

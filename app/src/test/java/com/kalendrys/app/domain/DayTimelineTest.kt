@@ -340,4 +340,44 @@ class DayTimelineTest {
         assertEquals(listOf(2L), items.filterIsInstance<Block>().map { it.routine.id })
         assertTrue(items.all { it.isActive })
     }
+
+    // --- A1 do Esquadro na E3: o bloco carrega o dia da OCORRÊNCIA (onde mora a exceção) ---
+
+    private fun blockOn(date: LocalDate, routines: List<Routine>, vararg ov: RoutineOverride): Block =
+        DayTimeline.build(routines, emptySet(), date, zone, overrides = overrides(*ov), includeSkipped = true)
+            .filterIsInstance<Block>()
+            .single()
+
+    @Test
+    fun `bloco normal e remarcado no proprio dia carregam o dia mostrado`() {
+        val routines = listOf(routine(1, "07:00", 30))
+
+        assertEquals(day, blockOn(day, routines).occurrenceDate)
+        assertEquals(day, blockOn(day, routines, reschedule(1, newStart = "15:30")).occurrenceDate)
+    }
+
+    @Test
+    fun `bloco remarcado vindo de outro dia carrega o dia de origem`() {
+        // Só aos sábados (24/10/2026); remarcado de sábado para domingo às 09:00.
+        val routines = listOf(routine(1, "07:00", 30, days = RoutineDays.bit(day.dayOfWeek)))
+        val sunday = day.plusDays(1)
+
+        val block = blockOn(sunday, routines, reschedule(1, date = day, newStart = "09:00", newDate = sunday))
+
+        assertEquals(day, block.occurrenceDate)
+        assertEquals(9 * 60, block.startMinute)
+    }
+
+    @Test
+    fun `pular no dia de origem troca a remarcacao - o bloco some do dia novo e aparece pulado na origem`() {
+        val routines = listOf(routine(1, "07:00", 30, days = RoutineDays.bit(day.dayOfWeek)))
+        val sunday = day.plusDays(1)
+        // Uma exceção por dia: o SKIP no dia de origem substitui a remarcação.
+        val skipped = overrides(skip(1, date = day))
+
+        assertTrue(DayTimeline.build(routines, emptySet(), sunday, zone, overrides = skipped, includeSkipped = true).isEmpty())
+        val atOrigin = blockOn(day, routines, skip(1, date = day))
+        assertTrue(atOrigin.skipped)
+        assertEquals(day, atOrigin.occurrenceDate)
+    }
 }

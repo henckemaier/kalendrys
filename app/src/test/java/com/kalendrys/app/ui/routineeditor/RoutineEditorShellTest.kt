@@ -75,7 +75,7 @@ class RoutineEditorShellTest {
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
         )
-        offers = testUndoOffers(db, routineRepository)
+        offers = testUndoOffers(testDb, routineRepository)
         val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
         routineId = routine.id
         val viewModel = testDb.track(
@@ -122,7 +122,7 @@ class RoutineEditorShellTest {
         compose.waitUntil(TIMEOUT_MS) {
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
-            closed == 1
+            closed == 1 && offers.pending.value != null
         }
         assertEquals(0, compose.onAllNodesWithText("Excluir rotina?").fetchSemanticsNodes().size)
         assertEquals(true, runBlocking { testDb.db.routineDao().byId(routineId)?.archivedAt } != null)
