@@ -1,16 +1,13 @@
 package com.kalendrys.app.ui.tasks
 
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.domain.NewTaskDraft
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -19,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
@@ -33,21 +31,24 @@ class NewTaskSheetTest {
     @get:Rule
     val compose = createComposeRule()
 
+    /**
+     * A escala de fonte vai pela CONFIGURAÇÃO (como no aparelho): o painel é janela própria e o
+     * `ComposeView` dela fornece um `LocalDensity` novo, que passaria por cima de um fornecido aqui
+     * (até a E6 os casos de fonte 2.0 rodavam em 1.0 dentro do painel).
+     */
     private fun render(fontScale: Float) {
+        RuntimeEnvironment.setFontScale(fontScale)
         compose.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                KalendrysTheme {
-                    var draft by remember { mutableStateOf(NewTaskDraft.startingOn(LocalDate.now())) }
-                    NewTaskSheet(
-                        draft = draft,
-                        onChange = { transform -> draft = transform(draft) },
-                        onSave = {},
-                        onCancel = {},
-                        onDismiss = {},
-                        lists = emptyList(),
-                    )
-                }
+            KalendrysTheme {
+                var draft by remember { mutableStateOf(NewTaskDraft.startingOn(LocalDate.now())) }
+                NewTaskSheet(
+                    draft = draft,
+                    onChange = { transform -> draft = transform(draft) },
+                    onSave = {},
+                    onCancel = {},
+                    onDismiss = {},
+                    lists = emptyList(),
+                )
             }
         }
     }
