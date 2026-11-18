@@ -64,6 +64,7 @@ import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.ui.components.isCompactHeight
 import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -236,7 +237,7 @@ private fun rememberKeepVisibleWhileFocused(): Modifier {
     val density = LocalDensity.current
     LaunchedEffect(focused) {
         if (!focused) return@LaunchedEffect
-        snapshotFlow { ime.getBottom(density) }.collect { requester.bringIntoView() }
+        snapshotFlow { ime.getBottom(density) }.collectLatest { requester.bringIntoView() }
     }
     return remember(requester) {
         Modifier
