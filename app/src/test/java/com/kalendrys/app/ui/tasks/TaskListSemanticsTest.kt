@@ -30,7 +30,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -138,11 +137,7 @@ class TaskListSemanticsTest {
         compose.onNode(hasText("Tente outro termo ou ajuste os filtros.")).assertIsDisplayed()
     }
 
-    /**
-     * NÃO VALE HOJE (E7): o título do [com.kalendrys.app.ui.components.EmptyState] é um Text comum,
-     * sem heading. Produção não mexida; decisão com o Forja.
-     */
-    @Ignore("E7: titulo do vazio da busca nao e marcado como titulo (EmptyState sem heading)")
+    /** O título do [com.kalendrys.app.ui.components.EmptyState] é lido como título (E7). */
     @Test
     fun `vazio da busca tem o titulo marcado como titulo`() {
         chip("Atrasadas").performClick()
@@ -153,11 +148,7 @@ class TaskListSemanticsTest {
 
     // --- (d) cabeçalhos de seção ---
 
-    /**
-     * NÃO VALE HOJE (E7): o TaskSectionHeader é uma Row com dois Text soltos, sem heading e sem
-     * mesclar: título e contagem são dois nós. Produção não mexida; decisão com o Forja.
-     */
-    @Ignore("E7: TaskSectionHeader sem heading e com a contagem num no separado")
+    /** Como o SectionHeader (E7): título e contagem num nó só, marcado como título. */
     @Test
     fun `cabecalhos de secao marcados como titulo com a contagem no mesmo no`() {
         listOf("Hoje", "Sem data").forEach { title ->
