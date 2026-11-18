@@ -49,6 +49,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -316,13 +318,15 @@ private fun LazyListScope.taskSection(
 
 /**
  * Exceção ao SectionHeader de ui/components (parecer do Esquadro, NB-1 da E3): aqui a contagem fica
- * na ponta direita e o espaço acima é maior; trocar mudaria o miolo da lista, que é da v1.8.0.
+ * na ponta direita e o espaço acima é maior; trocar mudaria o miolo da lista, que é da v1.8.0. A
+ * semântica é a mesma do SectionHeader (E7): um nó só, título e contagem, marcado como título.
  */
 @Composable
 private fun TaskSectionHeader(title: String, count: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) { heading() }
             .padding(top = Spacing.xl, bottom = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
