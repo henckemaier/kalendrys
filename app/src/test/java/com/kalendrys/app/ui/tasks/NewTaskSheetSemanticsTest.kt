@@ -36,10 +36,9 @@ import org.robolectric.annotation.GraphicsMode
  * fixa do topo, E6).
  * - Cancelar e Salvar são botões, com o texto como rótulo, nessa ordem de leitura;
  * - Salvar começa desabilitado (sem título) e habilita ao digitar o título;
- * - o título do painel, mesmo com reticências na linha compacta, tem o texto inteiro no nó;
+ * - o título do painel é cabeçalho (heading) nas duas alturas e, mesmo com reticências na linha
+ *   compacta, tem o texto inteiro no nó;
  * - os campos (Título, Observações, Local) são lidos com o rótulo.
- *
- * Fora daqui (achado da E7, sem mudar produção): o título do painel NÃO está marcado como cabeçalho.
  */
 @RunWith(AndroidJUnit4::class)
 // Medida de texto de verdade: as reticências do título dependem da fonte.
@@ -128,6 +127,24 @@ class NewTaskSheetSemanticsTest {
         val results = mutableListOf<TextLayoutResult>()
         config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
         return results.single()
+    }
+
+    private fun assertTitleIsHeading() {
+        assertTrue("o título do painel é cabeçalho", titleNode().config.contains(SemanticsProperties.Heading))
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w360dp-h800dp-port")
+    fun `altura normal - titulo do painel e cabecalho`() {
+        render()
+        assertTitleIsHeading()
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w800dp-h360dp-land")
+    fun `altura compacta - titulo da linha fixa e cabecalho`() {
+        render()
+        assertTitleIsHeading()
     }
 
     @Test
