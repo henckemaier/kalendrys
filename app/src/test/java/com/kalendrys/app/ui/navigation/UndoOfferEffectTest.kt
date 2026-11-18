@@ -430,4 +430,26 @@ class UndoOfferEffectTest {
 
         assertEquals(true, archivedAt(routineId) != null)
     }
+
+    @Test
+    fun `Desfazer e sair na hora - o coletor some logo depois do toque e a rotina volta mesmo assim`() {
+        val routineId = deletedRoutine("Treino")
+        offers.offer(UndoTarget.DeletedRoutine(routineId))
+        advance()
+
+        compose.onNodeWithText("Desfazer").performClick()
+        // Um quadro: o coletor recebe o toque e pede o restauro ao objeto. Logo em seguida sai da
+        // composição (tela fechando), com o restauro ainda em voo no escopo do app.
+        frames(1)
+        compose.runOnUiThread {
+            present = false
+            Snapshot.sendApplyNotifications()
+        }
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.mainClock.advanceTimeByFrame()
+            archivedAt(routineId) == null
+        }
+        assertNull(offers.pending.value)
+    }
 }

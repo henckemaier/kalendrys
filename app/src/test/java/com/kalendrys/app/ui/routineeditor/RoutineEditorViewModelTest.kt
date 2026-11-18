@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -384,8 +386,14 @@ class RoutineEditorViewModelTest {
             assertEquals(RoutineEditorViewModel.Event.Closed, vm.events.first())
             cancelAndIgnoreRemainingEvents()
         }
+        // Arquivar e oferecer correm no escopo do app (NB-E3-C): a oferta chega depois do arquivar.
+        assertEquals(UndoTarget.DeletedRoutine(routine.id), awaitOffer()?.target)
         assertTrue(db.routineDao().byId(routine.id)!!.archivedAt != null)
-        assertEquals(UndoTarget.DeletedRoutine(routine.id), undoOffers.pending.value?.target)
+    }
+
+    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
     }
 
     @Test
@@ -405,12 +413,12 @@ class RoutineEditorViewModelTest {
             vm.events.first()
             cancelAndIgnoreRemainingEvents()
         }
+        val offer = awaitOffer()!!
         // O rascunho não foi gravado e as edições de exercício da sessão voltaram.
         val stored = db.routineDao().byId(routine.id)!!
         assertEquals("Treino", stored.title)
         assertEquals(listOf("Agachamento"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
 
-        val offer = undoOffers.pending.value!!
         undoOffers.undo(offer).join()
         val back = db.routineDao().byId(routine.id)!!
         assertNull(back.archivedAt)

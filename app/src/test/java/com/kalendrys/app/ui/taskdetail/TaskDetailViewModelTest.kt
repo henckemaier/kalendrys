@@ -20,6 +20,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -262,7 +266,7 @@ class TaskDetailViewModelTest {
     // --- Excluir pelo detalhe com Desfazer na origem (v1.8.0, E0-D) -------------------------------
 
     @Test
-    fun `excluir apaga, oferece o Desfazer com a tarefa como estava e so entao fecha`() = runTest {
+    fun `excluir pede ao objeto do app e fecha - a oferta vem com a tarefa como estava`() = runTest {
         val listId = shoppingRepository.createList("Feira")
         val id = tomorrowTask(listId)
         val before = stored(id)
@@ -274,11 +278,32 @@ class TaskDetailViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
 
-        // Quando o fechar chega, a oferta já está pendente, com lembrete e vínculo de lista.
-        val offered = (undoOffers.pending.value!!.target as UndoTarget.DeletedTask).task
+        // Excluir e oferecer correm no escopo do app (NB-E3-C): a oferta chega com lembrete e vínculo.
+        val offered = (awaitOffer()!!.target as UndoTarget.DeletedTask).task
         assertEquals(before, offered)
         assertEquals(listId, offered.shoppingListId)
         assertTrue(offered.reminderAt != null)
         assertNull(db.taskDao().byId(id))
+    }
+
+    @Test
+    fun `fechar a tela logo depois de pedir a exclusao ainda exclui e publica a oferta`() = runTest {
+        val id = tomorrowTask(null)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.task != null }
+            vm.delete()
+            cancelAndIgnoreRemainingEvents()
+        }
+        // A tela fecha na hora: o escopo dela é cancelado antes de o trabalho do app terminar.
+        vm.viewModelScope.cancel()
+
+        assertEquals(id, (awaitOffer()!!.target as UndoTarget.DeletedTask).task.id)
+        assertNull(db.taskDao().byId(id))
+    }
+
+    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
     }
 }
