@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -23,6 +24,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.LocalDate
@@ -79,8 +81,21 @@ class TodayTimelineMeasureTest {
     private fun shortRange(minutes: Int): String =
         if (minutes == 0) minuteOfDayLabel(startMinute) else DurationFormat.format(minutes)
 
-    private fun show(fontScale: Float, minutes: Int, columnWidth: Dp = 360.dp) {
-        val routine = Routine(id = minutes + 1L, title = title(minutes), startMinute = startMinute, durationMinutes = minutes)
+    private fun show(
+        fontScale: Float,
+        minutes: Int,
+        columnWidth: Dp = 360.dp,
+        remind: Boolean = false,
+        withList: Boolean = false,
+    ) {
+        val routine = Routine(
+            id = minutes + 1L,
+            title = title(minutes),
+            startMinute = startMinute,
+            durationMinutes = minutes,
+            remind = remind,
+            shoppingListId = if (withList) LIST_ID else null,
+        )
         val state = TodayViewModel.UiState(
             isLoaded = true,
             today = LocalDate.now(),
@@ -88,6 +103,8 @@ class TodayTimelineMeasureTest {
             timeline = listOf(
                 DayTimeline.Block(routine, done = false, startMinute = routine.startMinute, linkAbove = DayTimeline.Link.SOLID, linkBelow = DayTimeline.Link.SOLID, occurrenceDate = LocalDate.now()),
             ),
+            // O "2/3" da lista anexada, ao lado do horário (M-1).
+            listProgress = if (withList) mapOf(LIST_ID to ShoppingProgress(picked = 2, total = 3)) else emptyMap(),
         )
         val actions = TrailActions({}, {}, { _, _ -> }, {}, { _, _ -> }, {}, {})
         compose.setContent {
@@ -273,11 +290,45 @@ class TodayTimelineMeasureTest {
     @Test
     fun `horario numa linha so - 360dp, fonte 2_0, bloco de 30 min`() = assertRangeOnOneLineAt(360.dp, 30)
 
+    /** Visível por inteiro: a parte recortada pelos pais ([SemanticsNode.boundsInRoot]) é o nó todo. */
+    private fun assertWholeNode(label: String, node: SemanticsNode) {
+        assertEquals("$label: largura visível", node.size.width.toFloat(), node.boundsInRoot.width, 0.5f)
+        assertEquals("$label: altura visível", node.size.height.toFloat(), node.boundsInRoot.height, 0.5f)
+    }
+
+    @Test
+    fun `horario de duracao longa com sino e lista - curta com reticencias, sem passar por cima`() {
+        // NB-1: 23h 59min em 320dp com fonte 2.0, sino e lista juntos: nem a forma curta cabe.
+        val minutes = 23 * 60 + 59
+        show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true, withList = true)
+        val label = "fonte 2.0, 320dp, 23h59 com sino e lista"
+
+        val range = unmerged(fullRange(minutes))
+        val texts = range.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+        assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
+        assertTrue("$label: horário em mais de uma linha", range.size.height in 1..(timeLabelHeightPx + 1))
+
+        val bell = compose.onNode(hasContentDescription("Avisa no início"), useUnmergedTree = true).fetchSemanticsNode()
+        val tag = compose.onNode(hasContentDescription("2 de 3", substring = true), useUnmergedTree = true).fetchSemanticsNode()
+        // A caixa do horário termina antes do sino (que vem antes do 2/3): não desenha por cima deles.
+        assertTrue(
+            "$label: horário (${range.boundsInRoot.right}) passa por cima do sino (${bell.boundsInRoot.left})",
+            range.boundsInRoot.right <= bell.boundsInRoot.left + 0.5f,
+        )
+        assertTrue("$label: sino depois do horário e antes do 2/3", bell.boundsInRoot.right <= tag.boundsInRoot.left + 0.5f)
+        assertWholeNode("$label, sino", bell)
+        assertWholeNode("$label, 2/3", tag)
+    }
+
     @Test
     fun `horario numa linha so - bloco sem duracao mostra so a hora`() {
         show(fontScale = 2f, minutes = 0, columnWidth = 320.dp)
         val node = assertRangeOnOneLine("fonte 2.0, 320dp, sem duração", minutes = 0)
         // Sem duração, faixa e forma curta são a mesma hora.
         assertTrue(abs(node.size.width - shortRangeWidthPx) <= 1)
+    }
+
+    private companion object {
+        const val LIST_ID = 7L
     }
 }
