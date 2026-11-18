@@ -72,7 +72,7 @@ class RoutineEditorWeekdaysTest {
                 RoutineCategoryRepository(db),
                 ShoppingRepository(db),
                 ExerciseRepository(db.exerciseItemDao()),
-                testUndoOffers(db, routineRepository),
+                testUndoOffers(testDb, routineRepository),
             ),
         )
         compose.setContent {

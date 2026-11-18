@@ -58,7 +58,7 @@ class TaskDetailShellTest {
                 SavedStateHandle(mapOf(TASK_ID_ARG to taskId)),
                 repository,
                 ShoppingRepository(db),
-                testUndoOffers(db),
+                testUndoOffers(testDb),
             ),
         )
         compose.setContent {

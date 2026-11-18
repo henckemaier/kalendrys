@@ -75,7 +75,7 @@ class RoutineEditorShellTest {
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
         )
-        offers = testUndoOffers(db, routineRepository)
+        offers = testUndoOffers(testDb, routineRepository)
         val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
         routineId = routine.id
         val viewModel = testDb.track(

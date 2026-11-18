@@ -43,9 +43,6 @@ import com.kalendrys.app.ui.today.TodayScreen
 import com.kalendrys.app.ui.today.TodayViewModel
 import java.time.DayOfWeek
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertNull
@@ -76,12 +73,14 @@ class RoutineDeleteFromEditorTest {
     private lateinit var routines: RoutineRepository
     private lateinit var tasks: TaskRepository
     private lateinit var offers: UndoOffers
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Escopo do "app" para o restauro, drenado pelo testDb.close() antes de fechar o banco.
+    private lateinit var appScope: CoroutineScope
     private var routineId = 0L
 
     @Before
     fun setup() {
         testDb = ViewModelTestDatabase(context)
+        appScope = testDb.appScope()
         val db = testDb.db
         alarms = FakeRoutineAlarms(context)
         routines = testRoutineRepository(db, alarms)
@@ -92,7 +91,6 @@ class RoutineDeleteFromEditorTest {
 
     @After
     fun tearDown() {
-        appScope.cancel()
         testDb.close()
     }
 

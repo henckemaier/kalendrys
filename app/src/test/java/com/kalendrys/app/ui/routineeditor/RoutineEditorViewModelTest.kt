@@ -79,7 +79,7 @@ class RoutineEditorViewModelTest {
         categoryRepository = RoutineCategoryRepository(db)
         shoppingRepository = ShoppingRepository(db)
         exerciseRepository = ExerciseRepository(db.exerciseItemDao())
-        undoOffers = testUndoOffers(db, routineRepository)
+        undoOffers = testUndoOffers(testDb, routineRepository)
     }
 
     @After

@@ -57,7 +57,7 @@ class TaskDetailViewModelTest {
         db = testDb.db
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
-        undoOffers = testUndoOffers(db)
+        undoOffers = testUndoOffers(testDb)
     }
 
     @After
