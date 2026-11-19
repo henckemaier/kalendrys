@@ -1400,3 +1400,37 @@ Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
   log.
 
 Dependências: nenhuma nova. `targetSdk` e `minSdk` não mudam. Manifesto: sem mudança prevista.
+
+### 14.13 Achados da matriz no emulador (E2 a E6)
+
+A matriz manual no APK de release passou sem bloqueante e trouxe cinco observações. Decisões:
+
+- **Painel de nova tarefa e teclado (O-6): corrigir antes do fechamento.** O critério da E6 (Salvar
+  ao alcance com o teclado aberto) não foi cumprido em retrato: o painel já termina acima do teclado
+  (o `ModalBottomSheet` desconta o teclado sozinho, uma vez), mas Cancelar e Salvar estavam no fim
+  da rolagem e ficavam fora da área visível. Regra: o conteúdo do painel termina **acima do
+  teclado**; só os campos rolam; Cancelar e Salvar ficam **fora** da área que rola nas duas alturas
+  (no fim do painel em altura normal, na linha do topo em altura compacta); o campo em foco é
+  trazido para a área visível. Em altura compacta o painel não desenha a alça, para sobrar altura
+  para o campo. Limite aceito: em paisagem com fonte 2.0 e teclado, o que se garante é o Salvar e a
+  linha de texto do campo em foco; o rótulo e a borda do campo podem ficar cortados.
+- **Horário do bloco com fonte grande (O-7): corrigir.** O horário do bloco nunca quebra no meio de
+  um número. A linha é escolhida por medida, como a do tempo livre: a faixa inteira com a duração
+  se couber em uma linha; se não couber, só a duração, porque o início e o fim já estão na coluna
+  de horas ao lado. O leitor de tela continua recebendo a frase inteira. O teste de medida da 14.5
+  ganha a condição de o horário ocupar uma linha.
+- **Troca de relógio ou de fuso com a Hoje aberta (O-4): corrigir.** A data de hoje do
+  `TodayRepository` passa a ser relida a cada `refresh()`, e não só depois da espera até a
+  meia-noite, que conta tempo corrido e não vê o relógio mudar. O aviso de troca de hora e de fuso
+  já chega ao `refresh()` pelo caminho dos alarmes e dos widgets. A Hoje também pede um `refresh()`
+  ao voltar para a frente. Os outros usos de `currentDate()` e de `LocalDate.now()` (aba Tarefas,
+  Calendário, detalhe) ficam como estão; fonte única de data para o app inteiro fica para a v1.9.0.
+- **Círculo de concluir sem ação na lista de Tarefas (O-5): corrigir.** A tarefa que se repete e
+  não acontece hoje não mostra controle de concluir: no lugar fica o ícone de repetição, sem toque
+  próprio, no mesmo espaço, e o toque ali abre a tarefa como o resto da linha. Controle que não age
+  não pode ter a aparência de um que age.
+- **FAB sobre o círculo da última linha visível da Hoje (O-8): aceito, sem mudança.** É o
+  comportamento do botão flutuante sobre uma lista; a folga no fim da lista garante que toda linha
+  sai de baixo dele rolando. A Hoje tem o concluir à direita, do lado do botão, e por isso o caso é
+  mais fácil de acontecer nela do que na aba Tarefas; rever a posição do concluir na Hoje fica
+  registrado para a v1.9.0, como decisão de desenho.
