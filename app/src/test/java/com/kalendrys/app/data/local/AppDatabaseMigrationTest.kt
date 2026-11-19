@@ -400,6 +400,45 @@ class AppDatabaseMigrationTest {
         assertTrue("esperava IllegalStateException da validação, veio $error", error is IllegalStateException)
     }
 
+    @Test
+    fun `migra v10 para v11 acrescenta as colunas da conclusao adiantada vazias nas linhas existentes`() {
+        val name = "kalendrys-migration-v10-v11"
+        helper.createDatabase(name, 10).use { v10 ->
+            v10.execSQL("INSERT INTO tasks (id, title, notes, createdAt, reminderRepeat) VALUES (1, 'T', '', 0, 'NONE')")
+            v10.execSQL("INSERT INTO completion_log (id, taskId, completedAt) VALUES (5, 1, 1234)")
+        }
+
+        // AutoMigration(10, 11): só colunas anuláveis; runMigrationsAndValidate confere contra o 11.json.
+        helper.runMigrationsAndValidate(name, 11, true).use { v11 ->
+            val row = v11.rows("SELECT id, taskId, completedAt, previousDueDate, previousReminderAt, rewrittenDueDate FROM completion_log") { c ->
+                listOf(c.getLong(0), c.getLong(1), c.getLong(2), c.isNull(3), c.isNull(4), c.isNull(5))
+            }.single()
+            assertEquals(listOf<Any>(5L, 1L, 1234L, true, true, true), row)
+            // A coluna nova aceita valores (conclusão adiantada gravada depois da migração).
+            v11.execSQL("INSERT INTO completion_log (id, taskId, completedAt, previousDueDate, previousReminderAt, rewrittenDueDate) VALUES (6, 1, 2000, 20405, 99, 20400)")
+            assertEquals(20405L, v11.rows("SELECT previousDueDate FROM completion_log WHERE id = 6") { it.getLong(0) }.single())
+        }
+    }
+
+    @Test
+    fun `cadeia completa v1 ate v11 preserva tarefa e conclusao`() {
+        val name = "kalendrys-migration-v1-v11"
+        helper.createDatabase(name, 1).use { v1 ->
+            v1.execSQL("INSERT INTO tasks (id, title, notes, createdAt, reminderAt) VALUES (1, 'Tarefa v1', 'nota', 0, 1000)")
+            v1.execSQL("INSERT INTO completion_log (id, taskId, completedAt) VALUES (3, 1, 777)")
+        }
+
+        helper.runMigrationsAndValidate(
+            name, 11, true, AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_9_10,
+        ).use { v11 ->
+            assertEquals(listOf("Tarefa v1"), v11.rows("SELECT title FROM tasks") { it.getString(0) })
+            val log = v11.rows("SELECT id, taskId, completedAt, previousDueDate FROM completion_log") { c ->
+                listOf<Any?>(c.getLong(0), c.getLong(1), c.getLong(2), if (c.isNull(3)) null else c.getLong(3))
+            }.single()
+            assertEquals(listOf<Any?>(3L, 1L, 777L, null), log)
+        }
+    }
+
     private fun hasTable(db: SupportSQLiteDatabase, table: String): Boolean =
         db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf<Any>(table))
             .use { it.moveToFirst() }

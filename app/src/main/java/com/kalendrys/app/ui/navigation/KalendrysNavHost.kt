@@ -12,19 +12,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.EventRepeat
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -44,10 +47,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.NewTaskPanel
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.ui.calendar.CalendarScreen
 import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
+import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.diagnostics.AlarmDiagnosticsScreen
 import com.kalendrys.app.ui.routineeditor.ROUTINE_EDITOR_ROUTE
 import com.kalendrys.app.ui.routineeditor.ROUTINE_ID_ARG
@@ -58,7 +65,6 @@ import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTE
 import com.kalendrys.app.ui.routineexception.ROUTINE_EXCEPTION_ROUTINE_ID_ARG
 import com.kalendrys.app.ui.routineexception.RoutineExceptionScreen
 import com.kalendrys.app.ui.routineexception.routineExceptionRoute
-import com.kalendrys.app.ui.routines.RoutinesScreen
 import com.kalendrys.app.ui.settings.SettingsScreen
 import com.kalendrys.app.ui.shopping.NO_TASK_ID
 import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ID_ARG
@@ -72,6 +78,9 @@ import com.kalendrys.app.ui.taskdetail.TASK_ID_ARG
 import com.kalendrys.app.ui.taskdetail.TaskDetailScreen
 import com.kalendrys.app.ui.taskdetail.taskDetailRoute
 import com.kalendrys.app.ui.tasks.TaskListScreen
+import com.kalendrys.app.ui.today.TodayScreen
+import com.kalendrys.app.ui.routines.ALL_ROUTINES_ROUTE
+import com.kalendrys.app.ui.routines.AllRoutinesScreen
 import java.time.LocalDate
 
 enum class AppTab(
@@ -80,8 +89,14 @@ enum class AppTab(
     val selectedIcon: ImageVector,
     val icon: ImageVector,
 ) {
+    /**
+     * Hoje (v1.8.0, ADR-0002 14.4): substitui a aba Rotinas e é o destino inicial. A rota continua
+     * "routines" DE PROPÓSITO: o estado salvo pela v1.7.1 com a aba Rotinas aberta (pilha com essa
+     * rota) é restaurado direto na Hoje; com outra rota o Navigation não acharia o destino ao
+     * restaurar e o app quebraria ao abrir por cima da versão anterior.
+     */
+    Today("routines", R.string.tab_today, Icons.Filled.Today, Icons.Outlined.Today),
     Tasks("tasks", R.string.tab_tasks, Icons.Filled.TaskAlt, Icons.Outlined.TaskAlt),
-    Routines("routines", R.string.tab_routines, Icons.Filled.EventRepeat, Icons.Outlined.EventRepeat),
     Calendar("calendar", R.string.tab_calendar, Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
     Lists("lists", R.string.tab_lists, Icons.Filled.Checklist, Icons.Outlined.Checklist),
 }
@@ -90,8 +105,14 @@ enum class AppTab(
 fun KalendrysNavHost(
     launchRequest: LaunchRequest? = null,
     onLaunchRequestHandled: () -> Unit = {},
+    undoOffers: UndoOffers = (LocalContext.current.applicationContext as KalendrysApp).undoOffers,
+    newTaskPanel: NewTaskPanel = (LocalContext.current.applicationContext as KalendrysApp).newTaskPanel,
 ) {
     val navController = rememberNavController()
+    // Mensagens do app (Desfazer das exclusões de tarefa e rotina): o único coletor; quem desenha é o
+    // AppScaffold da tela à frente, que lê o estado pelo LocalAppSnackbarHostState.
+    val appSnackbar = remember { SnackbarHostState() }
+    UndoOfferEffect(undoOffers, appSnackbar)
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == null || AppTab.entries.any { it.route == currentRoute }
@@ -104,163 +125,189 @@ fun KalendrysNavHost(
     val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
         navController.navigate(routineExceptionRoute(routineId, epochDay))
     }
-    // Pedido de "nova tarefa" vindo do widget, entregue à tela de tarefas uma única vez.
-    var newTaskRequested by rememberSaveable { mutableStateOf(false) }
-    // Dia pedido por uma notificação ou widget de rotina, entregue à aba de rotinas uma única vez.
+    // Painel de nova tarefa (E6, 14.7): ABERTO ou FECHADO é estado de tela, salvo aqui no topo (o dia
+    // sugerido, em epochDay; null = fechado). Sobrevive a girar e à morte do processo (aí reabre com o
+    // rascunho vazio, perda aceita) e some quando a Activity termina. Rascunho e operações são do app.
+    var newTaskEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
+    val openNewTask: (LocalDate) -> Unit = { date -> newTaskEpochDay = date.toEpochDay() }
+    // Dia pedido por uma notificação ou widget de rotina (kalendrys://routines/{data}), entregue à Hoje uma única vez.
     var routinesDateRequested by rememberSaveable { mutableStateOf<LocalDate?>(null) }
 
-    Scaffold(
-        // Cada tela tem a própria barra de título, que desenha atrás da barra de status.
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            // A tela de detalhe ocupa a tela inteira; a barra de abas só aparece nas abas.
-            AnimatedVisibility(
-                visible = showBottomBar,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it },
-            ) {
-                NavigationBar {
-                    AppTab.entries.forEach { tab ->
-                        val selected = currentRoute == tab.route
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { navController.openTab(tab) },
-                            icon = {
-                                Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null)
-                            },
-                            label = { TabLabel(stringResource(tab.labelRes)) },
-                        )
+    CompositionLocalProvider(LocalAppSnackbarHostState provides appSnackbar) {
+        Scaffold(
+            // Cada tela tem a própria barra de título, que desenha atrás da barra de status.
+            // Sem snackbarHost aqui: a mensagem do app fica no slot da tela (acima do FAB e da mensagem dela).
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                // A tela de detalhe ocupa a tela inteira; a barra de abas só aparece nas abas.
+                AnimatedVisibility(
+                    visible = showBottomBar,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it },
+                ) {
+                    NavigationBar {
+                        AppTab.entries.forEach { tab ->
+                            val selected = currentRoute == tab.route
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { navController.openTab(tab) },
+                                icon = {
+                                    Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null)
+                                },
+                                label = { TabLabel(stringResource(tab.labelRes)) },
+                            )
+                        }
                     }
                 }
-            }
-        },
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = AppTab.Tasks.route,
-            // Sem consumir, o Scaffold de cada tela aplicaria de novo o inset da barra de navegação.
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding),
-        ) {
-            composable(AppTab.Tasks.route) {
-                TaskListScreen(
-                    onOpenTask = openTask,
-                    onOpenSettings = openSettings,
-                    openNewTask = newTaskRequested,
-                    onNewTaskOpened = { newTaskRequested = false },
-                )
-            }
-            composable(AppTab.Routines.route) {
-                RoutinesScreen(
-                    onOpenRoutine = openRoutine,
-                    onNewRoutine = { navController.navigate(routineEditorRoute()) },
-                    onOpenSettings = openSettings,
-                    onOpenTask = openTask,
-                    onOpenException = openRoutineException,
-                    requestedDate = routinesDateRequested,
-                    onRequestedDateHandled = { routinesDateRequested = null },
-                )
-            }
-            composable(AppTab.Calendar.route) {
-                CalendarScreen(onOpenTask = openTask, onOpenRoutine = openRoutine, onOpenSettings = openSettings)
-            }
-            composable(AppTab.Lists.route) {
-                ShoppingListsScreen(onOpenList = openShoppingList, onOpenSettings = openSettings)
-            }
-            // Tela de uso da lista (ADR-0001, 4.5); a barra de abas some por não ser rota de aba.
-            composable(
-                route = SHOPPING_LIST_ROUTE,
-                arguments = listOf(
-                    navArgument(SHOPPING_LIST_ID_ARG) { type = NavType.LongType },
-                    navArgument(SHOPPING_LIST_TASK_ID_ARG) {
-                        type = NavType.LongType
-                        defaultValue = NO_TASK_ID
-                    },
-                ),
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+            },
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = AppTab.Today.route,
+                // Sem consumir, o Scaffold de cada tela aplicaria de novo o inset da barra de navegação.
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
             ) {
-                ShoppingListScreen(onBack = { navController.popIfCurrent(SHOPPING_LIST_ROUTE) })
-            }
-            composable(
-                route = ROUTINE_EDITOR_ROUTE,
-                arguments = listOf(navArgument(ROUTINE_ID_ARG) { type = NavType.LongType }),
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                RoutineEditorScreen(
-                    onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) },
-                    onOpenShoppingList = openShoppingList,
-                )
-            }
-            // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
-            // pelo hub de rotinas; aqui fica só a rota + a tela (contrato de navegação).
-            composable(
-                route = ROUTINE_EXCEPTION_ROUTE,
-                arguments = listOf(
-                    navArgument(ROUTINE_EXCEPTION_ROUTINE_ID_ARG) { type = NavType.LongType },
-                    navArgument(ROUTINE_EXCEPTION_DAY_ARG) { type = NavType.LongType },
-                ),
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                RoutineExceptionScreen(onBack = { navController.popIfCurrent(ROUTINE_EXCEPTION_ROUTE) })
-            }
-            composable(
-                route = TASK_DETAIL_ROUTE,
-                arguments = listOf(navArgument(TASK_ID_ARG) { type = NavType.LongType }),
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                TaskDetailScreen(
-                    onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) },
-                    // Abre a lista com a tarefa como origem (oferta "Concluir tarefa", P3).
-                    onOpenShoppingList = { listId, taskId -> navController.navigate(shoppingListRoute(listId, taskId)) },
-                )
-            }
-            composable(
-                route = SETTINGS_ROUTE,
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                SettingsScreen(
-                    onBack = { navController.popIfCurrent(SETTINGS_ROUTE) },
-                    onOpenDiagnostics = openDiagnostics,
-                    onOpenCategories = openCategories,
-                )
-            }
-            composable(
-                route = ALARM_DIAGNOSTICS_ROUTE,
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                AlarmDiagnosticsScreen(onBack = { navController.popIfCurrent(ALARM_DIAGNOSTICS_ROUTE) })
-            }
-            composable(
-                route = ROUTINE_CATEGORIES_ROUTE,
-                enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-            ) {
-                RoutineCategoriesScreen(onBack = { navController.popIfCurrent(ROUTINE_CATEGORIES_ROUTE) })
+                composable(AppTab.Tasks.route) {
+                    TaskListScreen(
+                        onOpenTask = openTask,
+                        onOpenSettings = openSettings,
+                        onNewTask = openNewTask,
+                    )
+                }
+                composable(AppTab.Today.route) {
+                    TodayScreen(
+                        onOpenRoutine = openRoutine,
+                        onNewRoutine = { navController.navigate(routineEditorRoute()) },
+                        onOpenAllRoutines = { navController.navigate(ALL_ROUTINES_ROUTE) { launchSingleTop = true } },
+                        onOpenSettings = openSettings,
+                        onOpenTask = openTask,
+                        onOpenException = openRoutineException,
+                        onNewTask = openNewTask,
+                        requestedDate = routinesDateRequested,
+                        onRequestedDateHandled = { routinesDateRequested = null },
+                    )
+                }
+                composable(AppTab.Calendar.route) {
+                    CalendarScreen(
+                        onOpenTask = openTask,
+                        onOpenRoutine = openRoutine,
+                        onOpenSettings = openSettings,
+                        onNewTask = openNewTask,
+                    )
+                }
+                composable(AppTab.Lists.route) {
+                    ShoppingListsScreen(onOpenList = openShoppingList, onOpenSettings = openSettings)
+                }
+                // Tela de uso da lista (ADR-0001, 4.5); a barra de abas some por não ser rota de aba.
+                composable(
+                    route = SHOPPING_LIST_ROUTE,
+                    arguments = listOf(
+                        navArgument(SHOPPING_LIST_ID_ARG) { type = NavType.LongType },
+                        navArgument(SHOPPING_LIST_TASK_ID_ARG) {
+                            type = NavType.LongType
+                            defaultValue = NO_TASK_ID
+                        },
+                    ),
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    ShoppingListScreen(onBack = { navController.popIfCurrent(SHOPPING_LIST_ROUTE) })
+                }
+                // "Todas as rotinas" (14.4): gestão das rotinas, fora do retrato do dia; a barra de abas some.
+                composable(
+                    route = ALL_ROUTINES_ROUTE,
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    AllRoutinesScreen(
+                        onBack = { navController.popIfCurrent(ALL_ROUTINES_ROUTE) },
+                        onOpenRoutine = openRoutine,
+                        onNewRoutine = { navController.navigate(routineEditorRoute()) },
+                    )
+                }
+                composable(
+                    route = ROUTINE_EDITOR_ROUTE,
+                    arguments = listOf(navArgument(ROUTINE_ID_ARG) { type = NavType.LongType }),
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    RoutineEditorScreen(
+                        onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) },
+                        onOpenShoppingList = openShoppingList,
+                    )
+                }
+                // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
+                // pelo hub de rotinas; aqui fica só a rota + a tela (contrato de navegação).
+                composable(
+                    route = ROUTINE_EXCEPTION_ROUTE,
+                    arguments = listOf(
+                        navArgument(ROUTINE_EXCEPTION_ROUTINE_ID_ARG) { type = NavType.LongType },
+                        navArgument(ROUTINE_EXCEPTION_DAY_ARG) { type = NavType.LongType },
+                    ),
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    RoutineExceptionScreen(onBack = { navController.popIfCurrent(ROUTINE_EXCEPTION_ROUTE) })
+                }
+                composable(
+                    route = TASK_DETAIL_ROUTE,
+                    arguments = listOf(navArgument(TASK_ID_ARG) { type = NavType.LongType }),
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    TaskDetailScreen(
+                        onBack = { navController.popIfCurrent(TASK_DETAIL_ROUTE) },
+                        // Abre a lista com a tarefa como origem (oferta "Concluir tarefa", P3).
+                        onOpenShoppingList = { listId, taskId -> navController.navigate(shoppingListRoute(listId, taskId)) },
+                    )
+                }
+                composable(
+                    route = SETTINGS_ROUTE,
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    SettingsScreen(
+                        onBack = { navController.popIfCurrent(SETTINGS_ROUTE) },
+                        onOpenDiagnostics = openDiagnostics,
+                        onOpenCategories = openCategories,
+                    )
+                }
+                composable(
+                    route = ALARM_DIAGNOSTICS_ROUTE,
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    AlarmDiagnosticsScreen(onBack = { navController.popIfCurrent(ALARM_DIAGNOSTICS_ROUTE) })
+                }
+                composable(
+                    route = ROUTINE_CATEGORIES_ROUTE,
+                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
+                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
+                ) {
+                    RoutineCategoriesScreen(onBack = { navController.popIfCurrent(ROUTINE_CATEGORIES_ROUTE) })
+                }
             }
         }
     }
+
+    // Por cima de qualquer destino: o painel é janela própria e o voltar fecha primeiro ele.
+    NewTaskHost(newTaskPanel, newTaskEpochDay?.let(LocalDate::ofEpochDay), onClose = { newTaskEpochDay = null })
 
     // Depois do NavHost, para o grafo já estar montado quando a navegação acontecer.
     LaunchedEffect(launchRequest) {
         when (launchRequest) {
             null -> return@LaunchedEffect
             is LaunchRequest.OpenTask -> openTask(launchRequest.taskId)
-            LaunchRequest.NewTask -> {
-                navController.openTab(AppTab.Tasks)
-                newTaskRequested = true
-            }
+            // Widget e atalho: o painel abre POR CIMA do que estiver na tela, sem trocar de aba (O-2 da
+            // v1.7.0); com o app frio, sobre a aba inicial (Hoje).
+            LaunchRequest.NewTask -> openNewTask(LocalDate.now())
             // Se o editor de rotina estava aberto, a aba volta com ele (restoreState) e o dia
             // pedido só vale ao sair do editor.
             LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)
             is LaunchRequest.OpenRoutines -> {
-                navController.openTab(AppTab.Routines)
+                navController.openTab(AppTab.Today)
                 routinesDateRequested = launchRequest.date
             }
             // ADR-0002, E-1: aba Listas e, sobre ela, SÓ a lista pedida (voltar cai na aba). O openTab

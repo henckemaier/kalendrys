@@ -6,11 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,11 +43,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +64,7 @@ import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.ui.components.isCompactHeight
 import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -84,32 +95,55 @@ internal fun NewTaskSheet(
         scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
     }
 
-    // Título fixo só em janela de altura normal (L29: rolando, o foco no campo Título o escondia sob
-    // a alça). Em janela baixa (o mesmo corte que recolhe o FAB) ele volta para a área que rola, como
-    // na v1.7.0: fixo, ele tirava a altura que o teclado deixa e o Salvar ficava fora de alcance (O-1).
-    val fixedHeader = !isCompactHeight(windowHeightDp())
-    val header = @Composable { modifier: Modifier ->
-        Text(stringResource(R.string.new_task), style = MaterialTheme.typography.titleLarge, modifier = modifier)
-    }
+    // SÓ OS CAMPOS ROLAM (v1.8.0, O-6): a coluna dos campos tem peso e Cancelar/Salvar ficam FORA da
+    // rolagem nas duas alturas. Altura normal (L29): título fixo no topo (rolando, o foco no Título o
+    // escondia sob a alça) e Cancelar/Salvar fixos no FIM do painel, logo acima do teclado. Altura
+    // COMPACTA (o mesmo corte que recolhe o FAB; E6, 14.7, fecha L29 e O-1): título, Cancelar e Salvar
+    // numa linha FIXA no topo, e sem a alça, que gastaria a altura que falta (arrastar para fechar
+    // continua valendo).
+    //
+    // O teclado é descontado UMA vez, pelo próprio ModalBottomSheet (material3 1.4.0): a janela dele não
+    // se redimensiona (adjustNothing a partir da API 30, decorFitsSystemWindows false), a caixa do painel
+    // leva imePadding e o conteúdo recebe os insets de safeDrawing já sem a parte do teclado. Por isso
+    // nada aqui soma imePadding: o que escondia o Salvar era ele estar no fim da rolagem.
+    val compact = isCompactHeight(windowHeightDp())
+    val cancel = { hideThen(onCancel) }
+    val save = { hideThen(onSave) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        if (fixedHeader) {
-            header(
-                Modifier
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = if (compact) null else ({ BottomSheetDefaults.DragHandle() }),
+    ) {
+        // Dentro do painel: o teclado lido aqui é o da janela do painel, não o da Activity.
+        val keepTitleVisible = rememberKeepVisibleWhileFocused()
+        val keepNotesVisible = rememberKeepVisibleWhileFocused()
+        val keepLocationVisible = rememberKeepVisibleWhileFocused()
+        if (compact) {
+            CompactTopRow(canSave = draft.canSave, onCancel = cancel, onSave = save)
+        } else {
+            Text(
+                stringResource(R.string.new_task),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier
                     .fillMaxWidth()
+                    // Cabeçalho do painel para o leitor de tela (E7, 14.9).
+                    .semantics { heading() }
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 16.dp),
             )
         }
         Column(
             modifier = Modifier
+                // Peso sem preencher: com espaço sobrando o painel continua do tamanho do conteúdo;
+                // sem espaço (teclado, janela baixa) é esta coluna que encolhe e rola, não os botões.
+                .weight(1f, fill = false)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
+                .padding(bottom = if (compact) 24.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!fixedHeader) header(Modifier)
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = { value -> onChange { it.copy(title = value) } },
@@ -121,7 +155,8 @@ internal fun NewTaskSheet(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(focusRequester),
+                    .focusRequester(focusRequester)
+                    .then(keepTitleVisible),
             )
             TaskTimingField(
                 timing = draft.timing,
@@ -134,9 +169,15 @@ internal fun NewTaskSheet(
                 minLines = 2,
                 maxLines = 4,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(keepNotesVisible),
             )
-            LocationField(value = draft.location, onValueChange = { value -> onChange { it.copy(location = value) } })
+            LocationField(
+                value = draft.location,
+                onValueChange = { value -> onChange { it.copy(location = value) } },
+                modifier = keepLocationVisible,
+            )
             if (lists != null) {
                 NewTaskListField(
                     choice = draft.list,
@@ -145,14 +186,19 @@ internal fun NewTaskSheet(
                     onClear = { onChange { it.copy(list = null) } },
                 )
             }
+        }
+        if (!compact) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 8.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                TextButton(onClick = { hideThen(onCancel) }) {
+                TextButton(onClick = cancel) {
                     Text(stringResource(R.string.cancel))
                 }
-                Button(onClick = { hideThen(onSave) }, enabled = draft.canSave) {
+                Button(onClick = save, enabled = draft.canSave) {
                     Text(stringResource(R.string.save))
                 }
             }
@@ -174,6 +220,62 @@ internal fun NewTaskSheet(
             },
             onDismiss = { showListPicker = false },
         )
+    }
+}
+
+/**
+ * Traz o campo em foco para a área visível da rolagem (O-6) também quando a área ENCOLHE depois do foco:
+ * o campo pede para aparecer ao ganhar o foco, mas o teclado sobe em seguida e encolhe o painel, e aí
+ * ninguém pede de novo. Aqui, enquanto o campo tem o foco, cada mudança na altura do teclado pede outra
+ * vez. Campo mais alto que a área aparece pelo começo (regra da rolagem).
+ */
+@Composable
+private fun rememberKeepVisibleWhileFocused(): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    LaunchedEffect(focused) {
+        if (!focused) return@LaunchedEffect
+        snapshotFlow { ime.getBottom(density) }.collectLatest { requester.bringIntoView() }
+    }
+    return remember(requester) {
+        Modifier
+            .bringIntoViewRequester(requester)
+            .onFocusChanged { focused = it.hasFocus }
+    }
+}
+
+/**
+ * Linha fixa do painel em altura compacta (E6): título, Cancelar e, por ÚLTIMO, Salvar (regra da barra,
+ * 12.4). Quem cede espaço com fonte grande é o TÍTULO (reticências); os botões ficam com a largura
+ * deles e nunca cortam.
+ */
+@Composable
+private fun CompactTopRow(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 16.dp, bottom = 8.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.new_task),
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // Cabeçalho também na linha compacta; com reticências o nó continua com o texto inteiro.
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
+        TextButton(onClick = onCancel) {
+            Text(stringResource(R.string.cancel), maxLines = 1, softWrap = false)
+        }
+        Button(onClick = onSave, enabled = canSave) {
+            Text(stringResource(R.string.save), maxLines = 1, softWrap = false)
+        }
     }
 }
 

@@ -32,6 +32,6 @@ class StartupBenchmark {
         setupBlock = { pressHome() },
     ) {
         startActivityAndWait()
-        waitForTasksScreen()
+        waitForToday()
     }
 }

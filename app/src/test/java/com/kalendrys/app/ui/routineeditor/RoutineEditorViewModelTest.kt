@@ -22,11 +22,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -55,6 +60,7 @@ class RoutineEditorViewModelTest {
     private lateinit var categoryRepository: RoutineCategoryRepository
     private lateinit var shoppingRepository: ShoppingRepository
     private lateinit var exerciseRepository: ExerciseRepository
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -75,6 +81,7 @@ class RoutineEditorViewModelTest {
         categoryRepository = RoutineCategoryRepository(db)
         shoppingRepository = ShoppingRepository(db)
         exerciseRepository = ExerciseRepository(db.exerciseItemDao())
+        undoOffers = testUndoOffers(testDb, routineRepository)
     }
 
     @After
@@ -90,6 +97,7 @@ class RoutineEditorViewModelTest {
             categoryRepository,
             shoppingRepository,
             exerciseRepository,
+            undoOffers,
         ),
     )
 
@@ -363,5 +371,57 @@ class RoutineEditorViewModelTest {
             assertFalse(state.hasChanges)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- P8 (v1.8.0): "Excluir rotina" sem confirmação, com o Desfazer do app ---
+
+    @Test
+    fun `excluir arquiva, oferece Desfazer da rotina e fecha`() = runTest {
+        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420))
+        val vm = viewModel(routine.id)
+
+        vm.uiState.test {
+            awaitState { it.draft != null }
+            vm.delete()
+            assertEquals(RoutineEditorViewModel.Event.Closed, vm.events.first())
+            cancelAndIgnoreRemainingEvents()
+        }
+        // Arquivar e oferecer correm no escopo do app (NB-E3-C): a oferta chega depois do arquivar.
+        assertEquals(UndoTarget.DeletedRoutine(routine.id), awaitOffer()?.target)
+        assertTrue(db.routineDao().byId(routine.id)!!.archivedAt != null)
+    }
+
+    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
+    }
+
+    @Test
+    fun `excluir com alteracoes nao salvas - a exclusao vence e Desfazer devolve a rotina gravada`() = runTest {
+        val categoryId = categoryRepository.create("Academia", RoutineColor.GREEN.name, RoutineCategoryKind.EXERCICIO)
+        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
+        exerciseRepository.add(routine.id, "Agachamento", sets = 3, reps = 10, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+
+        vm.uiState.test {
+            awaitState { it.exerciseItems.map { item -> item.name } == listOf("Agachamento") }
+            vm.updateTitle("Treino pesado")
+            vm.addExerciseItem("Terra", sets = 1, reps = 5, load = null, restSeconds = null)
+            awaitState { it.hasChanges && it.exerciseItems.size == 2 }
+
+            vm.delete()
+            vm.events.first()
+            cancelAndIgnoreRemainingEvents()
+        }
+        val offer = awaitOffer()!!
+        // O rascunho não foi gravado e as edições de exercício da sessão voltaram.
+        val stored = db.routineDao().byId(routine.id)!!
+        assertEquals("Treino", stored.title)
+        assertEquals(listOf("Agachamento"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+
+        undoOffers.undo(offer).join()
+        val back = db.routineDao().byId(routine.id)!!
+        assertNull(back.archivedAt)
+        assertEquals("Treino", back.title)
     }
 }

@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -49,6 +48,7 @@ class CalendarScreenShellTest {
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var viewModel: CalendarViewModel
     private var settingsOpened = 0
+    private val newTaskRequests = mutableListOf<java.time.LocalDate>()
 
     @Before
     fun setup() {
@@ -68,7 +68,6 @@ class CalendarScreenShellTest {
                     InMemoryRoutineCatchUpMark(),
                 ),
                 ShoppingRepository(db),
-                NewTaskDraftStore(),
             ),
         )
         compose.setContent {
@@ -77,6 +76,7 @@ class CalendarScreenShellTest {
                     onOpenTask = {},
                     onOpenRoutine = {},
                     onOpenSettings = { settingsOpened++ },
+                    onNewTask = { newTaskRequests += it },
                     viewModel = viewModel,
                 )
             }
@@ -117,13 +117,13 @@ class CalendarScreenShellTest {
     }
 
     @Test
-    fun `FAB de nova tarefa abre o painel`() {
-        compose.onAllNodesWithText("Título").assertCountEquals(0)
-
+    fun `FAB de nova tarefa pede o painel com o dia selecionado`() {
+        // O painel mora no topo da navegação (E6): a tela só pede, com o dia selecionado (hoje ao abrir).
         // A descrição traz o dia selecionado (new_task_on_day), como antes da casca.
         compose.onNodeWithContentDescription("Nova tarefa em ", substring = true).performClick()
 
-        compose.onNodeWithText("Título").assertIsDisplayed()
+        assertEquals(listOf(java.time.LocalDate.now()), newTaskRequests)
+        compose.onAllNodesWithText("Título").assertCountEquals(0)
     }
 
     private companion object {

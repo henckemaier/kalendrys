@@ -29,7 +29,10 @@ object ReminderCatchUp {
     const val LATE_TOLERANCE_MINUTES = 60L
 
     /** Uma ocorrência de lembrete: a tarefa e o instante em que deveria ter tocado. */
-    data class Occurrence(val taskId: Long, val firedAt: Long)
+    data class Occurrence(val taskId: Long, val firedAt: Long) {
+        /** O dia (no [zone]) em que esta ocorrência tocou. */
+        fun day(zone: ZoneId): LocalDate = Instant.ofEpochMilli(firedAt).atZone(zone).toLocalDate()
+    }
 
     /** [late]: a entregar agora, em ordem de horário. [missedCount]: para o aviso "N lembretes perdidos". */
     data class Plan(val late: List<Occurrence>, val missedCount: Int) {
@@ -81,6 +84,15 @@ object ReminderCatchUp {
      */
     fun isDiscarded(task: Task, firedAt: Long, doneDays: Set<LocalDate>, zone: ZoneId): Boolean =
         task.repeat != ReminderRepeat.NONE && Instant.ofEpochMilli(firedAt).atZone(zone).toLocalDate() in doneDays
+
+    /**
+     * A ÚLTIMA ocorrência do lembrete de [task] que já tocou desde o início de [from] até [now], ou
+     * null sem ocorrência nessa janela. É a que a notificação da tarefa mostra (um id por tarefa): a
+     * conclusão retroativa de repetida só a tira quando o dia concluído é o dela (NB-E4-A da v1.8.0).
+     * Mesma conta de recorrência do catch-up ([occurrences]), sem conta nova.
+     */
+    fun lastOccurrenceSince(task: Task, from: LocalDate, now: Long, zone: ZoneId): Occurrence? =
+        occurrences(task, from.atStartOfDay(zone).toInstant().toEpochMilli() - 1, now, zone).lastOrNull()
 
     /** Ocorrências do lembrete de [task] em `(lastSeen, now]`, em ordem de horário. */
     fun occurrences(task: Task, lastSeen: Long, now: Long, zone: ZoneId): List<Occurrence> {

@@ -8,7 +8,16 @@ import com.kalendrys.app.data.local.AppDatabase
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Banco em memória para testes de ViewModel, com encerramento ordenado.
@@ -43,10 +52,33 @@ class ViewModelTestDatabase(context: Context) {
         .setTransactionExecutor(executor)
         .build()
 
+    private val appScopes = mutableListOf<Job>()
+
     /** Registra o ViewModel para ter o escopo cancelado no [close]. */
     fun <T : ViewModel> track(viewModel: T): T = viewModel.also { viewModels += it }
 
+    /**
+     * Escopo "do app" para quem roda trabalho fora das telas sobre este banco (ex.: o restauro do
+     * [com.kalendrys.app.UndoOffers]). No [close], o trabalho em voo termina (ou é cancelado e
+     * esperado, inclusive trechos NonCancellable do repositório) ANTES de o banco fechar: sem isso,
+     * um restauro atrasado de um teste batia no banco já fechado e estourava no teste seguinte
+     * ("connection pool has been closed", UncaughtExceptionsBeforeTest).
+     */
+    fun appScope(dispatcher: CoroutineDispatcher = Dispatchers.Default): CoroutineScope {
+        val job = SupervisorJob()
+        appScopes += job
+        return CoroutineScope(job + dispatcher)
+    }
+
     fun close() {
+        runBlocking {
+            appScopes.forEach { job ->
+                // Deixa o restauro já pedido terminar com o banco aberto; preso, cancela e espera.
+                withTimeoutOrNull(DRAIN_TIMEOUT_S * 1_000) { job.children.toList().joinAll() }
+                // Com limite: nunca trava o fim do teste (o trabalho não depende do Main, que está preso aqui).
+                withTimeoutOrNull(DRAIN_TIMEOUT_S * 1_000) { job.cancelAndJoin() }
+            }
+        }
         viewModels.forEach { it.viewModelScope.cancel() }
         // Duas barreiras: o que já estava na fila e o que essas tarefas tenham enfileirado.
         repeat(2) { executor.submit {}.get(DRAIN_TIMEOUT_S, TimeUnit.SECONDS) }

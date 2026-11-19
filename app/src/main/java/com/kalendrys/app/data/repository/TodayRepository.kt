@@ -11,12 +11,14 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.transformLatest
@@ -48,6 +50,26 @@ class TodayRepository(
         refreshes.update { it + 1 }
     }
 
+    /**
+     * A ÚNICA fonte da data de [today] e de [observe] (O-4 da v1.8.0). Cada [refresh] relê a data:
+     * a fonte recomeça com o relógio de agora (o laço da meia-noite do currentDate() mede a próxima
+     * virada de novo), então um relógio ou fuso trocado com a Hoje aberta chega aqui no próximo
+     * refresh (a troca de hora e de fuso já chama refresh pelo BootReceiver -> KalendrysWidgets.updateAll;
+     * a Hoje pede um ao voltar para a frente). A mesma data não sai duas vezes.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val days: Flow<LocalDate> = refreshes.flatMapLatest { dates() }.distinctUntilChanged()
+
+    /**
+     * A data de hoje, da MESMA fonte que este retrato usa (emite de novo na virada da meia-noite e
+     * num [refresh] que encontre outro dia). A tela Hoje a recebe por aqui para acompanhar o dia junto
+     * com os números (NB-E3-B da v1.8.0).
+     */
+    val today: Flow<LocalDate> get() = days
+
+    /** O agora do mesmo relógio do retrato (instante de uma conclusão feita pela Hoje). */
+    fun now(): ZonedDateTime = clock(zone()).atZone(zone())
+
     private data class Snapshot(
         val tasks: List<Task>,
         val taskLogs: List<CompletionLog>,
@@ -65,7 +87,7 @@ class TodayRepository(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observe(): Flow<TodayOverview> =
-        dates().flatMapLatest { today ->
+        days.flatMapLatest { today ->
             val tomorrow = today.plusDays(1)
             combine(
                 taskRepository.tasks,
@@ -97,7 +119,7 @@ class TodayRepository(
                         listProgress = snapshot.listProgress,
                     )
                     emit(overview)
-                    // Depois da meia-noite quem recomeça tudo é o currentDate().
+                    // Depois da meia-noite (ou num refresh em outro dia) quem recomeça tudo é [days].
                     val next = overview.nextUp?.at?.takeIf { it.toLocalDate() == today } ?: awaitCancellation()
                     delay(Duration.between(now, next).toMillis().coerceAtLeast(0) + CHANGE_MARGIN_MS)
                 }

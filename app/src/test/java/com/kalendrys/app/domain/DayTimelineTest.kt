@@ -264,4 +264,120 @@ class DayTimelineTest {
         // A tarefa cai dentro do span da rotina → encostada, sem intervalo.
         assertEquals(Link.SOLID, (items[1] as TaskItem).linkAbove)
     }
+
+    // --- P5 (v1.8.0, E3): bloco pulado visível, marcado, sem contar no dia ---
+
+    private fun buildWithSkipped(routines: List<Routine>, vararg ov: RoutineOverride) =
+        DayTimeline.build(routines, emptySet(), day, zone, overrides = overrides(*ov), includeSkipped = true)
+
+    @Test
+    fun `com includeSkipped o pulado continua na trilha marcado, no horario normal e sem ligacoes`() {
+        val items = buildWithSkipped(listOf(routine(1, "07:00", 30), routine(2, "12:00", 30)), skip(1))
+
+        val skipped = items.filterIsInstance<Block>().single { it.routine.id == 1L }
+        assertTrue(skipped.skipped)
+        assertFalse(skipped.isActive)
+        assertEquals(7 * 60, skipped.startMinute)
+        assertEquals(Link.NONE, skipped.linkAbove)
+        assertEquals(Link.NONE, skipped.linkBelow)
+        assertFalse(items.filterIsInstance<Block>().single { it.routine.id == 2L }.skipped)
+        assertEquals(listOf(1L, 2L), items.filterIsInstance<Block>().map { it.routine.id })
+    }
+
+    @Test
+    fun `pulado nao conta nas lacunas nem nas ligacoes dos outros`() {
+        val routines = listOf(routine(1, "07:00", 30), routine(2, "08:00", 30), routine(3, "09:00", 30))
+
+        val items = buildWithSkipped(routines, skip(2))
+        // Os ativos ficam exatamente como se o pulado não existisse: lacuna 07:30–09:00 inteira.
+        val withoutSkipped = DayTimeline.build(listOf(routines[0], routines[2]), emptySet(), day, zone)
+        assertEquals(withoutSkipped, items.filter { it.isActive })
+        assertEquals(Gap(startMinute = 7 * 60 + 30, minutes = 90), items.filterIsInstance<Gap>().single())
+        // Ordem: o pulado entra pelo início, depois da lacuna que começa antes dele.
+        assertEquals(listOf("routine_1", "gap_450", "routine_2", "routine_3"), items.map { it.key })
+    }
+
+    @Test
+    fun `pulado dentro de um bloco ativo nao quebra a ligacao encostada`() {
+        val routines = listOf(routine(1, "07:00", 120), routine(2, "08:00", 30), routine(3, "08:30", 30))
+
+        val items = buildWithSkipped(routines, skip(2))
+
+        val first = items.filterIsInstance<Block>().single { it.routine.id == 1L }
+        val third = items.filterIsInstance<Block>().single { it.routine.id == 3L }
+        assertEquals(Link.SOLID, first.linkBelow)
+        assertEquals(Link.SOLID, third.linkAbove)
+        assertTrue(items.filterIsInstance<Gap>().isEmpty())
+    }
+
+    @Test
+    fun `remarcada para outro dia nao aparece como pulada`() {
+        val items = buildWithSkipped(listOf(routine(1, "07:00", 30)), reschedule(1, newDate = day.plusDays(1)))
+
+        assertTrue(items.isEmpty())
+    }
+
+    @Test
+    fun `dia so com o pulado mostra so ele e desfazer o pular devolve o bloco ativo`() {
+        val routines = listOf(routine(1, "07:00", 30))
+
+        val skippedDay = buildWithSkipped(routines, skip(1))
+        assertEquals(1, skippedDay.size)
+        assertTrue((skippedDay.single() as Block).skipped)
+
+        // Desfazer = tirar a exceção do dia: o bloco volta normal, igual a um dia sem exceção.
+        val undone = buildWithSkipped(routines)
+        assertEquals(build(*routines.toTypedArray()), undone)
+        assertFalse((undone.single() as Block).skipped)
+    }
+
+    @Test
+    fun `sem includeSkipped nada muda - quem nao pede nao recebe o pulado`() {
+        val routines = listOf(routine(1, "07:00", 30), routine(2, "12:00", 30))
+
+        val items = DayTimeline.build(routines, emptySet(), day, zone, overrides = overrides(skip(1)))
+
+        assertEquals(listOf(2L), items.filterIsInstance<Block>().map { it.routine.id })
+        assertTrue(items.all { it.isActive })
+    }
+
+    // --- A1 do Esquadro na E3: o bloco carrega o dia da OCORRÊNCIA (onde mora a exceção) ---
+
+    private fun blockOn(date: LocalDate, routines: List<Routine>, vararg ov: RoutineOverride): Block =
+        DayTimeline.build(routines, emptySet(), date, zone, overrides = overrides(*ov), includeSkipped = true)
+            .filterIsInstance<Block>()
+            .single()
+
+    @Test
+    fun `bloco normal e remarcado no proprio dia carregam o dia mostrado`() {
+        val routines = listOf(routine(1, "07:00", 30))
+
+        assertEquals(day, blockOn(day, routines).occurrenceDate)
+        assertEquals(day, blockOn(day, routines, reschedule(1, newStart = "15:30")).occurrenceDate)
+    }
+
+    @Test
+    fun `bloco remarcado vindo de outro dia carrega o dia de origem`() {
+        // Só aos sábados (24/10/2026); remarcado de sábado para domingo às 09:00.
+        val routines = listOf(routine(1, "07:00", 30, days = RoutineDays.bit(day.dayOfWeek)))
+        val sunday = day.plusDays(1)
+
+        val block = blockOn(sunday, routines, reschedule(1, date = day, newStart = "09:00", newDate = sunday))
+
+        assertEquals(day, block.occurrenceDate)
+        assertEquals(9 * 60, block.startMinute)
+    }
+
+    @Test
+    fun `pular no dia de origem troca a remarcacao - o bloco some do dia novo e aparece pulado na origem`() {
+        val routines = listOf(routine(1, "07:00", 30, days = RoutineDays.bit(day.dayOfWeek)))
+        val sunday = day.plusDays(1)
+        // Uma exceção por dia: o SKIP no dia de origem substitui a remarcação.
+        val skipped = overrides(skip(1, date = day))
+
+        assertTrue(DayTimeline.build(routines, emptySet(), sunday, zone, overrides = skipped, includeSkipped = true).isEmpty())
+        val atOrigin = blockOn(day, routines, skip(1, date = day))
+        assertTrue(atOrigin.skipped)
+        assertEquals(day, atOrigin.occurrenceDate)
+    }
 }

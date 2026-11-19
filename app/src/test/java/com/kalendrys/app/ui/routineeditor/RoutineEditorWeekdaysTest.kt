@@ -21,6 +21,7 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.components.assertWeekdayCellsFit
 import com.kalendrys.app.ui.components.weekdayPillWidthsPx
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -71,6 +72,7 @@ class RoutineEditorWeekdaysTest {
                 RoutineCategoryRepository(db),
                 ShoppingRepository(db),
                 ExerciseRepository(db.exerciseItemDao()),
+                testUndoOffers(testDb, routineRepository),
             ),
         )
         compose.setContent {

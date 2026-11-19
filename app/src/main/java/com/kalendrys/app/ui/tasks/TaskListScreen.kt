@@ -3,6 +3,7 @@
 package com.kalendrys.app.ui.tasks
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -36,24 +37,21 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,52 +72,36 @@ import com.kalendrys.app.ui.components.SwipeRow
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.rememberFabExpanded
-import com.kalendrys.app.ui.components.showUndo
-import com.kalendrys.app.ui.components.splitTop
+import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
-import com.kalendrys.app.ui.tasks.TaskViewModel.UndoableAction
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
 
+/**
+ * Lista de Tarefas. O Desfazer de excluir (deslize) e de concluir (círculo) é a oferta do app
+ * ([com.kalendrys.app.UndoOffers], v1.8.0 E5): a tela só pede a ação e a mensagem vem do coletor do
+ * `KalendrysNavHost`, desenhada pelo [AppScaffold]; por isso sobrevive a girar a tela. A tela não tem
+ * mensagem própria.
+ *
+ * Busca e chips são ITENS da lista (E5, 14.6): o campo de busca rolado para fora da tela perde o
+ * foco (o item sai da composição), mas o texto digitado fica, porque mora no ViewModel.
+ */
 @Composable
 fun TaskListScreen(
     onOpenTask: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    openNewTask: Boolean = false,
-    onNewTaskOpened: () -> Unit = {},
+    /** Pede o painel de nova tarefa (hospedado no topo da navegação, E6) sugerindo hoje. */
+    onNewTask: (LocalDate) -> Unit = {},
     viewModel: TaskViewModel = viewModel(factory = TaskViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filters by viewModel.filters.collectAsStateWithLifecycle()
-    var showNewTask by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(openNewTask) {
-        if (openNewTask) {
-            showNewTask = true
-            onNewTaskOpened()
-        }
-    }
-    val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
-
-    val completedMessage = stringResource(R.string.task_completed)
-    val deletedMessage = stringResource(R.string.task_deleted)
-    val undoLabel = stringResource(R.string.undo)
-    LaunchedEffect(viewModel, snackbarHostState) {
-        viewModel.undoable.collectLatest { action ->
-            val message = when (action) {
-                is UndoableAction.Completed -> completedMessage
-                is UndoableAction.Deleted -> deletedMessage
-            }
-            if (snackbarHostState.showUndo(message, undoLabel)) viewModel.undo(action)
-        }
-    }
 
     val settingsLabel = stringResource(R.string.settings_title)
     AppScaffold(
@@ -133,13 +115,11 @@ fun TaskListScreen(
             CollapsingFab(
                 text = stringResource(R.string.new_task),
                 expanded = fabExpanded,
-                onClick = { showNewTask = true },
+                onClick = { onNewTask(LocalDate.now()) },
             )
         },
         hasFab = true,
-        snackbarHostState = snackbarHostState,
     ) { padding ->
-        val screen = padding.splitTop(horizontal = Spacing.l)
         when {
             !state.isLoaded -> Unit
             // Sem nenhuma tarefa criada: vazio "comece por aqui" (sem busca nem filtros).
@@ -148,49 +128,58 @@ fun TaskListScreen(
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
                 actionLabel = stringResource(R.string.new_task),
-                onAction = { showNewTask = true },
+                onAction = { onNewTask(LocalDate.now()) },
                 modifier = Modifier.padding(padding),
             )
-            // Busca e chips ficam fixos acima da lista (como hoje): só o topo do preenchimento vai
-            // para a coluna; laterais e fundo (insets, largura máxima e folga do FAB) seguem para a
-            // busca, os chips e o contentPadding da lista, que rola por baixo da barra do sistema.
-            else -> Column(modifier = Modifier.padding(top = screen.top)) {
-                val start = screen.start
-                val end = screen.end
-                val listPadding = screen.list
-                TaskSearchBar(
-                    query = query,
-                    onQueryChange = viewModel::setQuery,
-                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s),
+            // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas
+            // (antes ficavam fixos acima dela, e em paisagem com fonte 2.0 não sobrava tarefa visível
+            // no 1º quadro). O preenchimento da casca vai inteiro para o contentPadding: topo, laterais
+            // (com a margem da tela) e fundo (insets, largura máxima e folga do FAB). O teclado já
+            // encolhe a casca (adjustResize, B-1): o campo focado no topo da lista fica acima dele.
+            else -> {
+                val today = state.today
+                val todayLabel = remember(today) { weekdayDateLabel(today) }
+                val sections = listOf(
+                    Triple("overdue", R.string.section_overdue, state.overdue),
+                    Triple("today", R.string.section_today, state.dueToday),
+                    Triple("upcoming", R.string.section_upcoming, state.upcoming),
+                    Triple("no_date", R.string.section_no_date, state.noDate),
+                    Triple("done", R.string.section_done_today, state.doneToday),
                 )
-                TaskFilterChips(
-                    selected = filters,
-                    onToggle = viewModel::toggleFilter,
-                    modifier = Modifier.padding(start = start, end = end, top = Spacing.s, bottom = Spacing.s),
-                )
-                if (state.isEmpty) {
-                    // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto.
-                    EmptyState(
-                        icon = Icons.Outlined.SearchOff,
-                        title = stringResource(R.string.empty_search_title),
-                        message = stringResource(R.string.empty_search_message),
-                    )
-                } else {
-                    val today = state.today
-                    val todayLabel = remember(today) { weekdayDateLabel(today) }
-                    val sections = listOf(
-                        Triple("overdue", R.string.section_overdue, state.overdue),
-                        Triple("today", R.string.section_today, state.dueToday),
-                        Triple("upcoming", R.string.section_upcoming, state.upcoming),
-                        Triple("no_date", R.string.section_no_date, state.noDate),
-                        Triple("done", R.string.section_done_today, state.doneToday),
-                    )
-                    val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = listPadding,
-                    ) {
+                val titles = sections.associate { (key, titleRes, _) -> key to stringResource(titleRes) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = padding.plus(horizontal = Spacing.l),
+                ) {
+                    // Chaves estáveis: digitar filtra a lista abaixo sem recriar o campo (o foco e o
+                    // teclado continuam).
+                    item(key = TASK_SEARCH_KEY, contentType = "search") {
+                        TaskSearchBar(
+                            query = query,
+                            onQueryChange = viewModel::setQuery,
+                            modifier = Modifier.padding(top = Spacing.s),
+                        )
+                    }
+                    item(key = TASK_FILTERS_KEY, contentType = "filters") {
+                        TaskFilterChips(
+                            selected = filters,
+                            onToggle = viewModel::toggleFilter,
+                            modifier = Modifier.padding(top = Spacing.s, bottom = Spacing.s),
+                        )
+                    }
+                    if (state.isEmpty) {
+                        // Há tarefas, mas a busca/filtros não deixaram nenhuma: vazio distinto, como item
+                        // (a lista rola até a mensagem com fonte grande).
+                        item(key = "empty_search", contentType = "empty_search") {
+                            EmptyState(
+                                icon = Icons.Outlined.SearchOff,
+                                title = stringResource(R.string.empty_search_title),
+                                message = stringResource(R.string.empty_search_message),
+                                modifier = Modifier.padding(top = Spacing.xl),
+                            )
+                        }
+                    } else {
                         item(key = "today_label", contentType = "today") {
                             Text(
                                 text = todayLabel,
@@ -219,29 +208,6 @@ fun TaskListScreen(
         }
     }
 
-    if (showNewTask) {
-        // Abre (ou reabre, depois de girar) o rascunho único; sugere hoje se a data não foi escolhida.
-        LaunchedEffect(Unit) { viewModel.openNewTask(LocalDate.now()) }
-        val lists by viewModel.lists.collectAsStateWithLifecycle()
-        // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
-        val draft by viewModel.newTaskDraft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-        draft?.let {
-            NewTaskSheet(
-                draft = it,
-                onChange = viewModel::updateNewTask,
-                onSave = {
-                    viewModel.saveNewTask()
-                    showNewTask = false
-                },
-                onCancel = {
-                    viewModel.cancelNewTask()
-                    showNewTask = false
-                },
-                onDismiss = { showNewTask = false },
-                lists = lists,
-            )
-        }
-    }
 }
 
 /** Campo de busca filled, no estilo dos cards da lista; o X aparece quando há texto. */
@@ -353,13 +319,15 @@ private fun LazyListScope.taskSection(
 
 /**
  * Exceção ao SectionHeader de ui/components (parecer do Esquadro, NB-1 da E3): aqui a contagem fica
- * na ponta direita e o espaço acima é maior; trocar mudaria o miolo da lista, que é da v1.8.0.
+ * na ponta direita e o espaço acima é maior; trocar mudaria o miolo da lista, que é da v1.8.0. A
+ * semântica é a mesma do SectionHeader (E7): um nó só, título e contagem, marcado como título.
  */
 @Composable
 private fun TaskSectionHeader(title: String, count: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) { heading() }
             .padding(top = Spacing.xl, bottom = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -390,7 +358,7 @@ private fun SwipeableTaskRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Só o lado de excluir (deslize para a esquerda), com Desfazer no snackbar, como antes do
+    // Só o lado de excluir (deslize para a esquerda), com o Desfazer do app (E5), como antes do
     // SwipeRow: a linha fica fora da tela até o item sair da lista (removesRow). O tátil é do SwipeRow.
     val deleteAction = SwipeAction(
         label = stringResource(R.string.delete_task),
@@ -445,14 +413,30 @@ private fun TaskRow(
                 .padding(start = Spacing.xs, end = Spacing.l, top = Spacing.s, bottom = Spacing.s),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora.
-            val canComplete = !done && !(task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today)
-            IconButton(onClick = onComplete, enabled = canComplete) {
-                Icon(
-                    imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
-                    contentDescription = stringResource(if (done) R.string.done_today else R.string.complete_task),
-                    tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                )
+            // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora (O-5):
+            // em vez de um círculo que não age, o ícone de repetição no mesmo espaço de 48dp, decorativo
+            // (sem toque nem descrição próprios; a repetição já é lida na linha). Tocar ali abre a
+            // tarefa, como o resto da linha, e o leitor de tela não encontra um Concluir desabilitado.
+            // A data de uma repetida na lista nunca fica no passado (C-1): TaskSchedule.status não dá
+            // OVERDUE para quem se repete, e a data de "Próximas" é a próxima ocorrência (a partir de
+            // amanhã). Por isso "diferente de hoje" aqui quer dizer "depois de hoje".
+            val repeatsLater = !done && task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today
+            if (repeatsLater) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.Repeat,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            } else {
+                IconButton(onClick = onComplete, enabled = !done) {
+                    Icon(
+                        imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = stringResource(if (done) R.string.done_today else R.string.complete_task),
+                        tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    )
+                }
             }
             Column(
                 modifier = Modifier
@@ -545,3 +529,7 @@ private fun MetaItem(icon: ImageVector, text: String, color: Color) {
 }
 
 private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/** Chaves estáveis da busca e dos chips na lista (E5): o campo não é recriado quando a lista filtra. */
+internal const val TASK_SEARCH_KEY = "search"
+internal const val TASK_FILTERS_KEY = "filters"

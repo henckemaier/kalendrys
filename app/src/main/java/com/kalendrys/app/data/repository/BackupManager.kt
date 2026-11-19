@@ -250,7 +250,7 @@ class BackupManager(
         const val SCHEMA_VERSION = 6
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 10
+        private const val DATABASE_VERSION = 11
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -309,12 +309,20 @@ private fun CompletionLog.toJson() = JSONObject().apply {
     put("id", id)
     put("taskId", taskId)
     put("completedAt", completedAt)
+    // Conclusão adiantada (banco 11): só quando preenchidos; schema do backup continua 6 (opcionais).
+    previousDueDate?.let { put("previousDueDate", it) }
+    previousReminderAt?.let { put("previousReminderAt", it) }
+    rewrittenDueDate?.let { put("rewrittenDueDate", it) }
 }
 
 private fun JSONObject.toCompletionLog() = CompletionLog(
     id = getLong("id"),
     taskId = getLong("taskId"),
     completedAt = getLong("completedAt"),
+    // Opcionais: backup anterior ao banco 11 (ou conclusão que não reescreveu nada) vem sem eles.
+    previousDueDate = nullableLong("previousDueDate"),
+    previousReminderAt = nullableLong("previousReminderAt"),
+    rewrittenDueDate = nullableLong("rewrittenDueDate"),
 )
 
 private fun Routine.toJson() = JSONObject().apply {

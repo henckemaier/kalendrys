@@ -6,6 +6,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
  * Data, horário do lembrete e repetição de uma tarefa, como o formulário os edita. No banco
@@ -49,6 +50,20 @@ data class TaskTiming(
 
 /** Em que dias cada tarefa acontece e como ela está num dia. Lógica pura, testada na JVM. */
 object TaskSchedule {
+
+    /**
+     * Instante de uma conclusão feita "no dia [day]", a partir do agora [now] (v1.8.0): hoje (ou um dia
+     * futuro) é o próprio agora; dia passado é aquele dia, na hora atual do relógio (conclusão
+     * retroativa). Uma regra só para a Hoje (linha de um dia passado) e para o "Concluir" da
+     * notificação de uma ocorrência de dia passado (NB-E5-A).
+     */
+    fun completionInstantOn(day: LocalDate, now: ZonedDateTime): Long =
+        if (!day.isBefore(now.toLocalDate())) {
+            now.toInstant().toEpochMilli()
+        } else {
+            day.atTime(now.toLocalTime()).atZone(now.zone).toInstant().toEpochMilli()
+        }
+
 
     enum class Status {
         /** Sem repetição, com data já passada e ainda não concluída. */

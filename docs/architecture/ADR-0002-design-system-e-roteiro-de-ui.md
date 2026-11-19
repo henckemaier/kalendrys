@@ -221,12 +221,19 @@ Os códigos (A1..F6) são os do parecer de UI de 2026-11-14.
 
 ### v1.8.0 — MINOR (Hoje e editores)
 
+> **Dividida pela seção 14:** a v1.8.0 ficou com "Hoje e dados" (B1, D2, a lista de tarefas de
+> D1 e o Desfazer definitivo). C4, D3 e o detalhe da tarefa foram para a v1.9.0. F3 fica nos
+> testes de semântica (14.9).
+
 - B1: tela Hoje (seção 6). D2: timeline.
 - D3: editor de rotina reorganizado. D1: lista e detalhe de tarefa.
 - C4: salvar na hora (seção 5).
 - F3: leitor de tela.
 
 ### v1.9.0 — MINOR (adaptativo, calendário e busca)
+
+> **Renumerada pela seção 14:** este escopo passou a ser a **v1.10.0**. A v1.9.0 passou a ser
+> "editores e salvar na hora" (C4, D3 e o detalhe da tarefa de D1).
 
 - B5: barra inferior ou rail conforme a janela. F6: target SDK 36.
 - D4: calendário recolhível para semana. B4: busca global.
@@ -1060,3 +1067,370 @@ código do app.
 #### Situação dos critérios da E6
 
 Abertura a frio: **cumprido**. Leitor de tela com fala real: **não cumprido**, e é o único.
+
+---
+
+## 14. Emenda de 2026-11-17 — escopo e desenho da v1.8.0
+
+Base: `main` em 0381efe (v1.7.1 publicada). As decisões P1 a P7 são do usuário.
+
+### 14.1 Divisão e renumeração (P1)
+
+O escopo "Hoje e editores" da seção 7 são duas reescritas independentes mais uma mudança de
+dados. Fica dividido:
+
+| Versão | Nome | Conteúdo |
+|--------|------|----------|
+| **v1.8.0** | Hoje e dados | Tela Hoje (B1), timeline (D2), "Todas as rotinas", lista de tarefas com cabeçalho rolando (parte de D1), painel de nova tarefa num lugar só, Desfazer definitivo com migração, agendador alinhado à entrega |
+| **v1.9.0** | Editores | Salvar na hora (C4, seção 5), editor de rotina reorganizado (D3), detalhe da tarefa (resto de D1), remoção do `TaskDraft.rebase` |
+| **v1.10.0** | Adaptativo, calendário e busca | O que a seção 7 chamava de v1.9.0 |
+
+Motivo: a Hoje não depende dos editores, e o salvar na hora reescreve exatamente as duas telas
+de edição. Juntar obrigaria a matriz manual a cobrir a troca da tela inicial e a troca do modelo
+de salvar de uma vez. Salvar na hora é mudança de comportamento e não cabe numa PATCH.
+
+Onde as seções 2, 5, 6, 8 e 10 dizem "v1.8.0" para o salvar na hora (U5, emenda E-2) e para os
+editores, leia-se **v1.9.0**. A tela Hoje (U2, seção 6, emenda E-3) continua na v1.8.0.
+
+### 14.2 Dados: banco 10 para 11
+
+- `completion_log` ganha três colunas **anuláveis**: `previousDueDate`, `previousReminderAt` e
+  `rewrittenDueDate`. Guardam o que a conclusão adiantada de uma tarefa única sobrescreveu (a
+  data e o lembrete anteriores) e a data que ela gravou. É o que a v1.6.0 mantinha num mapa em
+  memória do `TaskRepository`.
+- Como são só colunas anuláveis, a migração é **automática** (10 para 11), sem SQL à mão. O
+  esquema 11 é exportado. Linhas antigas ficam com vazio, que significa "esta conclusão não
+  reescreveu nada".
+- O mapa em memória e o `Mutex` dele **saem**. Desfazer passa a restaurar data e lembrete a
+  qualquer momento: depois de o processo morrer, e ao desmarcar a tarefa horas depois.
+- A guarda continua: só restaura se a tarefa ainda está como a conclusão a deixou (mesma data,
+  sem lembrete). Se o usuário editou no meio, a edição dele vence.
+- **Toque duplo em Concluir** numa tarefa única: concluir uma tarefa única já encerrada devolve
+  o registro que existe, não cria outro.
+- **Backup: `SCHEMA_VERSION` continua 6.** Os três campos entram como opcionais no registro de
+  conclusão; backup antigo restaura com vazio. É a regra da 4.1: campo opcional com padrão não
+  sobe a versão. A restauração só valida a versão do backup e lê os campos pelo nome.
+- O `TaskDraft.rebase` **não** sai agora: ele existe por causa do rascunho do detalhe e sai na
+  v1.9.0, com o salvar na hora.
+
+**Excluir pelo detalhe com Desfazer.** A tela do detalhe fecha e a mensagem aparece na tela de
+onde o usuário veio. O detalhe abre a partir de três telas, e a tela de baixo não está composta
+enquanto ele está por cima; por isso não se usa resultado de navegação nem ViewModel
+compartilhado. Um objeto pequeno criado no `KalendrysApp`, no molde do `NewTaskDraftStore`,
+guarda a oferta de Desfazer e sabe restaurar pelo `TaskRepository`; o ViewModel do detalhe
+exclui e publica a oferta; o `KalendrysNavHost`, que está sempre composto, é o **único**
+coletor e mostra a mensagem com a função única da 13.4. O deslize da lista de tarefas continua
+como está.
+
+**Onde a mensagem é desenhada** (decisão na E0): no espaço de mensagens da tela que está à
+frente, não na moldura de fora da navegação. Desenhada por fora, ela cobria o FAB da aba por 10 s
+e caía no mesmo lugar da mensagem da própria tela. O estado da mensagem continua sendo do topo
+da navegação; ele é entregue ao `AppScaffold` por um valor de composição com padrão nulo, e o
+`AppScaffold` o desenha junto da mensagem da tela, uma acima da outra, e as duas acima do FAB, sem
+cobri-lo. Só a tela que está à frente desenha, para a mensagem não aparecer em dobro durante a
+transição. Consequência: toda tela de destino precisa usar o `AppScaffold`.
+
+**A oferta é um estado, não um evento** (decisão depois da revisão do tester): o objeto do app
+guarda a oferta pendente até a mensagem terminar (Desfazer, tempo esgotado ou dispensada) ou
+até outra oferta substituí-la. Se a tela for recriada com a mensagem visível (girar o aparelho),
+a mensagem volta com o tempo reiniciado, em vez de o Desfazer sumir com a tarefa excluída.
+A oferta tem **validade curta** a partir da criação: vencida, é descartada sem ser mostrada,
+para a mensagem não reaparecer do nada quando o app é reaberto muito depois. A espera da mensagem
+também é limitada pelo que resta do prazo, porque o tempo da mensagem só corre com a tela à
+frente. Um toque em Desfazer numa mensagem visível sempre restaura: o prazo decide se a
+mensagem aparece, não se o botão funciona. O coletor só fica ativo com a tela do app à frente:
+sair da frente cancela a espera sem limpar a oferta, e voltar confere o prazo pelo relógio de
+parede antes de mostrar. Isso cobre o botão de início, a tela apagada e o processo congelado.
+
+**A oferta serve a duas exclusões** (decisão na P8): tarefa excluída pelo detalhe e rotina
+excluída pelo editor. O objeto do app guarda uma oferta por vez, de um dos dois tipos, e é ele
+que sabe restaurar cada um; o coletor único só escolhe o texto. As demais regras (prazo, tela à
+frente, substituição) são as mesmas para os dois.
+
+**Excluir e oferecer é uma operação só, no escopo do app.** O próprio objeto exclui e publica a
+oferta; a tela só pede e fecha. Com a exclusão no escopo da tela, sair no instante entre excluir
+e oferecer deixava a exclusão sem Desfazer. A exclusão de rotina feita em "Todas as rotinas"
+passa pelo mesmo caminho, e a tela deixa de ter um Desfazer próprio.
+
+**Terceiro tipo de oferta (E5): tarefa concluída na lista de tarefas.** Concluir e oferecer é
+operação do mesmo objeto; desfazer é pelo registro da conclusão. A regra de uma oferta por vez
+vale entre tipos: uma ação nova substitui a mensagem da anterior, que fica sem Desfazer.
+**Pendência para a v1.9.0:** concluir e pular na Hoje ainda usam mensagem própria da tela e
+não sobrevivem a girar; levar para o mesmo caminho.
+
+**Qual conclusão desfazer:** quando uma tarefa tem mais de uma conclusão no mesmo dia, desmarcar
+desfaz a **mais recente**. Desfazer a mais antiga devolvia a data errada e deixava um registro
+solto.
+
+### 14.3 Agendador alinhado à entrega
+
+Fecha o item deixado na 13.3 (D-71-1).
+
+- **Tarefas:** o `TaskRepository` passa a ser o dono do instante do próximo lembrete (a função
+  que na v1.7.1 servia só ao diagnóstico), e o `ReminderScheduler` apenas marca o alarme no
+  instante que recebe. Concluir uma tarefa repetida reagenda para a próxima ocorrência que será
+  entregue; desfazer devolve a de hoje. O diagnóstico e o agendador voltam a ser a mesma conta,
+  e o teste dos dois caminhos volta a exigir igualdade.
+- **Rotinas:** o início concluído **não** é pulado, porque o alarme de início também redesenha
+  os widgets. Só muda o tipo: exato se alguma rotina que avisa ainda não foi concluída naquele
+  dia, silencioso se todas foram. **Limite aceito:** o alarme silencioso é aproximado e não
+  acorda o aparelho, então o widget de um bloco já concluído pode avançar alguns minutos depois
+  do horário; é o mesmo comportamento que as rotinas sem aviso sempre tiveram.
+- **O alarme no sistema é sempre o resultado da conta.** Se a conta não devolve ocorrência, o
+  alarme da tarefa é cancelado, não deixado como estava.
+- **Ler e marcar sob a mesma trava.** Todo trecho do `TaskRepository` que lê o estado (tarefa e
+  conclusões) e marca alarme roda sob a mesma trava que serializa concluir e desfazer. Sem isso,
+  um catch-up que leu antes de um desfazer marca por cima o alarme antigo e o lembrete do dia
+  sai atrasado. Ordem fixa das travas: a do catch-up por fora, a do repositório por dentro,
+  nunca o contrário.
+- Motivo: uma tarefa concluída de manhã deixava um despertador marcado para a tarde, visível no
+  sistema, que não avisava nada.
+- As regras do ADR-0003 (catch-up) não mudam. Os testes dele seguem sem asserção alterada.
+
+### 14.4 Navegação e tela Hoje
+
+Detalha a seção 6.
+
+- `AppTab.Today` substitui `AppTab.Routines` e vira o destino inicial. Abas: Hoje, Tarefas,
+  Calendário, Listas. O endereço `kalendrys://routines/{data}` continua aceito e abre a Hoje na
+  data.
+- Pacote novo `ui/today`. O `RoutinesScreen` atual é **dividido**: a timeline vai para arquivos
+  próprios e o ViewModel vira `TodayViewModel`. Nenhuma regra nova na tela.
+- **Uma fonte só para as tarefas:** a Hoje usa o `TodayOverview`, o mesmo retrato do widget e do
+  resumo diário. Os números da tela e do widget têm de bater.
+- **Seções (P2):** progresso do dia, próximo item, timeline, "Atrasadas", "Hoje" e "Sem data"
+  (recolhida). Em outro dia da semana, a tela mostra a timeline e as tarefas daquele dia.
+- **Concluídas (n)** (decisão na E3): seção recolhível no fim, no padrão do "Marcados (n)" das
+  listas. Entra nela toda tarefa com conclusão **no dia mostrado**, pela data do registro e não
+  pela data da tarefa, que não esteja já riscada na timeline; cada uma pode ser desmarcada.
+  Sem ela, uma tarefa atrasada ou sem data concluída hoje sumia da tela, entrava na contagem do
+  widget e não podia ser desmarcada. A seção "Hoje" fica só com as pendentes. Os pendentes vêm
+  do `TodayOverview`; as concluídas, dos registros do dia. Dois testes de igualdade com o
+  widget: pendentes e concluídas.
+- **"Feitas hoje" tem uma definição só:** tarefas que existem e têm registro de conclusão hoje.
+  O `TodayOverview` passa a contar assim, em vez de contar pelo estado da tarefa, que deixava de
+  fora a repetida concluída antes do dia dela e a tarefa reaberta para outra data. Vale para a
+  tela, o widget e o resumo diário.
+- **A tela inteira é uma lista:** a faixa da semana rola junto com o conteúdo. Resolve a
+  paisagem pela raiz, sem depender da folga do FAB (12.4, S-1).
+- **Filtro por categoria (P3):** sai da Hoje e vai para "Todas as rotinas".
+- **Botão + (P4):** cria tarefa. "Nova rotina" fica em "Todas as rotinas" e no menu da Hoje.
+- **Todas as rotinas** (rota nova): ativas e pausadas; editar, pausar, retomar e arquivar com
+  Desfazer. Resolve a rotina pausada que sumia da aba.
+- **Pular (P5):** ganha Desfazer, e o bloco pulado continua visível no dia, esmaecido, com a
+  ação de desfazer. Pular fica num menu curto ao segurar o bloco ("Pular este dia", "Remarcar
+  este dia"); o bloco pulado tem um controle visível de desfazer. A mensagem com Desfazer, logo
+  depois de pular, devolve o dia ao que era antes, inclusive uma remarcação; o desfazer do
+  bloco, mais tarde, só tira o pular.
+- **As ações do bloco valem para o dia da ocorrência, não para o dia mostrado.** Um bloco que
+  chegou remarcado de outro dia pertence à ocorrência do dia de origem; pular, remarcar e
+  desfazer agem nela. O bloco da timeline carrega esse dia, calculado no domínio.
+- **Concluir em dia passado grava no próprio dia** (decisão depois da E3). Antes, concluir uma
+  tarefa pela linha de um dia passado gravava a conclusão com o horário de agora: numa tarefa
+  repetida, isso concluía a ocorrência de hoje e deixava a do dia passado pendente. A conclusão
+  retroativa não tem efeito de hoje: não zera as marcações da lista anexada, não tira a
+  notificação que está na tela e não mexe no alarme da próxima ocorrência. É a regra que as
+  rotinas já seguiam. Exceção: tarefa única que a conclusão encerra tem a notificação retirada
+  mesmo assim, porque ela não tem ocorrência de hoje para preservar. Na repetida, a notificação
+  na tela é sempre a da **última ocorrência que já tocou** (o identificador é um por tarefa): a
+  conclusão retroativa a tira quando conclui o dia dessa ocorrência, e a deixa quando a que
+  está na tela é de outro dia. Sem isso, a notificação de ontem ficava depois de ontem ser
+  concluído, e tocar em "Concluir" nela concluía a ocorrência de hoje antes da hora.
+- **A notificação de lembrete leva o dia da ocorrência**, como a de rotina já leva. "Concluir"
+  numa notificação de tarefa repetida grava a conclusão no dia daquela ocorrência, não em
+  hoje; para tarefa única continua sendo agora. A regra anterior dependia de adivinhar qual
+  ocorrência está na tela, e errava quando a de hoje foi perdida ou entregue com atraso. Com
+  o dia na própria notificação, tocar "Concluir" numa notificação antiga nunca conclui a
+  ocorrência de hoje nem tira o lembrete dela. Notificação emitida por versão anterior, sem o
+  dia, continua valendo como agora.
+- Sem deslize de linha na Hoje (regra da 4.2); o círculo de concluir continua visível, e para o
+  leitor de tela concluir é uma ação da linha, com o estado na própria linha (mesmo padrão do
+  item de lista, 12.4).
+- **A rota interna da Hoje continua `routines`**, e não `today` como dizia a seção 6: o estado
+  salvo pela v1.7.1 com a aba Rotinas aberta é restaurado direto na Hoje. Com outro nome de rota
+  a restauração não acharia o destino.
+- **Título da barra:** na data de hoje, "Hoje"; em outro dia, o dia mostrado, com o botão "Hoje"
+  ao lado para voltar.
+- **A Hoje acompanha a virada do dia.** A seleção é "acompanhando hoje" ou um dia escolhido. Em
+  "acompanhando hoje", passada a meia-noite a tela vai para o dia novo sozinha; um dia escolhido
+  que passa a ser o dia de hoje volta a acompanhar. O dia de hoje vem da mesma fonte de datas do
+  `TodayRepository`, não do relógio lido direto no ViewModel.
+- **Estado vazio:** a Hoje é a primeira tela de quem instala; o vazio fala do dia e oferece
+  "Nova tarefa" e "Nova rotina". Para isso o `EmptyState` ganhou uma ação secundária opcional e
+  passou a rolar quando o conteúdo não cabe, em vez de cortar; vale para todos os vazios.
+- **Nome da ação de tirar uma rotina (P8, decisão do usuário):** "Excluir rotina" nos dois
+  lugares, com a mensagem "Rotina excluída" e Desfazer. Por baixo continua o arquivamento: a
+  rotina some de hoje em diante e os dias passados ficam no histórico. No editor a confirmação
+  sai, pela regra da 5.4 (ação com Desfazer não pede confirmação), e a mensagem aparece na tela
+  de origem.
+
+### 14.5 Timeline (D2)
+
+Faixa de 30 min e títulos longos com fonte 2.0: a altura do bloco **nunca é menor que o
+conteúdo**. A duração da rotina dá a altura **mínima** da pílula (bloco mais longo continua mais
+alto, como sempre foi); o título inteiro e os horários podem fazer o bloco passar disso. O que
+sai é a altura fixa pela duração, que cortava o texto. Título sem limite de linhas e horário que
+quebra em vez de virar reticências. Teste de medida, como o do seletor de dias (13.2): sem
+reticências, sem corte na altura e cada linha dentro da caixa do texto.
+
+### 14.6 Lista de tarefas
+
+Busca e filtros viram itens da lista e rolam junto. Fecha os dois limites de paisagem com fonte
+2.0 registrados na 12.4 e na 13.9. Consequências aceitas: os filtros deixam de ficar sempre à
+vista, e o campo de busca perde o foco se for rolado para fora da tela (o texto digitado fica).
+Os auxiliares de cabeçalho fixo da casca (`splitTop`, `ScreenPadding`) saem, por não terem mais
+uso.
+
+O Desfazer de concluir e de excluir na lista de tarefas passa para a oferta do app (14.2), e a
+tela deixa de ter mensagem própria; com isso ele sobrevive a girar a tela e a trocar de aba.
+
+### 14.7 Painel de nova tarefa num lugar só
+
+- O painel passa a ser hospedado no topo da navegação, aberto por um pedido com a data
+  sugerida, e as operações do rascunho têm um dono único. Some o bloco repetido nos dois
+  ViewModels (13.1).
+- O + do widget e o atalho abrem o painel por cima do que estiver na tela, inclusive com o
+  detalhe de uma tarefa aberto.
+- Criar lista e tarefa passa a ser uma transação só.
+- Altura compacta: título e botões "Cancelar" e "Salvar" numa linha fixa no topo, campos
+  rolando. Substitui a regra do título da 13.1.
+- **Aberto ou fechado é estado da tela; rascunho e operações são do app** (decisão no desenho
+  da E6). O pedido de abertura, com a data sugerida, é estado salvo da navegação: sobrevive a
+  girar, e some quando a tela termina de verdade. Guardado no objeto do app, ele faria o painel
+  reabrir sozinho ao voltar ao app muito depois, o mesmo defeito que a oferta de Desfazer teve
+  (14.2). O objeto do app fica com o rascunho, as operações (abrir, alterar, cancelar, salvar no
+  escopo do app), as listas do seletor e a limpeza da lista excluída no meio.
+- Widget e atalho deixam de trocar de aba; com o app fechado, o painel abre sobre a Hoje.
+- A lista criada junto com a tarefa nasce pela mesma função que cria lista avulsa.
+
+### 14.8 Etapas e critérios de aceite
+
+Um PR de integração. E0 e E1 primeiro e sozinhas, porque mexem em dados e alarmes. Revisão do
+arquiteto na E0, na E1 e na E2 antes de seguir; na E3 e na E6 ao fim.
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Dados e Desfazer (14.2) | Migração 10 para 11 e 1 para 11 testadas; concluir tarefa única adiantada, encerrar o processo, desfazer: data e lembrete voltam; toque duplo gera um registro; backup antigo e novo, ida e volta; excluir pelo detalhe com Desfazer a partir das três telas de origem |
+| E1 | Agendador (14.3) | Tarefa diária concluída antes do horário não tem alarme hoje (conferido no sistema) e desfazer devolve; rotina concluída vira alarme silencioso e o widget avança; teste dos dois caminhos com igualdade; testes do ADR-0003 sem asserção mudada |
+| E2 | Navegação, casca da Hoje e "Todas as rotinas" (14.4) | App abre na Hoje; endereço antigo abre a Hoje na data; notificações e widgets já emitidos funcionam; atualizar por cima da v1.7.1 com a aba Rotinas aberta não quebra |
+| E3 | Conteúdo da Hoje (14.4) | Números iguais aos do widget Resumo no mesmo instante; paisagem com fonte 1.0 e 2.0 mostra conteúdo e rola até o fim; Pular e Desfazer; desmarcar uma tarefa concluída no dia dela, inclusive em dia passado e depois de reabrir o app |
+| E4 | Timeline (14.5) | Fonte 2.0 sem corte nem sobreposição em blocos de 15, 30 e 60 min e títulos de 60 caracteres |
+| E5 | Lista de tarefas (14.6) | Paisagem com fonte 2.0 mostra tarefas, e a busca aparece inteira com o teclado |
+| E6 | Painel único (14.7) | Os critérios da E1 da 13.7 repetidos; widget e atalho por cima de qualquer tela; "Salvar" alcançável em paisagem com teclado |
+| E7 | Fechamento | Jornadas do perfil refeitas (a tela inicial muda); perfil regerado; abertura a frio (14.9); tamanho do APK; matriz manual; testes de semântica das telas novas |
+
+Se a E6 atrasar, é a candidata a ir para a v1.9.0 sem quebrar o resto.
+
+### 14.9 Abertura a frio e leitor de tela
+
+- **Abertura a frio (P6):** medida no fechamento, no aparelho do usuário, como na v1.7.1
+  (13.6 e 13.9), com uma rodada de aquecimento descartada antes. Importa mais que nas versões
+  anteriores, porque a tela inicial muda. **O aparelho só é usado com liberação explícita do
+  usuário e backup confirmado**; sem a liberação, o critério fica registrado como não medido.
+- **Leitor de tela com fala real (P7): não haverá.** Decisão do usuário: a passada com uma
+  pessoa ouvindo saiu do plano, nesta versão e como pendência; substitui o item de backlog
+  registrado na 13.9. O item F3 do roteiro fica atendido **só** pelos testes de semântica do
+  Compose e pela verificação da tester no emulador. Continua valendo o limite escrito na 13.9: a
+  acessibilidade por leitor de tela está garantida pela estrutura, não pelo uso real.
+- Por isso os testes de semântica passam a ser critério de aceite de toda tela nova: um nó por
+  linha, estado e papel expostos, toda ação de gesto com ação equivalente, cabeçalhos marcados.
+
+### 14.10 Fora da v1.8.0
+
+- **v1.9.0:** salvar na hora; editor de rotina; detalhe da tarefa; `TaskDraft.rebase`; atalho
+  com editor aberto perdendo o rascunho (some com o salvar na hora); repetição personalizada;
+  entrega do catch-up com título antigo ou aviso que pisca; editor de rotina em paisagem com
+  teclado.
+- **v1.9.0, com o salvar na hora:** dentro do repositório, criar, editar, concluir e desfazer já
+  passam pela mesma trava (14.3), então uma gravação não atropela a outra. O que sobra é a tela
+  que grava a partir de uma cópia antiga da tarefa e sobrescreve o que mudou por fora. O salvar
+  na hora resolve isso aplicando a edição sobre a linha mais recente (5.2); nesse desenho, a
+  conclusão adiantada e o desfazer passam a alterar **só** data e lembrete.
+- **Limite aceito:** o reinício das marcações da lista fica fora da transação de concluir e de
+  desfazer. Se o processo morrer entre os dois, as marcações de uma tarefa repetida podem não
+  voltar; o histórico e a tarefa ficam corretos.
+- **v1.9.0, no detalhe da tarefa:** ação de desfazer a conclusão, para quem chega pelo
+  Calendário. Na v1.8.0 o caminho é a Hoje, no dia da conclusão.
+- **Comportamento desejado, só registro:** mudar a data de uma tarefa única já concluída a
+  reabre, e a conclusão continua no histórico do dia em que aconteceu. A tarefa pode aparecer
+  como concluída hoje e pendente na data nova ao mesmo tempo; as duas informações estão certas.
+- **Limitação conhecida:** conclusões adiantadas gravadas antes do banco 11 não têm a data e o
+  lembrete anteriores; desfazê-las reabre a tarefa na data da conclusão e sem lembrete.
+- **Só registro:** quando a rotina também ocorre normalmente no dia para onde outra ocorrência
+  foi remarcada, as duas aparecem como um bloco só, que pertence à remarcada; pulada a
+  remarcada, a ocorrência própria do dia reaparece no horário normal.
+- **Só registro:** pular um bloco remarcado troca a remarcação por pular no dia de origem. O
+  bloco some do dia mostrado e aparece esmaecido só no dia de origem; no dia mostrado fica a
+  mensagem com Desfazer. É consequência de haver uma exceção por dia, e é o desejado.
+- **v1.9.0, com a lista de tarefas (D1):** a aba Tarefas mostra cada tarefa uma vez, pelo estado
+  atual, então "Concluídas hoje" ali não é a mesma lista de "Concluídas" da Hoje (14.4), que é
+  pelo registro do dia. Uma repetida concluída fora do dia aparece como concluída na Hoje e
+  como próxima na aba Tarefas. Decidir na reforma da lista se as duas se igualam.
+- **Adiamento no diagnóstico:** continua fora. Exige gravar o adiamento, que é dado novo com
+  regras de reinício e de limpeza, para uma janela de 10 minutos. Candidato para a v1.9.0,
+  junto com o adiamento que se perde ao reiniciar o aparelho, que é o ganho real.
+- **Depois da v1.10.0:** alarme próprio do widget Resumo.
+- **Só registro, sem ação:** voltar preditivo fechando menu; arrastar no cartão de lista
+  abrindo a lista; canto de 4dp em menus e campos de texto.
+
+### 14.11 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Migração em dado de histórico | Só colunas anuláveis, migração automática com teste; backup sem subir a versão |
+| Mudança no caminho dos alarmes (E1) | Etapa isolada e revisada antes de seguir; testes do ADR-0003 intactos; alarme conferido no sistema |
+| Troca da tela inicial pesar na abertura a frio | Medição da 14.9; jornadas do perfil refeitas |
+| Estado salvo da v1.7.1 com a rota antiga ao atualizar | **Não verificado** se o Android descarta o estado salvo ao atualizar o app; teste de atualização por cima na E2 |
+| Hoje e widget mostrarem números diferentes | Uma fonte só (`TodayOverview`); teste comparando os dois |
+| Leitor de tela sem verificação com fala real | Testes de semântica como critério de aceite (14.9); limite conhecido |
+| Tamanho da versão (8 etapas) | E0 e E1 isoladas; E6 pode ir para a v1.9.0 |
+
+### 14.12 Plano de teste
+
+- **Dados:** teste de migração 10 para 11 e da cadeia completa; `TaskRepository` com desfazer
+  depois de recriar o repositório (processo novo); toque duplo; backup da v1.7.1 restaurado;
+  ida e volta com os campos novos.
+- **Alarmes:** os testes do ADR-0003 sem mudança; agendador e diagnóstico iguais para tarefa,
+  rotina e resumo; concluir e desfazer no mesmo dia; rotina concluída com alarme silencioso.
+- **Navegação:** `AppLinks` com o endereço antigo de rotinas; atalhos; destino inicial.
+- **Telas novas:** ViewModels com tempo virtual; semântica (14.9); medida de texto com fonte 2.0
+  onde houver risco de corte.
+- **Manual, no APK de release:** matriz de tema, fonte 1.0, 1.3 e 2.0, retrato e paisagem;
+  atualização por cima da v1.7.1 com dados; widgets e notificações já emitidos; varredura do
+  log.
+
+Dependências: nenhuma nova. `targetSdk` e `minSdk` não mudam. Manifesto: sem mudança prevista.
+
+### 14.13 Achados da matriz no emulador (E2 a E6)
+
+A matriz manual no APK de release passou sem bloqueante e trouxe cinco observações. Decisões:
+
+- **Painel de nova tarefa e teclado (O-6): corrigir antes do fechamento.** O critério da E6 (Salvar
+  ao alcance com o teclado aberto) não foi cumprido em retrato: o painel já termina acima do teclado
+  (o `ModalBottomSheet` desconta o teclado sozinho, uma vez), mas Cancelar e Salvar estavam no fim
+  da rolagem e ficavam fora da área visível. Regra: o conteúdo do painel termina **acima do
+  teclado**; só os campos rolam; Cancelar e Salvar ficam **fora** da área que rola nas duas alturas
+  (no fim do painel em altura normal, na linha do topo em altura compacta); o campo em foco é
+  trazido para a área visível. Em altura compacta o painel não desenha a alça, para sobrar altura
+  para o campo. Limite aceito: em paisagem com fonte 2.0 e teclado, o que se garante é o Salvar e a
+  linha de texto do campo em foco; o rótulo e a borda do campo podem ficar cortados.
+- **Horário do bloco com fonte grande (O-7): corrigir.** O horário do bloco nunca quebra no meio de
+  um número. A linha é escolhida por medida, como a do tempo livre: a faixa inteira com a duração
+  se couber em uma linha; se não couber, só a duração, porque o início e o fim já estão na coluna
+  de horas ao lado. O leitor de tela continua recebendo a frase inteira. O teste de medida da 14.5
+  ganha a condição de o horário ocupar uma linha.
+- **Troca de relógio ou de fuso com a Hoje aberta (O-4): corrigir.** A data de hoje do
+  `TodayRepository` passa a ser relida a cada `refresh()`, e não só depois da espera até a
+  meia-noite, que conta tempo corrido e não vê o relógio mudar. O aviso de troca de hora e de fuso
+  já chega ao `refresh()` pelo caminho dos alarmes e dos widgets. A Hoje também pede um `refresh()`
+  ao voltar para a frente. Os outros usos de `currentDate()` e de `LocalDate.now()` (aba Tarefas,
+  Calendário, detalhe) ficam como estão; fonte única de data para o app inteiro fica para a v1.9.0.
+- **Círculo de concluir sem ação na lista de Tarefas (O-5): corrigir.** A tarefa que se repete e
+  não acontece hoje não mostra controle de concluir: no lugar fica o ícone de repetição, sem toque
+  próprio, no mesmo espaço, e o toque ali abre a tarefa como o resto da linha. Controle que não age
+  não pode ter a aparência de um que age.
+- **FAB sobre o círculo da última linha visível da Hoje (O-8): aceito, sem mudança.** É o
+  comportamento do botão flutuante sobre uma lista; a folga no fim da lista garante que toda linha
+  sai de baixo dele rolando. A Hoje tem o concluir à direita, do lado do botão, e por isso o caso é
+  mais fácil de acontecer nela do que na aba Tarefas; rever a posição do concluir na Hoje fica
+  registrado para a v1.9.0, como decisão de desenho.

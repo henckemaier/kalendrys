@@ -1,4 +1,4 @@
-package com.kalendrys.app.ui.routines
+package com.kalendrys.app.ui.today
 
 import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
@@ -10,14 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
-import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
-import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.testutil.FakeReminderScheduler
-import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.DayOfWeek
@@ -31,12 +24,12 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Botão "Hoje" da aba Rotinas (O-1 da E3, correção do B-1): escrito na barra (TopBarAction
+ * Botão "Hoje" da tela Hoje (ex-aba Rotinas) (O-1 da E3, correção do B-1): escrito na barra (TopBarAction
  * prominent), só fora do dia de hoje, e volta para ele. O Calendário já tinha esse teste; Rotinas não.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
-class RoutinesScreenShellTest {
+class TodayScreenShellTest {
 
     @get:Rule
     val compose = createComposeRule()
@@ -44,30 +37,14 @@ class RoutinesScreenShellTest {
     private val todayButton = hasText("Hoje") and hasClickAction()
 
     private lateinit var testDb: ViewModelTestDatabase
-    private lateinit var viewModel: RoutinesViewModel
+    private lateinit var viewModel: TodayViewModel
 
     @Before
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        viewModel = testDb.track(
-            RoutinesViewModel(
-                RoutineRepository(
-                    db.routineDao(),
-                    db.routineCompletionDao(),
-                    db.routineOverrideDao(),
-                    FakeRoutineAlarms(context),
-                    FakeRoutineNotifications(context),
-                    db.shoppingItemDao(),
-                    InMemoryRoutineCatchUpMark(),
-                ),
-                TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
-                RoutineCategoryRepository(db),
-                DayOfWeek.SUNDAY,
-                ShoppingRepository(db),
-            ),
-        )
+        viewModel = testDb.track(TodayRepositories(context, db).viewModel(DayOfWeek.SUNDAY))
     }
 
     @After
@@ -76,9 +53,11 @@ class RoutinesScreenShellTest {
     private fun show(requestedDate: LocalDate?) {
         compose.setContent {
             KalendrysTheme {
-                RoutinesScreen(
+                TodayScreen(
                     onOpenRoutine = {},
                     onNewRoutine = {},
+
+                    onOpenAllRoutines = {},
                     onOpenSettings = {},
                     onOpenTask = {},
                     onOpenException = { _, _ -> },
