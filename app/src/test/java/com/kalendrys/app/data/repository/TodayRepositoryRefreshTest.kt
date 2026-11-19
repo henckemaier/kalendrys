@@ -16,6 +16,8 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.test.runTest
@@ -34,6 +36,9 @@ import org.robolectric.annotation.Config
  *
  * O fluxo roda em [Dispatchers.Default] para o `delay` ser de verdade (minutos): o tempo virtual do
  * runTest pularia a espera e esconderia o problema.
+ *
+ * O-4 da v1.8.0: a DATA também é relida a cada refresh (relógio ou fuso trocado com a Hoje aberta),
+ * da mesma fonte para [TodayRepository.today] e [TodayRepository.observe], sem repetir o mesmo dia.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -42,6 +47,9 @@ class TodayRepositoryRefreshTest {
     private lateinit var db: AppDatabase
     private lateinit var tasks: TaskRepository
     private lateinit var today: TodayRepository
+
+    /** Retrato cuja DATA também sai do relógio do teste, relida a cada assinatura da fonte (O-4). */
+    private lateinit var clockDated: TodayRepository
 
     private val zone: ZoneId = ZoneId.systemDefault()
     private val day: LocalDate = LocalDate.of(2030, 1, 7)
@@ -74,6 +82,16 @@ class TodayRepositoryRefreshTest {
             zone = { zone },
             clock = { now },
         )
+        clockDated = TodayRepository(
+            tasks,
+            routines,
+            ShoppingRepository(db),
+            // Como o currentDate(): lê o relógio ao começar e espera; aqui sem virada sozinha, para que
+            // só o refresh possa trazer o dia novo.
+            dates = { flow<LocalDate> { emit(now.toLocalDate()); awaitCancellation() } },
+            zone = { zone },
+            clock = { now },
+        )
     }
 
     @After
@@ -100,6 +118,41 @@ class TodayRepositoryRefreshTest {
             now = day.atTime(5, 45, 0, 200_000_000)
             today.refresh()
             assertEquals(null, awaitItem().nextUp?.title)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `relogio trocado para outro dia mais refresh emite a data e o retrato do dia novo`() = runTest {
+        clockDated.today.test {
+            assertEquals(day, awaitItem())
+            // Relógio (ou fuso) trocado com a Hoje aberta: nada muda até alguém pedir refresh.
+            now = day.plusDays(1).atTime(9, 0)
+            expectNoEvents()
+            clockDated.refresh()
+            assertEquals(day.plusDays(1), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        now = day.atTime(5, 39)
+        clockDated.observe().test {
+            assertEquals(day, awaitItem().date)
+            now = day.plusDays(1).atTime(9, 0)
+            clockDated.refresh()
+            var overview = awaitItem()
+            while (overview.date != day.plusDays(1)) overview = awaitItem()
+            assertEquals(day.plusDays(1), overview.date)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `refresh no mesmo dia nao reemite a data`() = runTest {
+        clockDated.today.test {
+            assertEquals(day, awaitItem())
+            now = day.atTime(23, 0)
+            clockDated.refresh()
+            clockDated.refresh()
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
     }

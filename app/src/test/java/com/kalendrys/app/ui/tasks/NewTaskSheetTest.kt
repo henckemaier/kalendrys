@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
@@ -58,8 +60,10 @@ class NewTaskSheetTest {
     private fun titleStaysFixedAfterScrollingToTheEnd() {
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed()
         val before = top("Nova tarefa")
-        // Rolar até o fim (como o foco no campo fazia) não leva o título junto.
-        compose.onNodeWithText("Salvar").performScrollTo().assertIsDisplayed()
+        // Rolar os campos até o fim (como o foco no campo fazia) não leva o título junto. O Salvar não
+        // rola mais (O-6): fica fixo no fim do painel, então se rola até o último campo.
+        compose.onNode(hasSetTextAction() and hasText("Local (opcional)")).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Salvar").assertIsDisplayed()
         compose.onNodeWithText("Nova tarefa").assertIsDisplayed()
         assertEquals(before, top("Nova tarefa"))
     }

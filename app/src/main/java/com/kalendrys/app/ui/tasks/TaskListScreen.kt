@@ -3,6 +3,7 @@
 package com.kalendrys.app.ui.tasks
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -412,14 +413,30 @@ private fun TaskRow(
                 .padding(start = Spacing.xs, end = Spacing.l, top = Spacing.s, bottom = Spacing.s),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora.
-            val canComplete = !done && !(task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today)
-            IconButton(onClick = onComplete, enabled = canComplete) {
-                Icon(
-                    imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
-                    contentDescription = stringResource(if (done) R.string.done_today else R.string.complete_task),
-                    tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                )
+            // Uma que se repete e não acontece hoje (em "Próximas") não tem o que concluir agora (O-5):
+            // em vez de um círculo que não age, o ícone de repetição no mesmo espaço de 48dp, decorativo
+            // (sem toque nem descrição próprios; a repetição já é lida na linha). Tocar ali abre a
+            // tarefa, como o resto da linha, e o leitor de tela não encontra um Concluir desabilitado.
+            // A data de uma repetida na lista nunca fica no passado (C-1): TaskSchedule.status não dá
+            // OVERDUE para quem se repete, e a data de "Próximas" é a próxima ocorrência (a partir de
+            // amanhã). Por isso "diferente de hoje" aqui quer dizer "depois de hoje".
+            val repeatsLater = !done && task.repeat != ReminderRepeat.NONE && item.date != null && item.date != today
+            if (repeatsLater) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.Repeat,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            } else {
+                IconButton(onClick = onComplete, enabled = !done) {
+                    Icon(
+                        imageVector = if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = stringResource(if (done) R.string.done_today else R.string.complete_task),
+                        tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    )
+                }
             }
             Column(
                 modifier = Modifier

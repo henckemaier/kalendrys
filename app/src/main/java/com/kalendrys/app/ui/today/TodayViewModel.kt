@@ -309,6 +309,15 @@ class TodayViewModel(
         selection.value = Selection.FollowingToday
     }
 
+    /**
+     * A Hoje voltou para a frente (RESUMED): relê o relógio (O-4 da v1.8.0). Com o relógio ou o fuso
+     * trocado enquanto o app estava por trás, a data e o retrato vêm do dia de agora; acompanhando hoje,
+     * a tela vai junto. No mesmo dia só recalcula o retrato.
+     */
+    fun onResumed() {
+        todayRepository.refresh()
+    }
+
     fun previousWeek() {
         lastDay?.let { select(it.selected.minusWeeks(1)) }
     }
