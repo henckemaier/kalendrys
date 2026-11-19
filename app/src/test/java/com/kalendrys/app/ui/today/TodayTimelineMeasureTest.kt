@@ -128,6 +128,18 @@ class TodayTimelineMeasureTest {
     private fun unmerged(text: String, substring: Boolean = false): SemanticsNode =
         compose.onNode(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNode()
 
+    /**
+     * O nó do horário (O-7): o `Layout` com `clearAndSetSemantics`, cujo texto é a frase inteira. Na
+     * árvore sem mesclar os dois `Text` desenhados (inteira e curta) continuam visíveis, e "07:00" é
+     * também a hora da coluna; o nó do horário é o único com esse texto que não é um `Text` (sem
+     * `GetTextLayoutResult`).
+     */
+    private fun rangeNode(full: String): SemanticsNode =
+        compose.onNode(
+            hasText(full) and !SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+            useUnmergedTree = true,
+        ).fetchSemanticsNode()
+
     private fun SemanticsNode.layout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
@@ -160,7 +172,7 @@ class TodayTimelineMeasureTest {
      * nunca quebrado nem cortado. Devolve o nó.
      */
     private fun assertRangeOnOneLine(label: String, minutes: Int): SemanticsNode {
-        val node = unmerged(fullRange(minutes))
+        val node = rangeNode(fullRange(minutes))
         val texts = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
         assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
 
@@ -303,7 +315,7 @@ class TodayTimelineMeasureTest {
         show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true, withList = true)
         val label = "fonte 2.0, 320dp, 23h59 com sino e lista"
 
-        val range = unmerged(fullRange(minutes))
+        val range = rangeNode(fullRange(minutes))
         val texts = range.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
         assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
         assertTrue("$label: horário em mais de uma linha", range.size.height in 1..(timeLabelHeightPx + 1))
