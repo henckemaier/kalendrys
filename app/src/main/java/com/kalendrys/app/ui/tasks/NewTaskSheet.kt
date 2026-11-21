@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -159,7 +160,7 @@ internal fun NewTaskSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
-                    .then(keepTitleVisible),
+                    .then(keepTitleVisible.modifier),
             )
             TaskTimingField(
                 timing = draft.timing,
@@ -174,12 +175,12 @@ internal fun NewTaskSheet(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(keepNotesVisible),
+                    .then(keepNotesVisible.modifier),
             )
             LocationField(
                 value = draft.location,
                 onValueChange = { value -> onChange { it.copy(location = value) } },
-                modifier = keepLocationVisible,
+                modifier = keepLocationVisible.modifier,
             )
             if (lists != null) {
                 NewTaskListField(
@@ -236,22 +237,35 @@ internal fun NewTaskSheet(
  * o campo pede para aparecer ao ganhar o foco, mas o teclado sobe em seguida e encolhe o painel, e aí
  * ninguém pede de novo. Aqui, enquanto o campo tem o foco, cada mudança na altura do teclado pede outra
  * vez. Campo mais alto que a área aparece pelo começo (regra da rolagem).
+ *
+ * Devolve um [KeepVisibleWhileFocused] (use [KeepVisibleWhileFocused.modifier]) em vez do `Modifier`
+ * direto: função que devolve `Modifier` sem ser extensão dele dispara o lint
+ * ModifierFactoryExtensionFunction, e um `Modifier.Node` não leria o teclado (`WindowInsets.ime` só
+ * existe na composição).
  */
 @Composable
-private fun rememberKeepVisibleWhileFocused(): Modifier {
-    val requester = remember { BringIntoViewRequester() }
-    var focused by remember { mutableStateOf(false) }
+private fun rememberKeepVisibleWhileFocused(): KeepVisibleWhileFocused {
+    val keep = remember { KeepVisibleWhileFocused() }
     val ime = WindowInsets.ime
     val density = LocalDensity.current
-    LaunchedEffect(focused) {
-        if (!focused) return@LaunchedEffect
-        snapshotFlow { ime.getBottom(density) }.collectLatest { requester.bringIntoView() }
+    LaunchedEffect(keep.focused) {
+        if (!keep.focused) return@LaunchedEffect
+        snapshotFlow { ime.getBottom(density) }.collectLatest { keep.requester.bringIntoView() }
     }
-    return remember(requester) {
-        Modifier
-            .bringIntoViewRequester(requester)
-            .onFocusChanged { focused = it.hasFocus }
-    }
+    return keep
+}
+
+/** Estado de [rememberKeepVisibleWhileFocused]: o pedido de aparecer e o foco do campo. */
+@Stable
+private class KeepVisibleWhileFocused {
+    val requester = BringIntoViewRequester()
+    var focused by mutableStateOf(false)
+        private set
+
+    /** Vai no campo: pede para aparecer e acompanha o foco. */
+    val modifier: Modifier = Modifier
+        .bringIntoViewRequester(requester)
+        .onFocusChanged { focused = it.hasFocus }
 }
 
 /**
