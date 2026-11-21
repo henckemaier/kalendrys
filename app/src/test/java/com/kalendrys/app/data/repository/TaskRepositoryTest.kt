@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -70,11 +71,11 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun `editar tarefa cancela o alarme antigo e reagenda`() = runTest {
+    fun `editar data e hora da tarefa cancela o alarme antigo e reagenda`() = runTest {
         val task = repository.addTask("Tarefa", timing = futureTiming())
         scheduler.reset()
 
-        repository.updateTask(task.copy(title = "Tarefa editada"))
+        repository.edit(task.id, TaskChange.Timing(futureTiming().copy(time = LocalTime.of(10, 0))))
 
         assertEquals(listOf(task.id), scheduler.cancelled)
         assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
@@ -119,7 +120,8 @@ class TaskRepositoryTest {
             throw IllegalStateException("notificação falhou")
         }
         val task = failing.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
-        failing.updateTask(task.copy(title = "Treino forte"))
+        failing.edit(task.id, TaskChange.Timing(todayTiming(ReminderRepeat.DAILY).copy(time = LocalTime.of(10, 0))))
+        failing.edit(task.id, TaskChange.Title("Treino forte"))
         val logId = failing.logCompletion(task.id)
         failing.undoCompletion(logId)
         failing.deleteTask(task.copy(title = "Treino forte"))
@@ -136,7 +138,9 @@ class TaskRepositoryTest {
             seen += db.taskDao().all().map { it.title }
         }
         val task = hooked.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
-        hooked.updateTask(task.copy(title = "Treino forte"))
+        // Só a mudança de data/hora fecha a janela (o título não toca em alarme, 15.2).
+        hooked.edit(task.id, TaskChange.Timing(todayTiming(ReminderRepeat.DAILY).copy(time = LocalTime.of(10, 0))))
+        hooked.edit(task.id, TaskChange.Title("Treino forte"))
         hooked.deleteTask(task.copy(title = "Treino forte"))
         hooked.restoreTask(task.copy(title = "Treino forte"))
         assertEquals(listOf(emptyList(), listOf("Treino"), emptyList<String>()), seen)
@@ -204,7 +208,7 @@ class TaskRepositoryTest {
     fun `concluir tarefa repetida zera a lista e desfazer restaura`() = runTest {
         val listId = listWithPickedItems()
         val task = repository.addTask("Feira", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.updateTask(task.copy(shoppingListId = listId))
+        repository.edit(task.id, TaskChange.ShoppingList(listId))
 
         val logId = repository.logCompletion(task.id)
         assertEquals(listOf(false, false), picked(listId))
@@ -217,7 +221,7 @@ class TaskRepositoryTest {
     fun `concluir tarefa unica nao mexe na lista`() = runTest {
         val listId = listWithPickedItems()
         val task = repository.addTask("Compra do mês", timing = todayTiming())
-        repository.updateTask(task.copy(shoppingListId = listId))
+        repository.edit(task.id, TaskChange.ShoppingList(listId))
 
         repository.logCompletion(task.id)
         assertEquals(listOf(true, true), picked(listId))
@@ -228,7 +232,7 @@ class TaskRepositoryTest {
         val listId = listWithPickedItems()
         val task = repository.addTask("Feira", timing = todayTiming())
         val linked = task.copy(shoppingListId = listId)
-        repository.updateTask(linked)
+        repository.edit(task.id, TaskChange.ShoppingList(listId))
 
         repository.deleteTask(linked)
         assertNotNull("excluir a tarefa não exclui a lista", db.shoppingListDao().byId(listId))
@@ -239,7 +243,8 @@ class TaskRepositoryTest {
     @Test
     fun `vinculo orfao conclui e desfaz sem falhar`() = runTest {
         val task = repository.addTask("Órfã", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.updateTask(task.copy(shoppingListId = 999))
+        // Vínculo órfão (lista inexistente): só pelo DAO, o edit confere a lista e recusaria.
+        db.taskDao().updateShoppingList(task.id, 999)
 
         val logId = repository.logCompletion(task.id)
         repository.undoCompletion(logId)
@@ -252,9 +257,9 @@ class TaskRepositoryTest {
         val pending = repository.addTask("Pendente", timing = todayTiming())
         val done = repository.addTask("Feita", timing = todayTiming())
         val other = repository.addTask("Outra lista", timing = todayTiming())
-        repository.updateTask(pending.copy(shoppingListId = listId))
-        repository.updateTask(done.copy(shoppingListId = listId))
-        repository.updateTask(other.copy(shoppingListId = listId + 1))
+        repository.edit(pending.id, TaskChange.ShoppingList(listId))
+        repository.edit(done.id, TaskChange.ShoppingList(listId))
+        db.taskDao().updateShoppingList(other.id, listId + 1)
         repository.logCompletion(done.id)
 
         val linked = repository.linkedTasks(listId)
@@ -333,8 +338,8 @@ class TaskRepositoryTest {
         val listId = listWithPickedItems()
         val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
         val daily = repository.addTask("Diária", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.updateTask(db.taskDao().byId(tomorrow.id)!!.copy(shoppingListId = listId))
-        repository.updateTask(db.taskDao().byId(daily.id)!!.copy(shoppingListId = listId))
+        repository.edit(tomorrow.id, TaskChange.ShoppingList(listId))
+        repository.edit(daily.id, TaskChange.ShoppingList(listId))
         repository.logCompletion(daily.id)
 
         assertEquals(
@@ -347,7 +352,7 @@ class TaskRepositoryTest {
     fun `tarefa unica de amanha ja concluida nao conta como pendente`() = runTest {
         val listId = listWithPickedItems()
         val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
-        repository.updateTask(db.taskDao().byId(tomorrow.id)!!.copy(shoppingListId = listId))
+        repository.edit(tomorrow.id, TaskChange.ShoppingList(listId))
         repository.logCompletion(tomorrow.id)
 
         assertEquals(listOf(false), repository.linkedTasks(listId).map { it.pending })
@@ -378,7 +383,7 @@ class TaskRepositoryTest {
         val task = repository.addTask("Amanhã", timing = tomorrowAtNine())
         val logId = repository.logCompletion(task.id)
         val edited = LocalDate.now().plusDays(5).toEpochDay()
-        repository.updateTask(db.taskDao().byId(task.id)!!.copy(dueDate = edited))
+        repository.edit(task.id, TaskChange.Timing(TaskTiming(date = LocalDate.ofEpochDay(edited))))
 
         repository.undoCompletion(logId)
 
@@ -395,7 +400,7 @@ class TaskRepositoryTest {
         val logId = repository.logCompletion(task.id)
         val completed = db.taskDao().byId(task.id)!!
         val newReminder = LocalDate.now().atTime(23, 59).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-        repository.updateTask(completed.copy(reminderAt = newReminder))
+        repository.edit(task.id, TaskChange.Timing(TaskTiming(date = LocalDate.ofEpochDay(completed.dueDate!!), time = LocalTime.of(23, 59))))
 
         repository.undoCompletion(logId)
 
@@ -688,9 +693,9 @@ class TaskRepositoryTest {
         val task = dailyAtTen()
         val today = LocalDate.now()
         // A pessoa mudou o horário para as 11h depois que a de ontem tocou: o dia vem da notificação.
-        repository.updateTask(
-            TaskTiming(date = today.minusDays(5), time = LocalTime.of(11, 0), repeat = ReminderRepeat.DAILY)
-                .applyTo(db.taskDao().byId(task.id)!!, java.time.ZoneId.systemDefault()),
+        repository.edit(
+            task.id,
+            TaskChange.Timing(TaskTiming(date = today.minusDays(5), time = LocalTime.of(11, 0), repeat = ReminderRepeat.DAILY)),
         )
         val now = at(today, 9)
         scheduler.reset()
@@ -776,7 +781,7 @@ class TaskRepositoryTest {
         val task = repository.addTask("Ligar", timing = todayTiming())
         repository.logCompletion(task.id)
         // Mudar a data para frente reabre a tarefa: a próxima conclusão é um registro novo.
-        repository.updateTask(db.taskDao().byId(task.id)!!.copy(dueDate = LocalDate.now().plusDays(3).toEpochDay(), reminderAt = null))
+        repository.edit(task.id, TaskChange.Timing(TaskTiming(date = LocalDate.now().plusDays(3))))
         repository.logCompletion(task.id, completedAt = LocalDate.now().plusDays(3).atTime(10, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
         assertEquals(2, db.completionLogDao().all().size)
     }
@@ -935,10 +940,11 @@ class TaskRepositoryTest {
         repository.logCompletion(task.id, completedAt = at(day, 7))
         scheduler.reset()
 
-        repository.updateTask(task.copy(title = "Remédio da manhã"))
+        // Mudar a hora (o que refaz o alarme): a ocorrência já concluída no dia segue pulada.
+        repository.edit(task.id, TaskChange.Timing(TaskTiming(date = day, time = LocalTime.of(11, 0), repeat = ReminderRepeat.DAILY)))
 
         assertEquals(listOf(task.id), scheduler.cancelled)
-        assertEquals(listOf(at(day.plusDays(1), 10)), scheduler.scheduled.map { it.triggerAt })
+        assertEquals(listOf(at(day.plusDays(1), 11)), scheduler.scheduled.map { it.triggerAt })
     }
 
     @Test

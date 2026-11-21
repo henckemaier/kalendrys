@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import java.io.File
 import java.time.LocalDate
@@ -261,7 +262,8 @@ class ReminderCatchUpRunnerTest {
         val task = insertTask(11)
         seenAt(at(8))
         clock = at(10)
-        repository.updateTask(task.copy(reminderAt = at(9)))
+        val nine = java.time.Instant.ofEpochMilli(at(9)).atZone(java.time.ZoneId.systemDefault())
+        repository.edit(task.id, TaskChange.Timing(TaskTiming.of(task, java.time.ZoneId.systemDefault()).copy(date = nine.toLocalDate(), time = nine.toLocalTime())))
         runner.run(at(10, 5))
         assertEquals(emptyList<Long>(), notifier.shown)
         assertEquals(emptyList<Int>(), notifier.missed)

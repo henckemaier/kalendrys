@@ -15,6 +15,7 @@ import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
@@ -149,7 +150,8 @@ class TodayViewModelTest {
         val id = taskRepository.addTask("Levar o carro", timing = timing).id
         val a = taskRepository.logCompletion(id, completedAt = aAt)
         assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)
-        taskRepository.updateTask(db.taskDao().byId(id)!!.copy(dueDate = today.plusDays(3).toEpochDay()))
+        val reopened = TaskTiming.of(db.taskDao().byId(id)!!, java.time.ZoneId.systemDefault()).copy(date = today.plusDays(3))
+        taskRepository.edit(id, TaskChange.Timing(reopened))
         val b = taskRepository.logCompletion(id, completedAt = bAt)
         assertEquals("B é outro registro (a tarefa estava reaberta)", true, b != a)
         assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)

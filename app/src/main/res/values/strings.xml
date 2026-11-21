@@ -85,14 +85,13 @@
     <string name="status_done_on">Concluída: %1$s, %2$s</string>
     <string name="status_done_today_at">Concluída hoje às %1$s</string>
     <string name="complete_today">Concluir</string>
+    <string name="task_undo_completion">Desfazer conclusão</string>
     <string name="task_created_on">Criada em %1$s</string>
     <string name="history_title">Histórico de conclusões</string>
     <string name="history_empty">Nenhuma conclusão registrada ainda.</string>
-    <string name="changes_saved">Alterações salvas</string>
     <string name="delete_task_confirm_title">Excluir tarefa?</string>
     <string name="delete_task_confirm_message">A tarefa e o lembrete serão removidos. As conclusões continuam no histórico do calendário.</string>
     <string name="discard_changes_title">Descartar alterações?</string>
-    <string name="discard_changes_message">As alterações feitas nesta tarefa serão perdidas.</string>
     <string name="discard">Descartar</string>
     <string name="keep_editing">Continuar editando</string>
     <string name="task_not_found_title">Tarefa não encontrada</string>
@@ -160,8 +159,6 @@
     <string name="routine_template_workout">Treino</string>
     <string name="routine_template_lunch">Pausa almoço</string>
     <string name="routine_template_reading">Leitura</string>
-    <string name="routine_icon">Ícone</string>
-    <string name="routine_color">Cor</string>
     <string name="routine_start">Início</string>
     <string name="routine_end">Termina às</string>
     <string name="routine_duration">Duração</string>
@@ -173,8 +170,6 @@
     <string name="routine_days_everyday">Todo dia</string>
     <string name="routine_days_weekdays">Dias úteis</string>
     <string name="routine_days_weekend">Fim de semana</string>
-    <string name="routine_days_none">Escolha ao menos um dia.</string>
-    <string name="routine_repeat">Repetição</string>
     <string name="routine_week_interval_weekly">Toda semana</string>
     <string name="routine_week_interval_every">A cada %1$d semanas</string>
     <string name="routine_week_interval_label">Intervalo entre semanas</string>
@@ -188,7 +183,6 @@
     <string name="routine_date_clear">Limpar data</string>
     <string name="routine_pick_start_date">Primeiro dia</string>
     <string name="routine_pick_end_date">Último dia</string>
-    <string name="routine_dates_invalid">A data final não pode vir antes da inicial.</string>
     <string name="routine_exception_title">Exceção do dia</string>
     <string name="routine_exception_skip">Pular este dia</string>
     <string name="routine_exception_skip_desc">A rotina não acontece neste dia, mas continua ativa.</string>

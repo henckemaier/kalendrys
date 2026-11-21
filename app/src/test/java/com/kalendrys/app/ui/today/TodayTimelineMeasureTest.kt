@@ -14,12 +14,11 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.Hyphens
-import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -132,16 +131,26 @@ class TodayTimelineMeasureTest {
         compose.onNode(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNode()
 
     /**
-     * O nó do horário (O-7): o `Layout` com `clearAndSetSemantics`, cujo texto é a frase inteira. Na
-     * árvore sem mesclar os dois `Text` desenhados (inteira e curta) continuam visíveis, e "07:00" é
-     * também a hora da coluna; o nó do horário é o único com esse texto que não é um `Text` (sem
-     * `GetTextLayoutResult`).
+     * O nó do horário desenhado (O-7, N-2), pela marca de teste: sem semântica própria desde a N-8 (a
+     * frase vem da linha que o contém); serve só para medir o que aparece.
      */
-    private fun rangeNode(full: String): SemanticsNode =
-        compose.onNode(
-            hasText(full) and !SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
-            useUnmergedTree = true,
-        ).fetchSemanticsNode()
+    private fun rangeNode(): SemanticsNode =
+        compose.onNode(hasTestTag(TIME_RANGE_TAG), useUnmergedTree = true).fetchSemanticsNode()
+
+    /**
+     * N-8: o bloco, na árvore MESCLADA (o que o leitor de tela foca), expõe a frase inteira do horário
+     * em qualquer degrau, uma vez só. Sem duração a frase é a hora, que a coluna de horas também diz.
+     */
+    private fun assertPhraseOnce(label: String, minutes: Int) {
+        val row = compose.onNode(hasText(title(minutes), substring = true) and hasState).fetchSemanticsNode()
+        val texts = row.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+        val count = texts.count { it == fullRange(minutes) }
+        if (minutes > 0) {
+            assertEquals("$label: frase do horário no bloco ($texts)", 1, count)
+        } else {
+            assertTrue("$label: hora no bloco ($texts)", count >= 1)
+        }
+    }
 
     private fun SemanticsNode.layout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
@@ -170,14 +179,13 @@ class TodayTimelineMeasureTest {
     }
 
     /**
-     * O-7: o nó do horário (o que o leitor de tela lê) tem a frase inteira como texto; na tela ele
+     * O-7: o bloco expõe a frase inteira ao leitor de tela (N-8, pela linha do horário); na tela o horário
      * ocupa UMA linha, com a largura natural da faixa inteira (coube) ou da forma curta (não coube),
      * nunca quebrado nem cortado. Devolve o nó.
      */
     private fun assertRangeOnOneLine(label: String, minutes: Int): SemanticsNode {
-        val node = rangeNode(fullRange(minutes))
-        val texts = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
-        assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
+        val node = rangeNode()
+        assertPhraseOnce(label, minutes)
 
         val size = node.size
         assertTrue("$label: horário com ${size.height}px, mais de uma linha ($timeLabelHeightPx)", size.height <= timeLabelHeightPx + 1)
@@ -326,17 +334,12 @@ class TodayTimelineMeasureTest {
         show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true, withList = true)
         val label = "fonte 2.0, 320dp, 23h59 com sino e lista"
 
-        val range = rangeNode(fullRange(minutes))
-        val texts = range.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
-        assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
+        val range = rangeNode()
+        assertPhraseOnce(label, minutes)
         assertEquals("$label: nada desenhado, sem largura", 0, range.size.width)
         assertTrue("$label: altura de uma linha", range.size.height in 1..(timeLabelHeightPx + 1))
         drawnText(fullRange(minutes)).assertIsNotDisplayed()
         drawnText(shortRange(minutes)).assertIsNotDisplayed()
-        // A linha (nó mesclado, o que o leitor de tela foca) continua com a frase inteira.
-        val row = compose.onNode(hasText(title(minutes), substring = true) and hasState).fetchSemanticsNode()
-        val rowTexts = row.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
-        assertTrue("$label: linha sem a frase do horário ($rowTexts)", fullRange(minutes) in rowTexts)
 
         val bell = compose.onNode(hasContentDescription("Avisa no início"), useUnmergedTree = true).fetchSemanticsNode()
         val tag = compose.onNode(hasContentDescription("2 de 3", substring = true), useUnmergedTree = true).fetchSemanticsNode()
@@ -349,25 +352,34 @@ class TodayTimelineMeasureTest {
         assertWholeNode("$label, 2/3", tag)
     }
 
-    @Test
-    fun `titulo do bloco com hifenizacao automatica (ensaio)`() {
-        show(fontScale = 2f, minutes = 30, columnWidth = 320.dp)
-        val style = unmerged(title(30)).layout().layoutInput.style
-        assertEquals(Hyphens.Auto, style.hyphens)
-        assertEquals(LineBreak.Paragraph, style.lineBreak)
-        // O título continua inteiro (sem reticências nem corte) com a hifenização.
-        assertWhole("hifenização", unmerged(title(30)))
-    }
-
     /** N-2: em qualquer largura o horário é a faixa inteira, só a duração ou nada (largura zero). */
     private fun assertOneOfThreeSteps(width: Dp) {
         val minutes = 23 * 60 + 59
         show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true, withList = true)
         val label = "fonte 2.0, ${width.value.toInt()}dp"
-        val w = rangeNode(fullRange(minutes)).size.width
+        val w = rangeNode().size.width
+        // N-8: em qualquer degrau, a frase inteira segue no bloco (árvore mesclada), uma vez.
+        assertPhraseOnce(label, minutes)
         val ok = abs(w - fullRangeWidthPx) <= 1 || abs(w - shortRangeWidthPx) <= 1 || w == 0
         assertTrue("$label: largura $w não é faixa ($fullRangeWidthPx), duração ($shortRangeWidthPx) nem zero", ok)
         if (w == 0) drawnText(shortRange(minutes)).assertIsNotDisplayed()
+    }
+
+    @Test
+    fun `sem sino e sem lista na menor largura - a linha do horario tem largura e leva a frase`() {
+        // N-8: sem sino nem lista, a linha que declara a frase só tem o horário; com fillMaxWidth ela
+        // tem largura em qualquer degrau e não some da árvore de acessibilidade. Na MENOR largura
+        // suportada (320dp, fonte 2.0): abaixo disso a coluna de texto inteira do bloco (título
+        // incluído) fica sem largura, e nenhuma linha dela teria tamanho; não é caso de aparelho.
+        val minutes = 23 * 60 + 59
+        show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp)
+        val label = "fonte 2.0, 320dp, 23h59 sem sino e sem lista"
+        assertPhraseOnce(label, minutes)
+        val line = compose.onNode(
+            hasText(fullRange(minutes)) and !SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+            useUnmergedTree = true,
+        ).fetchSemanticsNode()
+        assertTrue("$label: a linha do horário ficou sem largura", line.size.width > 0)
     }
 
     @Test

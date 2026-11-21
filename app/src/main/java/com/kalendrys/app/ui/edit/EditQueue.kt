@@ -23,8 +23,9 @@ import kotlinx.coroutines.launch
  * não roda. Ação que falha é registrada e as seguintes continuam.
  *
  * [enqueue] é síncrono e devolve o trabalho da ação (para esperar). [close] fecha a fila: as ações já
- * enfileiradas terminam e o consumidor acaba; o que chegar depois não roda (o trabalho devolvido já
- * vem concluído).
+ * enfileiradas terminam e o consumidor acaba; o que chegar depois não roda, e o trabalho devolvido
+ * nesse caso é o do CONSUMIDOR: quem espera (inclusive o [awaitIdle]) espera a fila esvaziar, em vez
+ * de passar na hora com gravações ainda pendentes (B1 da revisão da E2).
  */
 class EditQueue<T : Any>(
     writeScope: CoroutineScope,
@@ -35,29 +36,30 @@ class EditQueue<T : Any>(
 
     private val items = Channel<Item<T>>(Channel.UNLIMITED)
 
-    init {
-        writeScope.launch {
-            for (item in items) {
-                try {
-                    read()?.let { item.action(it) }
-                } catch (error: Exception) {
-                    if (error is CancellationException) throw error
-                    Log.w(TAG, "Gravação do editor falhou; as seguintes continuam", error)
-                } finally {
-                    item.done.complete()
-                }
+    /** O consumidor: termina quando a fila, fechada, esvazia. */
+    private val consumer: Job = writeScope.launch {
+        for (item in items) {
+            try {
+                read()?.let { item.action(it) }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.w(TAG, "Gravação do editor falhou; as seguintes continuam", error)
+            } finally {
+                item.done.complete()
             }
         }
     }
 
-    /** Enfileira [action] sobre a linha mais recente; devolve o trabalho dela. */
+    /**
+     * Enfileira [action] sobre a linha mais recente; devolve o trabalho dela. Com a fila já fechada a
+     * ação não roda e o trabalho devolvido é o do consumidor (termina quando a fila esvaziar).
+     */
     fun enqueue(action: suspend (T) -> Unit): Job {
         val done = Job()
-        if (items.trySend(Item(action, done)).isFailure) done.complete()
-        return done
+        return if (items.trySend(Item(action, done)).isSuccess) done else consumer
     }
 
-    /** Barreira: espera tudo o que já foi enfileirado terminar. */
+    /** Barreira: espera tudo o que já foi enfileirado terminar (com a fila fechada, que ela esvazie). */
     suspend fun awaitIdle() = enqueue {}.join()
 
     /** Fecha a fila: o que já está nela termina; depois disso nada mais roda. */

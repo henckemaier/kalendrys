@@ -12,7 +12,12 @@ import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import java.time.LocalDate
 import java.time.LocalTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,6 +125,39 @@ class TaskRepositoryEditTest {
         assertEquals(listOf(saved.id), scheduler.scheduled.map { it.task.id })
         // O alarme usa a tarefa como ficou (título inclusive).
         assertEquals(after, scheduler.scheduled.single().task)
+    }
+
+    @Test
+    fun `cancelar no meio da nova data ainda grava e reagenda pela data nova`() = runTest {
+        // NB-E1-B: o chamador é cancelado DEPOIS de gravar a data e antes do reagendamento (preso no
+        // cancel do alarme). Sem NonCancellable, a leitura do banco do scheduleNext jogaria o
+        // cancelamento e o alarme da data nova não seria marcado.
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val gated = object : FakeReminderScheduler(ApplicationProvider.getApplicationContext()) {
+            override fun cancel(taskId: Long) {
+                super.cancel(taskId)
+                entered.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+        }
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), gated, db.shoppingItemDao())
+        val saved = repo.addTask("Tarefa", timing = futureTiming(1))
+        gated.reset()
+        val timing = futureTiming(3)
+
+        withContext(Dispatchers.Default) {
+            val edit = launch { repo.edit(saved.id, TaskChange.Timing(timing)) }
+            assertTrue("não chegou ao reagendamento", entered.await(5, TimeUnit.SECONDS))
+            edit.cancel() // sair da tela no meio
+            release.countDown()
+            edit.join()
+        }
+
+        val after = task(saved.id)
+        assertEquals(timing.date!!.toEpochDay(), after.dueDate)
+        assertEquals("alarme da data nova marcado", listOf(after), gated.scheduled.map { it.task })
+        assertEquals(timing.reminderAt(java.time.ZoneId.systemDefault()), gated.scheduled.single().triggerAt)
     }
 
     @Test
