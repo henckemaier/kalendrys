@@ -60,7 +60,11 @@ nova.
 
 ### Interno
 
-- **Abertura a frio**: pendente.
+- **Abertura a frio**: **não medida**. A sessão no emulador foi inválida pelo protocolo: a
+  dispersão passou do limite de 20% (p90 +31,3% na rodada da v1.7.1 e +22,3% na da v1.8.0), e a
+  segunda rodada da v1.7.1 não rodou porque ela não abre sobre o banco 11. As medianas ficam só
+  como registro (com perfil, tempo até o primeiro quadro): v1.7.1 1.031,1 ms; v1.8.0 987,8 e
+  1.016,0 ms.
 - **Acessibilidade**: leitor de tela com fala real não verificado; as telas novas são cobertas
   por testes de semântica, que passam a ser critério de aceite de toda tela nova.
 - Painel de nova tarefa com um dono só no topo da navegação; criar lista e tarefa numa
