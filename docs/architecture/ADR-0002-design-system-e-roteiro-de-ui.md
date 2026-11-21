@@ -1563,7 +1563,11 @@ objetos.**
   dizer se o resultado é válido (regras da 5.3).
 - **Repositório:** `TaskRepository.edit(taskId, change)` e `RoutineRepository.edit(routineId,
   change)` leem a linha **mais recente** dentro da trava que já existe (14.3), aplicam a mudança
-  e gravam. Mudança inválida não grava. Entidade que não existe mais: nada acontece.
+  e gravam **só as colunas daquela mudança**, nunca a linha inteira. Há gravações que não passam
+  por essas travas (excluir uma lista desvincula tarefas e rotinas por fora), e só a gravação por
+  coluna impede que uma delas seja desfeita. Pela mesma regra, pausar, retomar, arquivar e
+  desarquivar gravam só a própria coluna. Mudança inválida não grava. Entidade que não existe
+  mais: nada acontece.
 - **Alarmes:** só são refeitos quando a mudança mexe em horário, repetição, dias, vigência ou
   lembrar. Mudança de texto, cor, ícone, categoria ou lista não toca em alarme. A ordem das travas
   da 14.3 não muda.
@@ -1584,9 +1588,11 @@ objetos.**
 - Texto que mudou por fora só entra no campo se não houver digitação pendente nele.
 - **Título vazio** não grava; ao sair, o campo volta ao último título válido (5.3).
 - **Reverter alterações (P2):** retrato dos campos do editor tirado na abertura, guardado no
-  ViewModel. Reverter envia as mudanças de volta, campo a campo, e **não** mexe no que não é do
-  editor (conclusão, pausa, arquivamento). Na rotina inclui os exercícios, com o retrato que já
-  servia ao descartar. Não sobrevive à morte do processo. Aceito.
+  ViewModel. Reverter envia de volta **só os campos que a pessoa mudou nesta sessão**, um a um, e
+  não mexe no que não é do editor (conclusão, pausa, arquivamento). Mandar de volta todos os
+  campos do retrato desfaria por tabela o que mudou por fora, como a data reescrita por uma
+  conclusão adiantada. Na rotina inclui os exercícios, com o retrato que já servia ao descartar.
+  Não sobrevive à morte do processo. Aceito.
 - **Voltar preditivo** passa a funcionar nos editores de entidade existente, que não têm mais
   diálogo de descarte.
 
@@ -1665,6 +1671,12 @@ Uma rodada de Gradle por etapa; não se acumula código sem compilar de mais de 
 - **v1.10.0:** o repositório passar o início calculado para os alarmes de rotina; fonte única de
   data para o app; posição do concluir na Hoje; adiamento gravado e no diagnóstico; e o escopo
   que já era da v1.10.0 (adaptativo, calendário, busca, target 36).
+- **Só registro:** o lembrete de tarefa e o aviso de bloco que já estão na tela não são reemitidos
+  quando o título muda; continuam com o texto de quando tocaram, e o próximo sai com o título
+  novo. É como sempre foi. Também: a duração não reagenda o alarme da rotina, que é só do início.
+- **Só registro:** repetição personalizada gravada sem dia utilizável, se existir em dado antigo,
+  continua classificada como na v1.8.0. A tolerância fica só na leitura do editor, onde ela
+  aparece como "não repete"; tolerar só em parte da classificação seria pior.
 
 ### 15.10 Riscos
 
