@@ -101,6 +101,7 @@ class RoutineDeleteFromEditorTest {
             ShoppingRepository(testDb.db),
             ExerciseRepository(testDb.db.exerciseItemDao()),
             offers,
+            testDb.appScope(),
         ),
     )
 
