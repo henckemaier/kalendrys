@@ -2,6 +2,7 @@ package com.kalendrys.app.testutil
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import com.kalendrys.app.data.local.AppDatabase
@@ -54,8 +55,19 @@ class ViewModelTestDatabase(context: Context) {
 
     private val appScopes = mutableListOf<Job>()
 
-    /** Registra o ViewModel para ter o escopo cancelado no [close]. */
-    fun <T : ViewModel> track(viewModel: T): T = viewModel.also { viewModels += it }
+    /**
+     * Dono dos ViewModels registrados: o [close] chama [ViewModelStore.clear], que cancela o
+     * viewModelScope E chama o onCleared, como ao fechar a tela (v1.9.0: os editores gravam o texto
+     * pendente e fecham a fila de gravações no onCleared, B2 da revisão da E2).
+     */
+    private val store = ViewModelStore()
+
+    /** Registra o ViewModel para ser encerrado (escopo cancelado e onCleared) no [close]. */
+    fun <T : ViewModel> track(viewModel: T): T = viewModel.also {
+        viewModels += it
+        @Suppress("RestrictedApi")
+        store.put("tracked-${viewModels.size}", it)
+    }
 
     /**
      * Escopo "do app" para quem roda trabalho fora das telas sobre este banco (ex.: o restauro do
@@ -71,6 +83,10 @@ class ViewModelTestDatabase(context: Context) {
     }
 
     fun close() {
+        // Primeiro encerra os ViewModels (como sair da tela): o onCleared dos editores grava o pendente
+        // e fecha a fila, e o consumidor dela no escopo do app termina ao esvaziar. Depois esvazia
+        // o escopo do app com o banco ainda aberto.
+        store.clear()
         runBlocking {
             appScopes.forEach { job ->
                 // Deixa o restauro já pedido terminar com o banco aberto; preso, cancela e espera.
@@ -79,7 +95,6 @@ class ViewModelTestDatabase(context: Context) {
                 withTimeoutOrNull(DRAIN_TIMEOUT_S * 1_000) { job.cancelAndJoin() }
             }
         }
-        viewModels.forEach { it.viewModelScope.cancel() }
         // Duas barreiras: o que já estava na fila e o que essas tarefas tenham enfileirado.
         repeat(2) { executor.submit {}.get(DRAIN_TIMEOUT_S, TimeUnit.SECONDS) }
         db.close()

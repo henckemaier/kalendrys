@@ -96,10 +96,13 @@ class EditQueueTest {
 
         val before = queue.enqueue { delay(20); ran += "antes" }
         queue.close()
+        // Com a fila fechada, o trabalho devolvido é o do consumidor: esperar por ele espera a fila
+        // esvaziar (B1 da revisão da E2), em vez de passar na hora com "antes" ainda pendente.
         val after = queue.enqueue { ran += "depois" }
-        withTimeout(5_000) { before.join() }
+        withTimeout(5_000) { after.join() }
 
-        assertTrue(after.isCompleted)
+        assertTrue(before.isCompleted)
         assertEquals(listOf("antes"), ran.toList())
+        withTimeout(5_000) { queue.awaitIdle() } // fechada e vazia: passa
     }
 }

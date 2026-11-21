@@ -2,13 +2,20 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.domain.RoutineCategoryKind
+import com.kalendrys.app.reminder.RoutineAlarms
+import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import java.time.LocalDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
@@ -25,7 +32,6 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -93,11 +99,14 @@ class RoutineEditorViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun TestScope.viewModel(routineId: Long = NEW_ROUTINE_ID): RoutineEditorViewModel {
+    private fun TestScope.viewModel(
+        routineId: Long = NEW_ROUTINE_ID,
+        repository: RoutineRepository = routines,
+    ): RoutineEditorViewModel {
         val vm = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
-                routines,
+                repository,
                 RoutineCategoryRepository(db),
                 shopping,
                 exercises,
@@ -315,8 +324,8 @@ class RoutineEditorViewModelTest {
 
         vm.updateTitle("Corrida")
         vm.updateNotes("leve")
-        // Fechar a tela: o fim do viewModelScope grava o pendente e fecha a fila.
-        vm.viewModelScope.cancel()
+        // Fechar a tela: o onCleared (finish) grava o pendente e fecha a fila.
+        vm.finish()
 
         eventually { row(routine.id).title == "Corrida" && row(routine.id).notes == "leve" }
     }
@@ -357,7 +366,9 @@ class RoutineEditorViewModelTest {
         eventually { row(routine.id).color == routine.color && row(routine.id).title == "Treino" }
         assertEquals(900, row(routine.id).startMinute)
         assertFalse(vm.uiState.value.canRevert)
-        assertEquals("Treino", vm.uiState.value.fields!!.title)
+        // O campo chega ao valor revertido; uma emissão atrasada do valor anterior pode passar antes
+        // (o banco reemite em ordem, então o último é o revertido).
+        eventually { vm.uiState.value.fields?.title == "Treino" }
     }
 
     @Test
@@ -465,6 +476,119 @@ class RoutineEditorViewModelTest {
 
         assertNull(row(routine.id).shoppingListId)
         assertEquals(listOf("Feira"), db.shoppingListDao().all().map { it.name })
+    }
+
+    // --- NB-E3-B do Lince ---------------------------------------------------------------------------
+
+    /** Repositório de rotinas cujo agendamento roda [onSchedule] (falhar ou segurar a criação). */
+    private fun repositoryScheduling(onSchedule: () -> Unit): RoutineRepository {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alarms = object : RoutineAlarms(context) {
+            override fun scheduleNext(
+                routines: List<Routine>,
+                after: LocalDateTime,
+                overridesByRoutine: Map<Long, List<RoutineOverride>>,
+                doneOnStartDay: Set<Long>,
+            ) = onSchedule()
+        }
+        return RoutineRepository(
+            db.routineDao(),
+            db.routineCompletionDao(),
+            db.routineOverrideDao(),
+            alarms,
+            FakeRoutineNotifications(context),
+            db.shoppingItemDao(),
+            InMemoryRoutineCatchUpMark(),
+        )
+    }
+
+    @Test
+    fun `criacao - se Criar rotina falha o botao volta a valer`() = runTest {
+        val vm = viewModel(repository = repositoryScheduling { error("agendamento falhou") })
+        vm.awaitLoaded()
+        vm.updateTitle("Corrida")
+
+        vm.create()
+
+        eventually { !vm.uiState.value.creating }
+        assertTrue(vm.uiState.value.canCreate)
+    }
+
+    @Test
+    fun `criacao - durante o criar nao ha descarte nem segundo criar, e o estado sobrevive a tela`() = runTest {
+        // O ViewModel sobrevive a girar a tela: o "criando" vem dele, então a tela recriada o vê.
+        val release = CountDownLatch(1)
+        val vm = viewModel(repository = repositoryScheduling { release.await(TIMEOUT_MS, TimeUnit.MILLISECONDS) })
+        vm.awaitLoaded()
+        vm.updateTitle("Corrida")
+
+        vm.create()
+        eventually { vm.uiState.value.creating }
+        vm.create() // segundo toque
+        assertTrue(vm.uiState.value.creating)
+        assertTrue("a tela recriada desliga o descarte enquanto cria", vm.uiState.value.hasDraftChanges && vm.uiState.value.creating)
+
+        release.countDown()
+        vm.awaitClosed()
+        assertEquals(1, db.routineDao().all().size)
+    }
+
+    @Test
+    fun `edicao - duplicar com o titulo ainda na espera grava o titulo antes de copiar`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateTitle("Treino novo") // sem flush manual: ainda nos 500 ms
+        vm.duplicate("Treino novo (cópia)")
+        vm.awaitClosed()
+
+        assertEquals("Treino novo", row(routine.id).title)
+        assertEquals(listOf("Treino novo (cópia)"), db.routineDao().all().filter { it.id != routine.id }.map { it.title })
+    }
+
+    @Test
+    fun `edicao - toque duplo em excluir nao repete`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.delete()
+        vm.delete()
+        vm.awaitClosed()
+        vm.awaitPendingWrites()
+
+        assertEquals(1, db.routineDao().all().size)
+        assertTrue(row(routine.id).archivedAt != null)
+    }
+
+    @Test
+    fun `edicao - exercicios na ordem do toque e Reverter devolve a lista da abertura`() = runTest {
+        val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, categoryId = categoryId))
+        exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        eventually { vm.uiState.value.exerciseBaseline?.size == 1 }
+
+        vm.addExerciseItem("B", 1, 1, null, null)
+        vm.addExerciseItem("C", 1, 1, null, null)
+        vm.addExerciseItem("X", 1, 1, null, null)
+        vm.awaitPendingWrites()
+        val staleX = db.exerciseItemDao().byRoutine(routine.id).single { it.name == "X" }
+        vm.moveExerciseItem(staleX, up = true)
+        vm.moveExerciseItem(staleX, up = true)
+        vm.awaitPendingWrites()
+
+        val items = db.exerciseItemDao().byRoutine(routine.id)
+        assertEquals(listOf("A", "X", "B", "C"), items.map { it.name })
+        assertEquals(4, items.map { it.position }.distinct().size)
+
+        eventually { vm.uiState.value.exerciseItemsChanged }
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        assertEquals(listOf("A"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
     }
 
     private companion object {

@@ -65,8 +65,8 @@ import kotlinx.coroutines.launch
  *
  * Gravações da edição (campos e exercícios) vão por uma FILA única ([EditQueue]), na ordem em que a
  * pessoa mexeu, no escopo do app ([editScope]): cada mudança é calculada sobre a linha lida na hora de gravar, então dois toques
- * seguidos em dias não se anulam. A fila fecha quando o viewModelScope termina (sair da tela), depois
- * de gravar o texto pendente.
+ * seguidos em dias não se anulam. A fila fecha no onCleared ([finish]), depois de gravar o texto
+ * pendente.
  */
 class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
@@ -150,6 +150,9 @@ class RoutineEditorViewModel(
     private val initialDraft = MutableStateFlow<RoutineDraft?>(null)
     private val pendingListName = MutableStateFlow<String?>(null)
     private val creating = MutableStateFlow(false)
+
+    /** Excluir ou duplicar já foi pedido (a tela vai fechar): um segundo toque não repete (OBS-2). */
+    private var leaving = false
 
     // --- Edição -------------------------------------------------------------------------------------
 
@@ -512,7 +515,8 @@ class RoutineEditorViewModel(
      * terminarem (barreira na fila), para o Desfazer devolver o que a pessoa via (A2 da revisão da E2).
      */
     fun delete() {
-        if (isNew) return
+        if (isNew || leaving) return
+        leaving = true
         flushPending()
         editScope.launch {
             awaitPendingWrites()
@@ -527,7 +531,8 @@ class RoutineEditorViewModel(
      * pendentes. A cópia nasce ativa, sem pausa e sem lista (ADR-0001 4.3).
      */
     fun duplicate(copyTitle: String) {
-        if (isNew) return
+        if (isNew || leaving) return
+        leaving = true
         flushPending()
         editScope.launch {
             awaitPendingWrites()
@@ -612,14 +617,17 @@ class RoutineEditorViewModel(
         notesBuffer.flush()
     }
 
-    init {
-        // Sair da tela grava o texto pendente (15.3) e só então fecha a fila, que termina ao esvaziar.
-        // Pelo FIM do viewModelScope e não pelo onCleared: o ViewModel.clear() cancela esse escopo de
-        // qualquer jeito, e assim o mesmo caminho vale quando só o escopo é cancelado (testes).
-        viewModelScope.coroutineContext[Job]?.invokeOnCompletion {
-            flushPending()
-            writes.close()
-        }
+    /**
+     * Fecha o editor: grava o texto pendente (15.3) e só então fecha a fila, que termina ao esvaziar.
+     * O onCleared chama; os testes também podem chamar (idempotente). Na thread principal: mexe nos
+     * buffers (B2 da revisão da E2; a mesma forma no detalhe da tarefa).
+     */
+    internal fun finish() {
+        flushPending()
+        writes.close()
+    }
+
+    override fun onCleared() = finish()
     }
 
     companion object {

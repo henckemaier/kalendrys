@@ -87,6 +87,55 @@ class ExerciseRepositoryTest {
     }
 
     @Test
+    fun `dois subir seguidos com o item velho da tela nao repetem posicoes`() = runTest {
+        // NB-E3-A do Lince: A, B, C, X; subir o X duas vezes com o MESMO objeto (o da tela, velho).
+        listOf("A", "B", "C", "X").forEach { repository.add(1, it, sets = 1, reps = 1, load = null, restSeconds = null) }
+        val staleX = repository.observeItems(1).first().single { it.name == "X" }
+
+        repository.move(staleX, up = true)
+        repository.move(staleX, up = true)
+
+        val items = repository.observeItems(1).first()
+        assertEquals(listOf("A", "X", "B", "C"), items.map { it.name })
+        assertEquals(items.size, items.map { it.position }.distinct().size)
+        // E descer o B depois funciona (não fica preso por posição repetida).
+        repository.move(items.single { it.name == "B" }, up = false)
+        assertEquals(listOf("A", "X", "C", "B"), repository.observeItems(1).first().map { it.name })
+    }
+
+    @Test
+    fun `lista com posicoes repetidas (defeito da v1_8_0) se conserta ao mover`() = runTest {
+        // Esquadro: com posições iguais, a troca antiga trocava dois valores iguais e o item ficava preso.
+        db.exerciseItemDao().insertAll(
+            listOf(
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 1, routineId = 1, name = "A", sets = 1, reps = 1, position = 0),
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 2, routineId = 1, name = "B", sets = 1, reps = 1, position = 3),
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 3, routineId = 1, name = "C", sets = 1, reps = 1, position = 3),
+            ),
+        )
+        val c = repository.observeItems(1).first().single { it.name == "C" }
+
+        repository.move(c, up = true)
+        assertEquals(listOf("A", "C", "B"), repository.observeItems(1).first().map { it.name })
+
+        repository.move(c, up = false)
+        val items = repository.observeItems(1).first()
+        assertEquals(listOf("A", "B", "C"), items.map { it.name })
+        assertEquals(listOf(0, 1, 2), items.map { it.position })
+    }
+
+    @Test
+    fun `editar com o item velho logo depois de mover nao devolve a posicao antiga`() = runTest {
+        listOf("A", "B").forEach { repository.add(1, it, sets = 1, reps = 1, load = null, restSeconds = null) }
+        val staleB = repository.observeItems(1).first().single { it.name == "B" }
+
+        repository.move(staleB, up = true)
+        repository.update(staleB, name = "B2", sets = 2, reps = 2, load = null, restSeconds = null)
+
+        assertEquals(listOf("B2", "A"), repository.observeItems(1).first().map { it.name })
+    }
+
+    @Test
     fun `remove apaga o exercicio`() = runTest {
         repository.add(routineId = 1, name = "Remada", sets = 3, reps = 12, load = null, restSeconds = null)
         val item = repository.observeItems(1).first().single()

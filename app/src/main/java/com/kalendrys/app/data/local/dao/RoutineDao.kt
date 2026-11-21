@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -42,9 +41,6 @@ interface RoutineDao {
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(routines: List<Routine>)
-
-    @Update
-    suspend fun update(routine: Routine)
 
     /**
      * Rotina nova com lista nova (criação no editor, v1.9.0 15.5): grava a lista e a rotina já
