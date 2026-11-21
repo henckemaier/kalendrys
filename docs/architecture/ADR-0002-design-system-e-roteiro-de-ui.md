@@ -1585,7 +1585,10 @@ objetos.**
   digitou, não o que o banco reemite; sem isso o cursor pula e teclas se perdem. Grava 500 ms
   depois da última tecla (5.2) e **sempre** ao sair da tela e ao ir para segundo plano, no
   escopo do app, o mesmo já usado pelas ofertas de Desfazer e pelo painel de nova tarefa.
-- Texto que mudou por fora só entra no campo se não houver digitação pendente nele.
+- Texto que mudou por fora só entra no campo se não houver digitação pendente nele **e** se for
+  diferente do que o próprio campo gravaria. A gravação apara espaços e quebras do começo e do
+  fim; sem a segunda condição, o banco devolveria o texto aparado e apagaria o espaço ou a quebra
+  de linha que a pessoa acabou de digitar no fim.
 - **Título vazio** não grava; ao sair, o campo volta ao último título válido (5.3).
 - **Reverter alterações (P2):** retrato dos campos do editor tirado na abertura, guardado no
   ViewModel. Reverter envia de volta **só os campos que a pessoa mudou nesta sessão**, um a um, e
@@ -1618,6 +1621,12 @@ objetos.**
   semanas); Lembrar; Categoria; Lista; Exercícios (só na categoria de exercício); Aparência
   (ícone e cor); e, recolhidos em "Mais opções", Vigência (início e fim) e Observações. Pausar,
   Duplicar, Reverter alterações e Excluir ficam no menu.
+  "Mais opções" abre sozinho quando já há vigência definida ou observações, decidido uma vez na
+  abertura da tela; depois disso só o toque da pessoa abre ou fecha. Vigência escondida faria a
+  rotina sumir de um dia sem ninguém ver por quê.
+- **Excluir não desfaz os exercícios da sessão.** Com o salvar na hora não há sessão a descartar:
+  o Desfazer devolve a rotina como está gravada, com os exercícios como estão. Substitui o que a
+  14.4 dizia sobre desfazer as edições de exercício antes de excluir pelo editor.
 - Estados inválidos inalcançáveis, como na 5.3: o último dia não desmarca; o fim da vigência só
   oferece datas a partir do início.
 - O arquivo da tela é dividido por seção. Em paisagem com teclado, vale a regra do painel
