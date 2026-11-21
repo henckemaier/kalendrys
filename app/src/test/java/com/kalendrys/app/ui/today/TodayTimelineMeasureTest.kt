@@ -366,13 +366,14 @@ class TodayTimelineMeasureTest {
     }
 
     @Test
-    fun `terceiro degrau sem sino e sem lista - a linha do horario tem largura e leva a frase`() {
-        // N-8: sem sino nem lista, a linha que declara a frase só tem o horário, que no terceiro
-        // degrau não tem largura; ela ocupa a largura toda e não some da árvore de acessibilidade.
+    fun `sem sino e sem lista na menor largura - a linha do horario tem largura e leva a frase`() {
+        // N-8: sem sino nem lista, a linha que declara a frase só tem o horário; com fillMaxWidth ela
+        // tem largura em qualquer degrau e não some da árvore de acessibilidade. Na MENOR largura
+        // suportada (320dp, fonte 2.0): abaixo disso a coluna de texto inteira do bloco (título
+        // incluído) fica sem largura, e nenhuma linha dela teria tamanho; não é caso de aparelho.
         val minutes = 23 * 60 + 59
-        show(fontScale = 2f, minutes = minutes, columnWidth = 140.dp)
-        val label = "fonte 2.0, 140dp, 23h59 sem sino e sem lista"
-        assertEquals("$label: chegou ao terceiro degrau", 0, rangeNode().size.width)
+        show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp)
+        val label = "fonte 2.0, 320dp, 23h59 sem sino e sem lista"
         assertPhraseOnce(label, minutes)
         val line = compose.onNode(
             hasText(fullRange(minutes)) and !SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),

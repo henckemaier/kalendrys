@@ -628,7 +628,6 @@ class RoutineEditorViewModel(
     }
 
     override fun onCleared() = finish()
-    }
 
     companion object {
         private const val TAG = "RoutineEditorVM"

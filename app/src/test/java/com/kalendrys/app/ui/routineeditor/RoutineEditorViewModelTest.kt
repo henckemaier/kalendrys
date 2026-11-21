@@ -559,7 +559,8 @@ class RoutineEditorViewModelTest {
         vm.awaitPendingWrites()
 
         assertEquals(1, db.routineDao().all().size)
-        assertTrue(row(routine.id).archivedAt != null)
+        // O arquivamento sai pela oferta do app, no escopo dela: espera por ele.
+        eventually { row(routine.id).archivedAt != null }
     }
 
     @Test
