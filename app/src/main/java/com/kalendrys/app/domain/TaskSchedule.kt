@@ -23,6 +23,13 @@ data class TaskTiming(
 ) {
     val effectiveRepeat: ReminderRepeat get() = if (date == null) ReminderRepeat.NONE else repeat
 
+    /**
+     * Pode ser gravado (5.3, v1.9.0): repetição personalizada só com algum dia utilizável
+     * ([CustomRecurrence.isUsable]). Os outros tipos não têm configuração que invalide.
+     */
+    val isValid: Boolean
+        get() = effectiveRepeat != ReminderRepeat.CUSTOM || CustomRecurrence.isUsable(intervalUnit, byWeekdays)
+
     fun reminderAt(zone: ZoneId): Long? =
         if (date != null && time != null) date.atTime(time).atZone(zone).toInstant().toEpochMilli() else null
 
@@ -37,10 +44,18 @@ data class TaskTiming(
         )
 
     companion object {
+        /**
+         * Leitura TOLERANTE (v1.9.0, 15.7): uma repetição personalizada gravada sem nenhum dia
+         * utilizável (dado de versão antiga; ela nunca ocorre) chega ao editor como "não repete", que é
+         * como ela se comporta. Só é regravada se a pessoa mexer em data, hora ou repetição
+         * ([TaskChange.Timing]); as outras mudanças não tocam nesses campos.
+         */
         fun of(task: Task, zone: ZoneId) = TaskTiming(
             date = task.dueDate?.let(LocalDate::ofEpochDay),
             time = task.reminderAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalTime() },
-            repeat = task.repeat,
+            repeat = task.repeat.takeUnless {
+                it == ReminderRepeat.CUSTOM && !CustomRecurrence.isUsable(task.intervalUnit, task.byWeekdays)
+            } ?: ReminderRepeat.NONE,
             intervalEvery = task.intervalEvery,
             intervalUnit = task.intervalUnit,
             byWeekdays = task.byWeekdays,

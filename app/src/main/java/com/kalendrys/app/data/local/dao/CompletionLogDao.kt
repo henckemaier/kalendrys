@@ -4,9 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import com.kalendrys.app.data.local.entity.CompletionLog
-import com.kalendrys.app.data.local.entity.Task
 import kotlinx.coroutines.flow.Flow
 
 /** Linha de [CompletionLogDao.observeLastCompletions]. */
@@ -68,31 +66,35 @@ interface CompletionLogDao {
     suspend fun count(): Int
 
     /**
-     * Grava a tarefa SÓ dentro das transações abaixo (concluir adiantado e desfazer). Fora delas a
-     * tarefa se grava pelo TaskDao; não chame daqui.
+     * Grava SÓ a data e o lembrete da tarefa, dentro das transações abaixo (concluir adiantado e
+     * desfazer). Atualização PARCIAL (v1.9.0, 15.2): concluir e desfazer nunca regravam título, texto
+     * ou lista a partir de uma leitura antiga. Fora delas a tarefa se grava pelo TaskDao; não chame daqui.
      */
-    @Update
-    suspend fun updateTaskInCompletion(task: Task)
+    @Query("UPDATE tasks SET dueDate = :dueDate, reminderAt = :reminderAt WHERE id = :taskId")
+    suspend fun updateTaskDateInCompletion(taskId: Long, dueDate: Long?, reminderAt: Long?)
 
     /**
-     * Conclusão ADIANTADA de tarefa única (banco 11): grava a data reescrita da tarefa e o registro
-     * com o que ela sobrescreveu numa transação só. Sem ela, uma falha entre os dois deixaria a data
-     * trocada sem registro para o Desfazer devolver.
+     * Conclusão ADIANTADA de tarefa única (banco 11): grava a data reescrita da tarefa (sem lembrete)
+     * e o registro com o que ela sobrescreveu numa transação só. Sem ela, uma falha entre os dois
+     * deixaria a data trocada sem registro para o Desfazer devolver.
      */
     @Transaction
-    suspend fun rewriteAndInsert(task: Task, log: CompletionLog): Long {
-        updateTaskInCompletion(task)
+    suspend fun rewriteAndInsert(taskId: Long, rewrittenDueDate: Long, log: CompletionLog): Long {
+        updateTaskDateInCompletion(taskId, rewrittenDueDate, reminderAt = null)
         return insert(log)
     }
 
     /**
-     * Desfazer: apaga o registro e, se for o caso, devolve a data e o lembrete da tarefa
-     * ([restored] não nulo) numa transação só. Sem ela, morrer entre as duas gravações deixaria a
-     * tarefa com a data reescrita e sem o registro para restaurar.
+     * Desfazer: apaga o registro e, se for o caso ([restore] não nulo), devolve a data e o lembrete
+     * da tarefa numa transação só. Sem ela, morrer entre as duas gravações deixaria a tarefa com a
+     * data reescrita e sem o registro para restaurar.
      */
     @Transaction
-    suspend fun deleteAndRestore(logId: Long, restored: Task?) {
+    suspend fun deleteAndRestore(logId: Long, restore: DateRestore?) {
         deleteById(logId)
-        restored?.let { updateTaskInCompletion(it) }
+        restore?.let { updateTaskDateInCompletion(it.taskId, it.dueDate, it.reminderAt) }
     }
 }
+
+/** Data e lembrete que o Desfazer devolve à tarefa ([CompletionLogDao.deleteAndRestore]). */
+data class DateRestore(val taskId: Long, val dueDate: Long?, val reminderAt: Long?)
