@@ -90,6 +90,9 @@ internal fun NewTaskSheet(
     val scope = rememberCoroutineScope()
     var showListPicker by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    // Foco no Título só na PRIMEIRA abertura (v1.9.0): salvo, para girar a tela ou recriar o painel não
+    // tirar o foco do campo em que a pessoa está. Fechar e reabrir é outra abertura (estado novo).
+    var titleFocusRequested by rememberSaveable { mutableStateOf(false) }
 
     fun hideThen(action: () -> Unit) {
         scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
@@ -203,7 +206,12 @@ internal fun NewTaskSheet(
                 }
             }
         }
-        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        LaunchedEffect(Unit) {
+            if (!titleFocusRequested) {
+                titleFocusRequested = true
+                focusRequester.requestFocus()
+            }
+        }
     }
 
     if (showListPicker && lists != null) {
