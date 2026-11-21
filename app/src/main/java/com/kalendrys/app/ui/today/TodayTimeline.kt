@@ -63,6 +63,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -355,7 +357,9 @@ private fun BlockRow(
                 }
                 Text(
                     text = routine.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    // Ensaio (v1.9.0, 15.7): hifenização nos títulos longos; palavra comprida em coluna estreita
+                    // (fonte 2.0) quebra com hífen em vez de deixar a linha de cima curta.
+                    style = MaterialTheme.typography.bodyLarge.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph),
                     color = if (block.done || skipped) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {

@@ -18,6 +18,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -345,6 +347,16 @@ class TodayTimelineMeasureTest {
         assertTrue("$label: sino depois do horário e antes do 2/3", bell.boundsInRoot.right <= tag.boundsInRoot.left + 0.5f)
         assertWholeNode("$label, sino", bell)
         assertWholeNode("$label, 2/3", tag)
+    }
+
+    @Test
+    fun `titulo do bloco com hifenizacao automatica (ensaio)`() {
+        show(fontScale = 2f, minutes = 30, columnWidth = 320.dp)
+        val style = unmerged(title(30)).layout().layoutInput.style
+        assertEquals(Hyphens.Auto, style.hyphens)
+        assertEquals(LineBreak.Paragraph, style.lineBreak)
+        // O título continua inteiro (sem reticências nem corte) com a hifenização.
+        assertWhole("hifenização", unmerged(title(30)))
     }
 
     /** N-2: em qualquer largura o horário é a faixa inteira, só a duração ou nada (largura zero). */
