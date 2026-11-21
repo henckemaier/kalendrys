@@ -105,11 +105,6 @@ class RoutineRepository(
         }
     }
 
-    /** Grava a linha inteira (editor da v1.8.0). Sai na E3 da v1.9.0, quando o editor passa a usar [edit]. */
-    suspend fun update(routine: Routine): Unit = change {
-        routineDao.update(routine)
-    }
-
     /**
      * Salvar na hora (v1.9.0, ADR-0002 15.2): aplica [change] sobre a linha MAIS RECENTE da rotina,
      * lida DENTRO do [mutex], e grava só as colunas da mudança. Pausar, arquivar ou excluir a lista

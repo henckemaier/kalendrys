@@ -1,53 +1,30 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalLayoutApi::class)
 
 package com.kalendrys.app.ui.routineeditor
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,55 +34,33 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
-import com.kalendrys.app.data.local.entity.ExerciseItem
-import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.repository.ShoppingListOwner
-import com.kalendrys.app.data.repository.ShoppingListSummary
-import com.kalendrys.app.domain.DurationFormat
-import com.kalendrys.app.domain.ExerciseFormat
-import com.kalendrys.app.domain.RoutineColor
-import com.kalendrys.app.domain.AppLocale
-import com.kalendrys.app.domain.RoutineDays
-import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
-import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.TopBarAction
-import com.kalendrys.app.ui.components.WeekdayToggleRow
-import com.kalendrys.app.ui.components.groupedItemShape
+import com.kalendrys.app.ui.components.bottomBarInsets
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
-import com.kalendrys.app.ui.routines.minuteOfDayLabel
-import com.kalendrys.app.ui.routines.routineTone
-import com.kalendrys.app.ui.shopping.ShoppingListCard
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.theme.Spacing
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import kotlinx.coroutines.flow.collectLatest
 
+/**
+ * Editor de rotina (v1.9.0, ADR-0002 15.5). Na criação, "Criar rotina" fica fixo no rodapé (ao
+ * alcance também em paisagem com teclado: a casca encolhe acima dele) e voltar com algo preenchido
+ * pede confirmação. Na edição, cada mudança grava na hora: sem Salvar e sem diálogo de descarte, e o
+ * voltar preditivo funciona. Ir para segundo plano grava o texto pendente (15.3).
+ */
 @Composable
 fun RoutineEditorScreen(
     onBack: () -> Unit,
@@ -124,34 +79,30 @@ fun RoutineEditorScreen(
             }
         }
     }
+    // Segundo plano: o texto em digitação grava já, no escopo do app (15.3). Sair grava no onCleared.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.flushPending() }
 
+    // Só a criação tem o que descartar; na edição tudo já está gravado. Criando, não há o que descartar.
+    val askToDiscard = state.hasDraftChanges && !state.creating
     fun requestBack() {
-        if (state.hasChanges) showDiscardDialog = true else onBack()
+        if (askToDiscard) showDiscardDialog = true else onBack()
     }
-    BackHandler(enabled = state.hasChanges) { showDiscardDialog = true }
+    BackHandler(enabled = askToDiscard) { showDiscardDialog = true }
 
-    // Salvar fica escrito na barra; Duplicar, Pausar/Retomar e Excluir (raras) vão para o menu com
-    // rótulo (ADR-0002, 4.2). Sem rascunho carregado, nenhuma ação (como antes).
-    val actions = mutableListOf<TopBarAction>()
+    // Pausar, Duplicar, Reverter alterações e Excluir no menu (15.5); nada na barra além do voltar.
     val menu = mutableListOf<TopBarAction>()
-    if (state.draft != null) {
-        if (!state.isNew) {
-            val copyTitle = stringResource(R.string.routine_copy_suffix, state.routine?.title.orEmpty())
-            menu += TopBarAction(stringResource(R.string.routine_duplicate)) { viewModel.duplicate(copyTitle) }
-            val paused = state.routine?.pausedAt != null
-            menu += TopBarAction(
-                stringResource(if (paused) R.string.routine_resume else R.string.routine_pause),
-                onClick = viewModel::togglePause,
-            )
-            // P8: sem confirmação (ação com Desfazer, ADR-0002 5.4); a mensagem aparece na origem.
-            menu += TopBarAction(stringResource(R.string.routine_delete), onClick = viewModel::delete)
-        }
-        actions += TopBarAction(
-            stringResource(R.string.save),
-            enabled = state.canSave,
-            prominent = true,
-            onClick = viewModel::save,
+    val fields = state.fields
+    if (fields != null && !state.isNew) {
+        val paused = state.routine?.pausedAt != null
+        menu += TopBarAction(
+            stringResource(if (paused) R.string.routine_resume else R.string.routine_pause),
+            onClick = viewModel::togglePause,
         )
+        val copyTitle = stringResource(R.string.routine_copy_suffix, fields.title.ifBlank { state.routine?.title.orEmpty() })
+        menu += TopBarAction(stringResource(R.string.routine_duplicate)) { viewModel.duplicate(copyTitle) }
+        menu += TopBarAction(stringResource(R.string.editor_revert), enabled = state.canRevert, onClick = viewModel::revert)
+        // P8: sem confirmação (ação com Desfazer, ADR-0002 5.4); a mensagem aparece na origem.
+        menu += TopBarAction(stringResource(R.string.routine_delete), onClick = viewModel::delete)
     }
 
     AppScaffold(
@@ -159,28 +110,38 @@ fun RoutineEditorScreen(
             AppTopBar(
                 title = stringResource(if (state.isNew) R.string.routine_new_title else R.string.routine_edit_title),
                 onBack = { requestBack() },
-                actions = actions,
                 menu = menu,
             )
         },
+        bottomBar = {
+            if (state.isNew && fields != null) {
+                Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+                    Button(
+                        onClick = viewModel::create,
+                        enabled = state.canCreate && !state.creating,
+                        // Barra do sistema E laterais (recorte em paisagem), como as outras barras de rodapé.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(bottomBarInsets)
+                            .padding(horizontal = Spacing.l, vertical = Spacing.s),
+                    ) {
+                        Text(stringResource(R.string.routine_create))
+                    }
+                }
+            }
+        },
     ) { padding ->
-        val draft = state.draft
         when {
             state.notFound -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
                 title = stringResource(R.string.routine_not_found_title),
                 message = stringResource(R.string.routine_not_found_message),
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
-            draft == null -> Unit
+            fields == null -> Unit
             else -> EditorContent(
-                draft = draft,
-                categories = state.categories,
-                routine = state.routine,
-                shoppingList = state.shoppingList,
-                availableLists = state.availableLists,
-                isExerciseCategory = state.isExerciseCategory,
-                exerciseItems = state.exerciseItems,
+                state = state,
+                fields = fields,
                 viewModel = viewModel,
                 onOpenShoppingList = onOpenShoppingList,
                 // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
@@ -188,7 +149,6 @@ fun RoutineEditorScreen(
             )
         }
     }
-
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -199,9 +159,7 @@ fun RoutineEditorScreen(
                 TextButton(
                     onClick = {
                         showDiscardDialog = false
-                        // Reverte as edições de item persistidas na sessão e só então fecha (via
-                        // Event.Closed) — sem isso, o "Descartar" só desfazia os campos do rascunho.
-                        viewModel.discardChanges()
+                        viewModel.discardDraft()
                     },
                 ) {
                     Text(stringResource(R.string.discard))
@@ -216,13 +174,8 @@ fun RoutineEditorScreen(
 
 @Composable
 private fun EditorContent(
-    draft: RoutineDraft,
-    categories: List<RoutineCategory>,
-    routine: Routine?,
-    shoppingList: ShoppingListSummary?,
-    availableLists: List<ShoppingListSummary>,
-    isExerciseCategory: Boolean,
-    exerciseItems: List<ExerciseItem>,
+    state: RoutineEditorViewModel.UiState,
+    fields: RoutineDraft,
     viewModel: RoutineEditorViewModel,
     onOpenShoppingList: (Long) -> Unit,
     contentPadding: PaddingValues,
@@ -231,18 +184,20 @@ private fun EditorContent(
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
     var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
     var showEndDatePicker by rememberSaveable { mutableStateOf(false) }
-    // Seletor "Criar nova / Usar lista existente" da lista de compras.
     var showListPicker by rememberSaveable { mutableStateOf(false) }
     // Diálogo de add/editar exercício. editingExerciseId null + diálogo aberto = novo item; senão, edição.
     var showExerciseDialog by rememberSaveable { mutableStateOf(false) }
     var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // "Mais opções" (Vigência e Observações): aberto se a rotina já tem vigência ou observações, decidido
+    // UMA vez, na abertura (vigência escondida é armadilha, (c) da revisão da E3); depois só pelo toque.
+    var moreOptions by rememberSaveable {
+        mutableStateOf(fields.startEpochDay != null || fields.endEpochDay != null || fields.notes.isNotBlank())
+    }
+    val exerciseItems = state.exerciseItems
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = contentPadding,
-    ) {
-        item(key = "preview") { Preview(draft) }
-        if (viewModel.isNew) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
+        item(key = "preview") { Preview(fields) }
+        if (state.isNew) {
             item(key = "templates") {
                 SectionTitle(stringResource(R.string.routine_templates))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,96 +207,45 @@ private fun EditorContent(
                             onClick = { viewModel.applyDraft(template.toDraft(label)) },
                             label = { Text(label) },
                             leadingIcon = {
-                                Icon(
-                                    imageVector = template.icon.imageVector,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                                Icon(imageVector = template.icon.imageVector, contentDescription = null, modifier = Modifier.size(18.dp))
                             },
                         )
                     }
                 }
             }
         }
-        item(key = "title") {
-            OutlinedTextField(
-                value = draft.title,
-                onValueChange = viewModel::updateTitle,
-                label = { Text(stringResource(R.string.task_title_label)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
+        item(key = "title") { TitleSection(title = fields.title, showError = state.titleError, onChange = viewModel::updateTitle) }
+        item(key = "when") {
+            WhenSection(
+                fields = fields,
+                onPickStart = { showStartPicker = true },
+                onPickEnd = { showEndPicker = true },
+                onDuration = viewModel::updateDuration,
+                onToggleDay = viewModel::toggleDay,
+                onSetDays = viewModel::setDays,
+                onWeekInterval = viewModel::updateWeekInterval,
             )
         }
-        item(key = "icon") {
-            SectionTitle(stringResource(R.string.routine_icon))
-            IconPicker(selected = draft.icon, color = draft.color, onSelect = viewModel::updateIcon)
-        }
-        item(key = "color") {
-            SectionTitle(stringResource(R.string.routine_color))
-            ColorPicker(selected = draft.color, onSelect = viewModel::updateColor)
-        }
-        if (categories.isNotEmpty()) {
+        item(key = "remind") { RemindSection(remind = fields.remind, onChange = viewModel::updateRemind) }
+        if (state.categories.isNotEmpty()) {
             item(key = "category") {
-                SectionTitle(stringResource(R.string.routine_category))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = draft.categoryId == null,
-                        onClick = { viewModel.updateCategory(null) },
-                        label = { Text(stringResource(R.string.routine_category_none)) },
-                    )
-                    categories.forEach { category ->
-                        FilterChip(
-                            selected = draft.categoryId == category.id,
-                            onClick = { viewModel.updateCategory(category.id) },
-                            label = { Text(category.name) },
-                            leadingIcon = {
-                                Dot(
-                                    color = routineTone(RoutineColor.fromKey(category.color)).accent,
-                                    size = 10.dp,
-                                    filled = true,
-                                )
-                            },
-                        )
-                    }
-                }
+                CategorySection(categories = state.categories, selectedId = fields.categoryId, onSelect = viewModel::updateCategory)
             }
         }
-        // Lista de compras: qualquer rotina pode anexar uma, inclusive a nova ainda não salva (P6).
+        // Lista de compras: qualquer rotina pode ter uma, inclusive a nova (criada junto com ela, 15.5).
         item(key = "shopping-list") {
-            SectionTitle(stringResource(R.string.list_card_section_title))
-            if (shoppingList != null) {
-                val routineId = routine?.id
-                ShoppingListCard(
-                    summary = shoppingList,
-                    onOpen = { onOpenShoppingList(shoppingList.id) },
-                    onDetach = viewModel::detachShoppingList,
-                    isCurrentOwner = { it.kind == ShoppingListOwner.Kind.ROUTINE && it.id == routineId },
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.list_card_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 4.dp),
-                )
-                TextButton(
-                    onClick = { showListPicker = true },
-                    modifier = Modifier.padding(top = 4.dp),
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.list_card_add))
-                }
-            }
+            ListSection(
+                shoppingList = state.shoppingList,
+                pendingListName = state.pendingListName,
+                routineId = state.routine?.id,
+                onOpen = onOpenShoppingList,
+                onDetach = viewModel::detachShoppingList,
+                onAdd = { showListPicker = true },
+            )
         }
-        if (isExerciseCategory) {
-            item(key = "exercise-title") {
-                SectionTitle(stringResource(R.string.exercise_section_title))
-            }
-            if (viewModel.isNew) {
+        if (state.isExerciseCategory) {
+            item(key = "exercise-title") { SectionTitle(stringResource(R.string.exercise_section_title)) }
+            if (state.isNew) {
                 item(key = "exercise-hint") {
                     Text(
                         text = stringResource(R.string.exercise_new_routine_hint),
@@ -391,121 +295,28 @@ private fun EditorContent(
                 }
             }
         }
-        item(key = "time") {
-            SectionTitle(stringResource(R.string.routine_duration))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RoutineDraft.DURATION_PRESETS.forEach { minutes ->
-                    FilterChip(
-                        selected = draft.durationMinutes == minutes,
-                        onClick = { viewModel.updateDuration(minutes) },
-                        label = {
-                            Text(if (minutes == 0) stringResource(R.string.routine_no_duration) else DurationFormat.format(minutes))
-                        },
-                    )
-                }
-            }
-            Spacer(Modifier.size(8.dp))
-            TimeRow(
-                label = stringResource(R.string.routine_start),
-                value = minuteOfDayLabel(draft.startMinute),
-                index = 0,
-                onClick = { showStartPicker = true },
-            )
-            TimeRow(
-                label = stringResource(R.string.routine_end),
-                value = when {
-                    draft.durationMinutes == 0 -> "—"
-                    draft.endsNextDay -> stringResource(R.string.routine_end_next_day, minuteOfDayLabel(draft.endMinuteOfDay))
-                    else -> minuteOfDayLabel(draft.endMinuteOfDay)
-                },
-                index = 1,
-                onClick = { showEndPicker = true },
-            )
+        item(key = "appearance") {
+            AppearanceSection(fields = fields, onIcon = viewModel::updateIcon, onColor = viewModel::updateColor)
         }
-        item(key = "days") {
-            SectionTitle(stringResource(R.string.routine_days))
-            DayPicker(mask = draft.daysOfWeek, onToggle = viewModel::toggleDay)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 8.dp),
-            ) {
-                listOf(
-                    RoutineDays.ALL to R.string.routine_days_everyday,
-                    RoutineDays.WEEKDAYS to R.string.routine_days_weekdays,
-                    RoutineDays.WEEKEND to R.string.routine_days_weekend,
-                ).forEach { (mask, label) ->
-                    FilterChip(
-                        selected = draft.daysOfWeek == mask,
-                        onClick = { viewModel.setDays(mask) },
-                        label = { Text(stringResource(label)) },
-                    )
-                }
-            }
-            if (!draft.hasDays) {
-                Text(
-                    text = stringResource(R.string.routine_days_none),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+        item(key = "more-options") { MoreOptionsHeader(expanded = moreOptions, onToggle = { moreOptions = !moreOptions }) }
+        if (moreOptions) {
+            item(key = "validity") {
+                ValiditySection(
+                    fields = fields,
+                    onPickStartDate = { showStartDatePicker = true },
+                    onPickEndDate = { showEndDatePicker = true },
+                    onClearStart = { viewModel.updateStartDate(null) },
+                    onClearEnd = { viewModel.updateEndDate(null) },
                 )
             }
-        }
-        item(key = "recurrence") {
-            SectionTitle(stringResource(R.string.routine_repeat))
-            WeekIntervalStepper(
-                weeks = draft.weekInterval,
-                onChange = viewModel::updateWeekInterval,
-            )
-            SectionTitle(stringResource(R.string.routine_validity))
-            DateRow(
-                label = stringResource(R.string.routine_start_date),
-                value = draft.startEpochDay?.let(::formatEpochDay) ?: stringResource(R.string.routine_date_any),
-                index = 0,
-                onClick = { showStartDatePicker = true },
-                onClear = draft.startEpochDay?.let { { viewModel.updateStartDate(null) } },
-            )
-            DateRow(
-                label = stringResource(R.string.routine_end_date),
-                value = draft.endEpochDay?.let(::formatEpochDay) ?: stringResource(R.string.routine_date_none),
-                index = 1,
-                onClick = { showEndDatePicker = true },
-                onClear = draft.endEpochDay?.let { { viewModel.updateEndDate(null) } },
-            )
-            if (!draft.datesValid) {
-                Text(
-                    text = stringResource(R.string.routine_dates_invalid),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
-                )
-            }
-        }
-        item(key = "remind") {
-            RemindRow(
-                checked = draft.remind,
-                onCheckedChange = viewModel::updateRemind,
-                modifier = Modifier.padding(top = 24.dp),
-            )
-        }
-        item(key = "notes") {
-            OutlinedTextField(
-                value = draft.notes,
-                onValueChange = viewModel::updateNotes,
-                label = { Text(stringResource(R.string.task_notes_label)) },
-                minLines = 2,
-                maxLines = 6,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-            )
+            item(key = "notes") { NotesSection(notes = fields.notes, onChange = viewModel::updateNotes) }
         }
     }
 
     if (showStartPicker) {
         TimePickerDialog(
             title = stringResource(R.string.routine_pick_start),
-            initialTime = timeOf(draft.startMinute),
+            initialTime = timeOf(fields.startMinute),
             onConfirm = {
                 viewModel.updateStart(it)
                 showStartPicker = false
@@ -518,7 +329,7 @@ private fun EditorContent(
             title = stringResource(R.string.routine_pick_end),
             // Sem duração ainda: sugere meia hora depois do início.
             initialTime = timeOf(
-                if (draft.durationMinutes == 0) draft.startMinute + RoutineDraft.DEFAULT_DURATION_MINUTES else draft.endMinuteOfDay,
+                if (fields.durationMinutes == 0) fields.startMinute + RoutineDraft.DEFAULT_DURATION_MINUTES else fields.endMinuteOfDay,
             ),
             onConfirm = {
                 viewModel.updateEnd(it)
@@ -529,7 +340,7 @@ private fun EditorContent(
     }
     if (showStartDatePicker) {
         RoutineDatePicker(
-            initialEpochDay = draft.startEpochDay,
+            initialEpochDay = fields.startEpochDay,
             onConfirm = {
                 viewModel.updateStartDate(it)
                 showStartDatePicker = false
@@ -539,7 +350,9 @@ private fun EditorContent(
     }
     if (showEndDatePicker) {
         RoutineDatePicker(
-            initialEpochDay = draft.endEpochDay ?: draft.startEpochDay,
+            initialEpochDay = fields.endEpochDay ?: fields.startEpochDay,
+            // O fim só a partir do início (5.3): o estado "fim antes do início" não é alcançável.
+            minEpochDay = fields.startEpochDay,
             onConfirm = {
                 viewModel.updateEndDate(it)
                 showEndDatePicker = false
@@ -549,8 +362,8 @@ private fun EditorContent(
     }
     if (showListPicker) {
         ShoppingListPicker(
-            lists = availableLists,
-            suggestedName = draft.title,
+            lists = state.availableLists,
+            suggestedName = fields.title,
             onCreate = { name ->
                 viewModel.createShoppingList(name)
                 showListPicker = false
@@ -582,412 +395,3 @@ private fun EditorContent(
         )
     }
 }
-
-@Composable
-private fun ExerciseItemRow(
-    item: ExerciseItem,
-    index: Int,
-    count: Int,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    // Legenda: séries×reps · carga (se houver) · descanso (se houver).
-    val subtitle = buildList {
-        add(ExerciseFormat.setsReps(item.sets, item.reps))
-        item.load?.let { add(it) }
-        item.restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
-    }.joinToString(" · ")
-    Surface(
-        shape = groupedItemShape(index, count),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 2.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 16.dp, end = 4.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onMoveUp, enabled = index > 0) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.exercise_item_move_up))
-            }
-            IconButton(onClick = onMoveDown, enabled = index < count - 1) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.exercise_item_move_down))
-            }
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.exercise_item_edit))
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.exercise_item_delete))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExerciseItemDialog(
-    existing: ExerciseItem?,
-    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var setsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.sets?.toString() ?: "3") }
-    var repsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.reps?.toString() ?: "10") }
-    var loadText by rememberSaveable(existing?.id) { mutableStateOf(existing?.load ?: "") }
-    var restText by rememberSaveable(existing?.id) { mutableStateOf(existing?.restSeconds?.toString() ?: "") }
-    // Séries/reps caem no mínimo 1 quando em branco; carga e descanso em branco = sem valor (null).
-    val sets = setsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    val reps = repsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (existing == null) R.string.exercise_add_title else R.string.exercise_edit_title))
-        },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.exercise_item_name_label)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = setsText,
-                        onValueChange = { new -> setsText = new.filter { it.isDigit() }.take(3) },
-                        label = { Text(stringResource(R.string.exercise_item_sets_label)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = repsText,
-                        onValueChange = { new -> repsText = new.filter { it.isDigit() }.take(3) },
-                        label = { Text(stringResource(R.string.exercise_item_reps_label)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
-                    value = loadText,
-                    // Carga é texto livre (ex. "20kg"), mas com teto: limita a MAX_LOAD_CHARS, como
-                    // séries/reps/descanso já limitam os seus. Só barra a entrada; o trim no save fica igual.
-                    onValueChange = { loadText = it.take(MAX_LOAD_CHARS) },
-                    label = { Text(stringResource(R.string.exercise_item_load_label)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
-                    value = restText,
-                    onValueChange = { new -> restText = new.filter { it.isDigit() }.take(5) },
-                    label = { Text(stringResource(R.string.exercise_item_rest_label)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val load = loadText.trim().takeIf { it.isNotEmpty() }
-                    val rest = restText.toIntOrNull()
-                    onConfirm(name.trim(), sets, reps, load, rest)
-                },
-                enabled = name.isNotBlank(),
-            ) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-private fun timeOf(minute: Int): LocalTime = LocalTime.of(minute % 1440 / 60, minute % 60)
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
-    )
-}
-
-/** Como o bloco vai aparecer na linha do tempo. */
-@Composable
-private fun Preview(draft: RoutineDraft) {
-    val tone = routineTone(draft.color)
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(width = 48.dp, height = 64.dp)
-                .clip(CircleShape)
-                .background(tone.fill),
-        ) {
-            Icon(draft.icon.imageVector, contentDescription = null, tint = tone.onFill)
-        }
-        Column(modifier = Modifier.padding(start = 16.dp)) {
-            Text(
-                text = when (draft.durationMinutes) {
-                    0 -> minuteOfDayLabel(draft.startMinute)
-                    else -> stringResource(
-                        R.string.routine_time_range,
-                        minuteOfDayLabel(draft.startMinute),
-                        minuteOfDayLabel(draft.endMinuteOfDay),
-                        DurationFormat.format(draft.durationMinutes),
-                    )
-                },
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = draft.title.ifBlank { stringResource(R.string.routine_new_title) },
-                style = MaterialTheme.typography.titleMedium,
-                color = if (draft.title.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun IconPicker(selected: RoutineIcon, color: RoutineColor, onSelect: (RoutineIcon) -> Unit) {
-    val tone = routineTone(color)
-    val labels = stringArrayResource(R.array.routine_icon_labels)
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        RoutineIcon.entries.forEach { icon ->
-            val isSelected = icon == selected
-            val description = stringResource(R.string.routine_icon_option, labels.getOrElse(icon.ordinal) { icon.name })
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(if (isSelected) tone.fill else MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(icon) })
-                    .semantics { contentDescription = description },
-            ) {
-                Icon(
-                    imageVector = icon.imageVector,
-                    contentDescription = null,
-                    tint = if (isSelected) tone.onFill else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ColorPicker(selected: RoutineColor, onSelect: (RoutineColor) -> Unit) {
-    val labels = stringArrayResource(R.array.routine_color_labels)
-    // As 8 cores cabem numa linha só, distribuídas na largura.
-    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        RoutineColor.entries.forEach { color ->
-            val tone = routineTone(color)
-            val isSelected = color == selected
-            val description = stringResource(R.string.routine_color_option, labels.getOrElse(color.ordinal) { color.name })
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(tone.fill)
-                    .then(if (isSelected) Modifier.border(2.dp, tone.onFill, CircleShape) else Modifier)
-                    .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(color) })
-                    .semantics { contentDescription = description },
-            ) {
-                if (isSelected) {
-                    Icon(Icons.Filled.Check, contentDescription = null, tint = tone.onFill, modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimeRow(label: String, value: String, index: Int, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = groupedItemShape(index, 2),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 2.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(text = value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun WeekIntervalStepper(weeks: Int, onChange: (Int) -> Unit) {
-    val label = if (weeks <= 1) {
-        stringResource(R.string.routine_week_interval_weekly)
-    } else {
-        stringResource(R.string.routine_week_interval_every, weeks)
-    }
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { contentDescription = label },
-            )
-            IconButton(
-                onClick = { onChange(weeks - 1) },
-                enabled = weeks > 1,
-            ) {
-                Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.routine_week_decrease))
-            }
-            IconButton(
-                onClick = { onChange(weeks + 1) },
-                enabled = weeks < RoutineDraft.MAX_WEEK_INTERVAL,
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.routine_week_increase))
-            }
-        }
-    }
-}
-
-@Composable
-private fun DateRow(label: String, value: String, index: Int, onClick: () -> Unit, onClear: (() -> Unit)?) {
-    Surface(
-        onClick = onClick,
-        shape = groupedItemShape(index, 2),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 2.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-        ) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(text = value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-            if (onClear != null) {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.routine_date_clear))
-                }
-            } else {
-                Spacer(Modifier.width(12.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoutineDatePicker(initialEpochDay: Long?, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
-    val state = rememberDatePickerState(
-        initialSelectedDateMillis = (initialEpochDay ?: LocalDate.now().toEpochDay()) * MILLIS_PER_DAY,
-    )
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
-                onClick = { state.selectedDateMillis?.let { onConfirm(it / MILLIS_PER_DAY) } },
-                enabled = state.selectedDateMillis != null,
-            ) { Text(stringResource(R.string.ok)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    ) {
-        DatePicker(state = state)
-    }
-}
-
-private const val MILLIS_PER_DAY = 86_400_000L
-
-// Teto de entrada (B2): a carga é texto livre, limitada para evitar campos gigantes.
-private const val MAX_LOAD_CHARS = 24
-private val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(AppLocale.LOCALE)
-
-private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(dateFormatter)
-
-@Composable
-private fun DayPicker(mask: Int, onToggle: (DayOfWeek) -> Unit) {
-    WeekdayToggleRow(isSelected = { RoutineDays.contains(mask, it) }, onToggle = onToggle)
-}
-
-@Composable
-private fun RemindRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-                .heightIn(min = 64.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.routine_remind), style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    text = stringResource(R.string.routine_remind_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            // O toque vale para a linha inteira (toggleable acima); o Switch só mostra o estado.
-            Switch(checked = checked, onCheckedChange = null)
-        }
-    }
-}
-

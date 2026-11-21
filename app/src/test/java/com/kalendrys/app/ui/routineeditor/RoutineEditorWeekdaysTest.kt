@@ -73,6 +73,7 @@ class RoutineEditorWeekdaysTest {
                 ShoppingRepository(db),
                 ExerciseRepository(db.exerciseItemDao()),
                 testUndoOffers(testDb, routineRepository),
+                testDb.appScope(),
             ),
         )
         compose.setContent {
@@ -89,7 +90,7 @@ class RoutineEditorWeekdaysTest {
             compose.onAllNodesWithText("Treino").fetchSemanticsNodes().isNotEmpty()
         }
 
-        compose.onNode(hasScrollToKeyAction()).performScrollToKey("days")
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("when") // os dias ficam na seção Quando (v1.9.0, P4)
         compose.waitForIdle()
 
         compose.assertWeekdayCellsFit(pills, compose.density.density)
