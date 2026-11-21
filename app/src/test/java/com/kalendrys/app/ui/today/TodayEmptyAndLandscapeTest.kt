@@ -4,11 +4,13 @@ import android.content.Context
 import android.os.Looper
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,6 +33,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -122,6 +126,24 @@ class TodayEmptyAndLandscapeTest {
         compose.onNode(emptyNewTask).performScrollTo().assertIsDisplayed().performClick()
         // O painel mora no topo da navegação (E6): a tela só pede, com o dia mostrado.
         assertEquals(listOf("new routine", "new task ${java.time.LocalDate.now()}"), calls)
+    }
+
+    @Test
+    fun `vazio em paisagem com fonte 2_0 - rolando ate o fim as acoes ficam acima do FAB`() {
+        // N-4 (v1.9.0): o preenchimento da casca (com a folga do FAB) vai POR DENTRO da rolagem.
+        show(fontScale = 2f)
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.waitForIdle()
+
+        val fab = compose.onNode(hasContentDescription("Nova tarefa em ", substring = true)).fetchSemanticsNode().boundsInRoot
+        val emptyNewTask = hasText("Nova tarefa") and hasClickAction() and
+            !hasContentDescription("Nova tarefa em ", substring = true)
+        listOf(emptyNewTask, hasText("Nova rotina") and hasClickAction()).forEach { matcher ->
+            val node = compose.onNode(matcher)
+            node.assertIsDisplayed()
+            val bounds = node.fetchSemanticsNode().boundsInRoot
+            assertTrue("ação do vazio ($bounds) sob o FAB ($fab)", bounds.bottom <= fab.top + 0.5f)
+        }
     }
 
     private fun assertLandscapeShowsAndScrolls(fontScale: Float) {
