@@ -1660,7 +1660,15 @@ só na primeira abertura; progresso sem "0 de 0" em dia sem itens; arrastar não
 paisagem com teclado; aviso de lint do painel. Repetição personalizada sem dia válido fica
 inalcançável no editor, e o domínio lê com tolerância o dado que já existir assim.
 
-Hifenização dos títulos de bloco entra **só como ensaio** e sai se complicar.
+Hifenização dos títulos de bloco: **ensaiada e cortada.** Com fonte 2.0 em 320dp o resultado ficou
+misto (uma palavra com hífen, outra quebrada sem hífen), o que é pior que a quebra uniforme de
+antes. O título volta ao estilo da v1.8.0 e vale o limite aceito na 14.13.
+
+**Horário escondido e leitor de tela.** No terceiro degrau o horário não é desenhado, e um nó sem
+largura some da árvore de acessibilidade: o bloco era lido sem hora. Regra: a frase inteira do
+horário fica num nó que **sempre tem tamanho** (a linha que contém o horário, o sino e a lista),
+não no texto que pode não ser desenhado. Teste de semântica no terceiro degrau: o bloco continua
+expondo a faixa inteira.
 
 A conferir antes de virar trabalho, porque podem já ter sumido: atalho do app com editor aberto
 perdendo o rascunho; diálogo de descartar no painel de nova tarefa; entrega do catch-up com
