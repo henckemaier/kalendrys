@@ -33,6 +33,21 @@ data class TaskTiming(
     fun reminderAt(zone: ZoneId): Long? =
         if (date != null && time != null) date.atTime(time).atZone(zone).toInstant().toEpochMilli() else null
 
+    /**
+     * O lembrete continua o de [task] (mesmo horário e mesma repetição, como a tela os lê,
+     * [TaskTiming.of]). O detalhe usa para avisar de lembrete no passado só quando a pessoa escolheu
+     * outro nesta sessão: o que já estava salvo pode ter tocado. Uma personalizada antiga sem dia é
+     * lida como "não repete" dos dois lados e não conta como mudança.
+     */
+    fun keepsReminderOf(task: Task, zone: ZoneId): Boolean {
+        val stored = of(task, zone)
+        return reminderAt(zone) == stored.reminderAt(zone) &&
+            effectiveRepeat == stored.effectiveRepeat &&
+            intervalEvery == stored.intervalEvery &&
+            intervalUnit == stored.intervalUnit &&
+            byWeekdays == stored.byWeekdays
+    }
+
     fun applyTo(task: Task, zone: ZoneId): Task =
         task.copy(
             dueDate = date?.toEpochDay(),

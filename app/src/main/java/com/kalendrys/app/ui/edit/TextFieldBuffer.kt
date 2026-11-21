@@ -64,6 +64,12 @@ class TextFieldBuffer(
     val hasPending: Boolean get() = pending.value != null
 
     /**
+     * Há digitação pendente que [isValid] recusa (título vazio). Diferente de [hasPending], que segue
+     * verdadeiro enquanto um valor válido grava: quem sai da tela só devolve ao campo o recusado.
+     */
+    val hasRejectedPending: Boolean get() = pending.value?.let { !isValid(it) } ?: false
+
+    /**
      * O banco reemitiu [value]. Entra no campo só sem digitação pendente E se for diferente do que o
      * campo mostra depois de normalizado: o eco da própria gravação ("Comprar " gravado como
      * "Comprar") não troca o campo, e uma mudança de fora de verdade entra.

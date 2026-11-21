@@ -22,11 +22,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Fonte única das tarefas: mantém banco e alarmes de lembrete sempre em sincronia. */
 class TaskRepository(
@@ -35,7 +37,7 @@ class TaskRepository(
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
     /**
-     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask],
+     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [edit] (data, hora e repetição),
      * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
      * passado não virar atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
      * BackupManager), sem dependência circular com o runner. Vazio nos testes de repositório.
@@ -150,19 +152,6 @@ class TaskRepository(
     }
 
     /**
-     * Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado.
-     * Grava a linha inteira (detalhe da v1.8.0). Sai na E2 da v1.9.0, quando o detalhe passa a usar [edit].
-     */
-    suspend fun updateTask(task: Task) {
-        closeReminderWindow()
-        alarmLock.withLock {
-            taskDao.update(task)
-            scheduler.cancel(task.id)
-            if (!isFinished(task)) scheduleNext(task)
-        }
-    }
-
-    /**
      * Salvar na hora (v1.9.0, ADR-0002 15.2): aplica [change] sobre a linha MAIS RECENTE da tarefa,
      * lida DENTRO da [alarmLock], e grava só as colunas da mudança. Concluir, desfazer e excluir a
      * lista vinculada por fora, com o detalhe aberto, não são desfeitos por uma edição.
@@ -200,7 +189,9 @@ class TaskRepository(
                         is TaskChange.Title -> taskDao.updateTitle(taskId, updated.title)
                         is TaskChange.Notes -> taskDao.updateNotes(taskId, updated.notes)
                         is TaskChange.Location -> taskDao.updateLocation(taskId, updated.location)
-                        is TaskChange.Timing -> {
+                        // Gravar e reagendar sem cancelamento (NB-E1-B, como o change{} da rotina): cortado
+                        // entre os dois, o banco ficaria com a data nova e o alarme antigo (ou nenhum).
+                        is TaskChange.Timing -> withContext(NonCancellable) {
                             taskDao.updateTiming(
                                 id = taskId,
                                 dueDate = updated.dueDate,

@@ -7,6 +7,7 @@ import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
@@ -108,8 +109,7 @@ class TodayDoneCountEdgeTest {
         val task = repos.tasks.addTask("Levar o carro", timing = TaskTiming(date = today.plusDays(1)))
         repos.tasks.logCompletion(task.id)
         // Concluída adiantada (a data veio para hoje) e depois mudada para +3: reabre.
-        val current = testDb.db.taskDao().byId(task.id)!!
-        repos.tasks.updateTask(current.copy(dueDate = today.plusDays(3).toEpochDay()))
+        repos.tasks.edit(task.id, TaskChange.Timing(TaskTiming(date = today.plusDays(3))))
     }
 
     @Test
