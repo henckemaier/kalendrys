@@ -44,16 +44,19 @@ internal fun TodayProgress(overview: TodayOverview, done: Int, pending: Int) {
                 .semantics(mergeDescendants = true) {}
                 .padding(horizontal = Spacing.s, vertical = Spacing.xs),
         ) {
-            Text(
-                text = stringResource(R.string.today_progress_done, done, total),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            LinearProgressIndicator(
-                progress = { if (total == 0) 0f else done.toFloat() / total },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(Spacing.xs))
+            // Dia sem itens (v1.9.0, 15.7): sem "Feitos: 0 de 0" nem barra vazia; fica o "Nada pendente".
+            if (total > 0) {
+                Text(
+                    text = stringResource(R.string.today_progress_done, done, total),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                LinearProgressIndicator(
+                    progress = { done.toFloat() / total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(Spacing.xs))
+            }
             val tasks = overview.pending.size
             val routines = overview.pendingRoutines.size
             Text(
