@@ -8,6 +8,8 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.domain.RecurrenceUnit
+import com.kalendrys.app.domain.ReminderRepeat
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -37,7 +39,7 @@ interface TaskDao {
     suspend fun insert(task: Task): Long
 
     /**
-     * Grava a lista SÓ dentro de [insertTaskWithNewList] (USO RESTRITO). Fora dela a lista se cria
+     * Grava a lista SÓ dentro de [insertTaskWithNewList] e [linkNewList] (USO RESTRITO). Fora dela a lista se cria
      * pelo [com.kalendrys.app.data.repository.ShoppingRepository.createList]; não chame daqui.
      */
     @Insert
@@ -62,6 +64,62 @@ interface TaskDao {
 
     @Update
     suspend fun update(task: Task)
+
+    // --- Salvar na hora (v1.9.0, ADR-0002 15.2): cada mudança grava SÓ as colunas dela. ---------------
+    // Quem chama é o TaskRepository.edit, sob a trava dele; nada aqui regrava a linha inteira, então
+    // uma gravação de outro caminho (excluir a lista, concluir) entre a leitura e a escrita não é desfeita.
+
+    @Query("UPDATE tasks SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String)
+
+    @Query("UPDATE tasks SET notes = :notes WHERE id = :id")
+    suspend fun updateNotes(id: Long, notes: String)
+
+    @Query("UPDATE tasks SET location = :location WHERE id = :id")
+    suspend fun updateLocation(id: Long, location: String)
+
+    /** Data, lembrete e repetição juntos: um campo só, nunca aplicado pela metade. */
+    @Query(
+        "UPDATE tasks SET dueDate = :dueDate, reminderAt = :reminderAt, reminderRepeat = :repeat, " +
+            "intervalEvery = :intervalEvery, intervalUnit = :intervalUnit, byWeekdays = :byWeekdays WHERE id = :id",
+    )
+    suspend fun updateTiming(
+        id: Long,
+        dueDate: Long?,
+        reminderAt: Long?,
+        repeat: ReminderRepeat,
+        intervalEvery: Int,
+        intervalUnit: RecurrenceUnit?,
+        byWeekdays: Int,
+    )
+
+    @Query("UPDATE tasks SET shoppingListId = :listId WHERE id = :id")
+    suspend fun updateShoppingList(id: Long, listId: Long?)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM shopping_list WHERE id = :listId)")
+    suspend fun listExists(listId: Long): Boolean
+
+    /**
+     * Vincula a tarefa a uma lista EXISTENTE, conferindo a lista na mesma transação: se ela foi
+     * excluída no meio, nada é gravado (sem vínculo com lista inexistente). Devolve se vinculou.
+     */
+    @Transaction
+    suspend fun linkExistingList(taskId: Long, listId: Long): Boolean {
+        if (!listExists(listId)) return false
+        updateShoppingList(taskId, listId)
+        return true
+    }
+
+    /**
+     * Cria a lista [list] (de [ShoppingList.named]) e vincula a tarefa a ela numa transação só (v1.9.0,
+     * fecha o NB-E6-A): falhar o vínculo não deixa lista avulsa. Devolve o id da lista.
+     */
+    @Transaction
+    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long {
+        val listId = insertList(list)
+        updateShoppingList(taskId, listId)
+        return listId
+    }
 
 
     @Delete
