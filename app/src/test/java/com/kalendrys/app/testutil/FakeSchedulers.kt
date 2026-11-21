@@ -17,7 +17,7 @@ import java.time.LocalDateTime
  * AlarmManager nem no NotificationManager reais. Os testes de repositório verificam que o banco
  * e os alarmes andam em sincronia conferindo o que foi agendado/cancelado.
  */
-class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
+open class FakeReminderScheduler(context: Context) : ReminderScheduler(context) {
     data class Scheduled(val task: Task, val triggerAt: Long)
 
     val scheduled = mutableListOf<Scheduled>()

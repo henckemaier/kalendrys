@@ -22,11 +22,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Fonte única das tarefas: mantém banco e alarmes de lembrete sempre em sincronia. */
 class TaskRepository(
@@ -200,7 +202,9 @@ class TaskRepository(
                         is TaskChange.Title -> taskDao.updateTitle(taskId, updated.title)
                         is TaskChange.Notes -> taskDao.updateNotes(taskId, updated.notes)
                         is TaskChange.Location -> taskDao.updateLocation(taskId, updated.location)
-                        is TaskChange.Timing -> {
+                        // Gravar e reagendar sem cancelamento (NB-E1-B, como o change{} da rotina): cortado
+                        // entre os dois, o banco ficaria com a data nova e o alarme antigo (ou nenhum).
+                        is TaskChange.Timing -> withContext(NonCancellable) {
                             taskDao.updateTiming(
                                 id = taskId,
                                 dueDate = updated.dueDate,
