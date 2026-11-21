@@ -38,8 +38,11 @@ class ReminderCatchUpRunner(
 
     /** O que o catch-up mostra; no app, notificações e widgets ([AndroidCatchUpNotifier]). */
     interface Notifier {
-        /** Lembrete normal da tarefa (Concluir, Adiar, Abrir lista), com o id da tarefa. */
-        suspend fun showReminder(task: Task)
+        /**
+         * Lembrete normal da tarefa (Concluir, Adiar, Abrir lista), com o id da tarefa. [firedAt] é o
+         * instante da OCORRÊNCIA entregue: a notificação leva o dia dela nas ações (NB-E5-A).
+         */
+        suspend fun showReminder(task: Task, firedAt: Long)
 
         /** Aviso agregado "N lembretes perdidos" (id fixo: uma nova contagem substitui a anterior). */
         fun showMissed(count: Int)
@@ -48,6 +51,11 @@ class ReminderCatchUpRunner(
         suspend fun remindersChanged()
     }
 
+    /**
+     * Uma execução do catch-up por vez. ORDEM DAS TRAVAS (NB-E1-B da v1.8.0): esta por FORA, a trava de
+     * alarmes do [TaskRepository] por DENTRO (o [TaskRepository.rescheduleReminders] a pega aqui dentro),
+     * nunca o contrário: o repositório chama o catch-up (fechar a janela) sempre fora da trava dele.
+     */
     private val mutex = Mutex()
 
     /**
@@ -70,7 +78,7 @@ class ReminderCatchUpRunner(
         withContext(NonCancellable) {
             for (occurrence in plan.late) {
                 val task = lateTasks[occurrence.taskId] ?: continue
-                notifier.showReminder(task)
+                notifier.showReminder(task, occurrence.firedAt)
                 // Higiene: o alarme da tarefa única que sobrar pendente tocaria numa janela vazia.
                 if (task.repeat == ReminderRepeat.NONE) repository.cancelReminderAlarm(task.id)
             }

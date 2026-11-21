@@ -4,7 +4,9 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import kotlinx.coroutines.flow.Flow
 
@@ -34,12 +36,33 @@ interface TaskDao {
     @Insert
     suspend fun insert(task: Task): Long
 
+    /**
+     * Grava a lista SÓ dentro de [insertTaskWithNewList] (USO RESTRITO). Fora dela a lista se cria
+     * pelo [com.kalendrys.app.data.repository.ShoppingRepository.createList]; não chame daqui.
+     */
+    @Insert
+    suspend fun insertList(list: ShoppingList): Long
+
+    /**
+     * "Criar nova" lista no painel de nova tarefa (v1.8.0, E6): grava a lista e a tarefa já vinculada
+     * a ela numa transação só e devolve o id da tarefa. Sem ela, uma falha ao gravar a tarefa deixava
+     * uma lista avulsa que ninguém pediu. [list] vem de [ShoppingList.named]; o [Task.shoppingListId]
+     * de [task] é trocado pelo da lista gravada. Só DAO aqui dentro: trava, agendamento do lembrete e
+     * catch-up ficam com o repositório, fora da transação.
+     */
+    @Transaction
+    suspend fun insertTaskWithNewList(list: ShoppingList, task: Task): Long {
+        val listId = insertList(list)
+        return insert(task.copy(shoppingListId = listId))
+    }
+
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(tasks: List<Task>)
 
     @Update
     suspend fun update(task: Task)
+
 
     @Delete
     suspend fun delete(task: Task)

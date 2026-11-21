@@ -5,16 +5,23 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
-import com.kalendrys.app.NewTaskDraftStore
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
+import java.time.LocalDate
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -25,12 +32,16 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** Lista de compras na lista de tarefas (ADR-0001, v1.6.0): progresso 3/8 na linha e anexar ao criar. */
+/**
+ * Lista de compras na lista de tarefas (ADR-0001, v1.6.0): progresso 3/8 na linha e anexar ao criar.
+ * Desfazer de concluir e excluir pela lista é a oferta do app (v1.8.0, E5).
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -40,6 +51,7 @@ class TaskViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var taskRepository: TaskRepository
     private lateinit var shoppingRepository: ShoppingRepository
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -49,6 +61,7 @@ class TaskViewModelTest {
         db = testDb.db
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
+        undoOffers = testUndoOffers(testDb, tasks = taskRepository)
     }
 
     @After
@@ -57,7 +70,7 @@ class TaskViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, NewTaskDraftStore()))
+    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers))
 
     private suspend fun ReceiveTurbine<TaskViewModel.UiState>.awaitState(
         predicate: (TaskViewModel.UiState) -> Boolean,
@@ -102,31 +115,109 @@ class TaskViewModelTest {
         }
     }
 
-    @Test
-    fun `criar tarefa com lista existente grava o vinculo`() = runTest {
-        val listId = shoppingRepository.createList("Mercado")
-        viewModel().addTask("Mercado", "", TaskTiming(date = null), "", NewTaskList.Existing(listId))
+    // --- E5 (v1.8.0): Desfazer da lista é a oferta do app ---
 
-        val task = taskRepository.tasks.first { it.isNotEmpty() }.single()
-        assertEquals(listId, task.shoppingListId)
-        assertEquals(1, shoppingRepository.observeLists().first().size)
+    /** A oferta do app publicada pela ação (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
     }
 
     @Test
-    fun `criar tarefa com lista nova cria a lista so ao salvar e vincula`() = runTest {
-        viewModel().addTask("Churrasco", "", TaskTiming(date = null), "", NewTaskList.New("Churrasco de sábado"))
+    fun `concluir pelo circulo publica a oferta do app e o Desfazer apaga o registro e a tarefa volta a pendente`() = runTest {
+        val task = taskRepository.addTask("Pagar conta")
+        val vm = viewModel()
 
-        val task = taskRepository.tasks.first { it.isNotEmpty() }.single()
-        val list = shoppingRepository.observeLists().first().single()
-        assertEquals("Churrasco de sábado", list.name)
-        assertEquals(list.id, task.shoppingListId)
+        vm.complete(task)
+
+        val offer = awaitOffer()!!
+        val logId = (offer.target as UndoTarget.CompletedTask).logId
+        assertEquals(task.id, db.completionLogDao().byId(logId)?.taskId)
+        vm.uiState.test {
+            awaitState { it.isLoaded && it.doneToday.any { item -> item.task.id == task.id } }
+            undoOffers.undo(offer).join()
+            awaitState { it.noDate.any { item -> item.task.id == task.id } && it.doneToday.isEmpty() }
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNull("registro apagado", db.completionLogDao().byId(logId))
+        assertNull(undoOffers.pending.value)
     }
 
     @Test
-    fun `criar tarefa sem lista nao cria lista`() = runTest {
-        viewModel().addTask("Ligar", "", TaskTiming(date = null), "")
+    fun `excluir pelo deslize publica a oferta do app e o Desfazer devolve a tarefa`() = runTest {
+        val task = taskRepository.addTask("Pagar conta")
 
-        assertNull(taskRepository.tasks.first { it.isNotEmpty() }.single().shoppingListId)
-        assertEquals(0, shoppingRepository.observeLists().first().size)
+        viewModel().delete(task)
+
+        val offer = awaitOffer()!!
+        assertEquals(UndoTarget.DeletedTask(task), offer.target)
+        assertNull(db.taskDao().byId(task.id))
+        undoOffers.undo(offer).join()
+        assertEquals(task, db.taskDao().byId(task.id))
+    }
+
+    @Test
+    fun `escopo da tela cancelado logo depois de concluir ainda conclui e publica a oferta`() = runTest {
+        val task = taskRepository.addTask("Pagar conta")
+        val vm = viewModel()
+
+        vm.complete(task)
+        vm.viewModelScope.cancel()
+
+        val logId = (awaitOffer()!!.target as UndoTarget.CompletedTask).logId
+        assertEquals(task.id, db.completionLogDao().byId(logId)?.taskId)
+    }
+
+    @Test
+    fun `escopo da tela cancelado logo depois de excluir ainda exclui e publica a oferta`() = runTest {
+        val task = taskRepository.addTask("Pagar conta")
+        val vm = viewModel()
+
+        vm.delete(task)
+        vm.viewModelScope.cancel()
+
+        assertEquals(UndoTarget.DeletedTask(task), awaitOffer()!!.target)
+        assertNull(db.taskDao().byId(task.id))
+    }
+
+    @Test
+    fun `excluir e depois concluir outra pela lista - a conclusao substitui e o Desfazer desfaz so ela`() = runTest {
+        val deleted = taskRepository.addTask("Excluída")
+        val done = taskRepository.addTask("Concluída")
+        val vm = viewModel()
+
+        vm.delete(deleted)
+        val deleteOffer = awaitOffer()!!
+        vm.complete(done)
+        val completeOffer = withContext(Dispatchers.Default) {
+            withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null && it != deleteOffer } }
+        }!!
+        val logId = (completeOffer.target as UndoTarget.CompletedTask).logId
+
+        undoOffers.undo(completeOffer).join()
+
+        assertNull("só a conclusão é desfeita", db.completionLogDao().byId(logId))
+        assertNull("a excluída continua excluída", db.taskDao().byId(deleted.id))
+        assertTrue(db.taskDao().byId(done.id) != null)
+        assertNull(undoOffers.pending.value)
+    }
+
+    // --- C-1 (v1.8.0): repetida nunca fica atrasada na lista ---
+
+    @Test
+    fun `repetida com data no passado nunca vai para Atrasadas - a fora do dia vai para Proximas com a proxima data`() = runTest {
+        val today = LocalDate.now()
+        // 10 dias atrás: a semanal não cai hoje (10 não é múltiplo de 7); a diária cai todo dia.
+        taskRepository.addTask("Semanal", timing = TaskTiming(date = today.minusDays(10), repeat = ReminderRepeat.WEEKLY))
+        taskRepository.addTask("Diária", timing = TaskTiming(date = today.minusDays(10), repeat = ReminderRepeat.DAILY))
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.upcoming.size + it.dueToday.size == 2 }
+
+            assertTrue("nenhuma repetida em Atrasadas", state.overdue.isEmpty())
+            val weekly = state.upcoming.single { it.task.title == "Semanal" }
+            assertTrue("data de Próximas depois de hoje: ${weekly.date}", weekly.date!!.isAfter(today))
+            assertEquals(listOf("Diária"), state.dueToday.map { it.task.title })
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }

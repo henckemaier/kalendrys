@@ -3,6 +3,74 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.8.0 — Hoje e dados (versionCode 10800)
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 14).
+Banco **10 → 11** com migração automática (só colunas opcionais no histórico de conclusões); o
+backup continua no formato 6, com campos opcionais novos. Sem dependência nova e sem permissão
+nova.
+
+### Novidades
+
+- **Tela Hoje** como tela inicial, no lugar da aba Rotinas (abas: Hoje, Tarefas, Calendário,
+  Listas):
+  - progresso do dia, próximo item e linha do tempo das rotinas;
+  - tarefas em três seções, **Atrasadas**, **Hoje** e **Sem data** (recolhida), com os mesmos
+    números do widget Resumo;
+  - **Concluídas (n)**, recolhível no fim: tudo o que foi concluído no dia mostrado, que pode ser
+    desmarcado dali;
+  - a tela inteira rola, inclusive a faixa da semana, também em paisagem;
+  - passada a meia-noite, a tela vai sozinha para o dia novo;
+  - o botão "+" cria tarefa, e "Nova rotina" fica no menu.
+- **Todas as rotinas**: tela nova com as rotinas ativas e pausadas, o filtro por categoria e as
+  ações editar, pausar, retomar e excluir, com Desfazer. A rotina pausada não some mais.
+- **Pular com Desfazer**: o bloco pulado continua visível no dia, esmaecido, com o controle de
+  desfazer. Pular e remarcar ficam num menu ao segurar o bloco.
+- **Conclusão retroativa**: concluir uma tarefa pela linha de um dia passado grava a conclusão
+  naquele dia. Numa tarefa repetida, isso não conclui mais a ocorrência de hoje.
+- **Desfazer definitivo da conclusão adiantada**: concluir antes do dia uma tarefa única e
+  desfazer devolve a data e o lembrete mesmo depois de fechar o app ou horas depois.
+- **Excluir pelo detalhe da tarefa com Desfazer**: a mensagem aparece na tela de onde se veio.
+- **Linha do tempo com fonte grande**: o bloco cresce para caber o título inteiro e o horário,
+  em vez de cortar; a duração dá só a altura mínima.
+
+### Mudanças de comportamento
+
+- **Excluir rotina** pelo editor deixa de pedir confirmação e passa a oferecer **Desfazer** por
+  até 30 s; a ação se chama **Excluir** em todo lugar (por baixo continua o arquivamento: os dias
+  passados ficam no histórico).
+- Tocar **Concluir** numa notificação **de ontem** de uma tarefa repetida marca ontem como feito;
+  o lembrete de hoje continua valendo.
+- O **"+" do widget** e o atalho **Nova tarefa** abrem o painel onde a pessoa estiver, sem trocar
+  para a aba Tarefas; em paisagem, **Salvar** fica sempre visível no topo do painel.
+- Na **lista de tarefas**, o Desfazer de concluir ou excluir não some mais ao girar a tela e
+  acompanha a troca de aba por até 30 s.
+- Na lista de tarefas, a **busca e os filtros rolam junto** com a lista. A tarefa repetida que
+  não acontece hoje mostra o ícone de repetição no lugar do círculo de concluir.
+- **Toque duplo em Concluir** numa tarefa única grava uma conclusão só.
+- **"Feitas hoje"** conta as tarefas com conclusão registrada hoje, igual na Hoje, no widget e no
+  resumo diário.
+- O alarme de uma tarefa concluída antes do horário não fica mais marcado no sistema para o mesmo
+  dia; desfazer devolve o alarme.
+
+### Limitação conhecida
+
+- Conclusões adiantadas feitas antes da v1.8.0 continuam sendo desfeitas sem devolver a data e o
+  lembrete originais; as novas devolvem.
+
+### Interno
+
+- **Abertura a frio**: **não medida**. A sessão no emulador foi inválida pelo protocolo: a
+  dispersão passou do limite de 20% (p90 +31,3% na rodada da v1.7.1 e +22,3% na da v1.8.0), e a
+  segunda rodada da v1.7.1 não rodou porque ela não abre sobre o banco 11. As medianas ficam só
+  como registro (com perfil, tempo até o primeiro quadro): v1.7.1 1.031,1 ms; v1.8.0 987,8 e
+  1.016,0 ms.
+- **Acessibilidade**: leitor de tela com fala real não verificado; as telas novas são cobertas
+  por testes de semântica, que passam a ser critério de aceite de toda tela nova.
+- Painel de nova tarefa com um dono só no topo da navegação; criar lista e tarefa numa
+  transação só.
+- Baseline Profile regerado com as jornadas da tela Hoje.
+
 ## v1.7.1 — Acessibilidade e pendências do redesenho (versionCode 10701)
 
 Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 13).

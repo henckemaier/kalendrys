@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -29,6 +30,9 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testUndoOffers
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -55,6 +59,7 @@ class RoutineEditorShellTest {
     private lateinit var testDb: ViewModelTestDatabase
     private var routineId = 0L
     private var closed = 0
+    private lateinit var offers: UndoOffers
 
     @Before
     fun setup() {
@@ -70,6 +75,7 @@ class RoutineEditorShellTest {
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
         )
+        offers = testUndoOffers(testDb, routineRepository)
         val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
         routineId = routine.id
         val viewModel = testDb.track(
@@ -79,6 +85,7 @@ class RoutineEditorShellTest {
                 RoutineCategoryRepository(db),
                 ShoppingRepository(db),
                 ExerciseRepository(db.exerciseItemDao()),
+                offers,
             ),
         )
         compose.setContent {
@@ -103,8 +110,23 @@ class RoutineEditorShellTest {
 
         compose.onNodeWithText("Duplicar rotina").assertIsDisplayed()
         compose.onNodeWithText("Pausar rotina").assertIsDisplayed()
-        compose.onNodeWithText("Excluir rotina").performClick()
-        compose.onNodeWithText("Excluir rotina?").assertIsDisplayed()
+        compose.onNodeWithText("Excluir rotina").assertIsDisplayed()
+    }
+
+    /** P8: "Excluir rotina" é um item de menu com ação de toque; exclui sem confirmação e fecha. */
+    @Test
+    fun `Excluir rotina no menu exclui sem confirmacao, oferece Desfazer e fecha`() {
+        compose.onNodeWithContentDescription("Mais opções").performClick()
+        compose.onNode(hasText("Excluir rotina") and hasClickAction()).assertIsDisplayed().performClick()
+
+        compose.waitUntil(TIMEOUT_MS) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+            closed == 1 && offers.pending.value != null
+        }
+        assertEquals(0, compose.onAllNodesWithText("Excluir rotina?").fetchSemanticsNodes().size)
+        assertEquals(true, runBlocking { testDb.db.routineDao().byId(routineId)?.archivedAt } != null)
+        assertEquals(UndoTarget.DeletedRoutine(routineId), offers.pending.value?.target)
     }
 
     /** "Salvar" é o TextButton da barra (TopBarAction.prominent): liga com a alteração, grava e fecha. */

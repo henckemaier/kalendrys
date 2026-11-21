@@ -15,6 +15,7 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ReminderSnooze
 import com.kalendrys.app.domain.ShoppingProgress
+import java.time.LocalDate
 
 /**
  * Monta e exibe a notificação de lembrete, com as ações "Concluir" e "Adiar" (e "Abrir lista"
@@ -30,8 +31,12 @@ object ReminderNotifications {
     /**
      * [listProgress] é o progresso da lista da tarefa; `null` quando ela não tem lista ou o vínculo
      * é órfão (lista excluída), e aí a notificação fica como sempre foi.
+     *
+     * [occurrenceDay]: o dia da ocorrência que esta notificação mostra (NB-E5-A). Vai nas ações
+     * Concluir e Adiar: o Concluir de uma ocorrência de dia passado grava naquele dia, e o adiamento
+     * reexibe com o MESMO dia. `null` (notificação sem o dia) vale como hoje.
      */
-    fun show(context: Context, task: Task, listProgress: ShoppingProgress? = null) {
+    fun show(context: Context, task: Task, listProgress: ShoppingProgress? = null, occurrenceDay: LocalDate? = null) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -56,12 +61,12 @@ object ReminderNotifications {
                 Action.COMPLETE -> builder.addAction(
                     0,
                     context.getString(R.string.reminder_complete_action),
-                    broadcast(context, ReminderActionReceiver.ACTION_COMPLETE, task.id, AppLinks.reminderComplete(task.id)),
+                    broadcast(context, ReminderActionReceiver.ACTION_COMPLETE, task.id, AppLinks.reminderComplete(task.id), occurrenceDay),
                 )
                 Action.SNOOZE -> builder.addAction(
                     0,
                     context.getString(R.string.reminder_snooze_action, ReminderSnooze.DEFAULT_MINUTES),
-                    broadcast(context, ReminderActionReceiver.ACTION_SNOOZE, task.id, AppLinks.reminderSnooze(task.id)),
+                    broadcast(context, ReminderActionReceiver.ACTION_SNOOZE, task.id, AppLinks.reminderSnooze(task.id), occurrenceDay),
                 )
                 // Abre o app direto na lista, com a tarefa como origem (oferta "Concluir tarefa").
                 Action.OPEN_LIST -> builder.addAction(
@@ -88,14 +93,20 @@ object ReminderNotifications {
         }
 
     // Uri próprio por tarefa e ação: extras não diferenciam PendingIntents, o Uri sim.
-    private fun broadcast(context: Context, action: String, taskId: Long, data: Uri): PendingIntent =
+    private fun broadcast(context: Context, action: String, taskId: Long, data: Uri, occurrenceDay: LocalDate?): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             taskId.toInt(),
-            Intent(context, ReminderActionReceiver::class.java)
-                .setAction(action)
-                .setData(data)
-                .putExtra(ReminderActionReceiver.EXTRA_TASK_ID, taskId),
+            actionIntent(context, action, taskId, data, occurrenceDay),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+    /** Intent de uma ação do lembrete, com o dia da ocorrência quando há (NB-E5-A). */
+    internal fun actionIntent(context: Context, action: String, taskId: Long, data: Uri, occurrenceDay: LocalDate?): Intent =
+        Intent(context, ReminderActionReceiver::class.java)
+            .setAction(action)
+            .setData(data)
+            .putExtra(ReminderActionReceiver.EXTRA_TASK_ID, taskId)
+            .apply { occurrenceDay?.let { putExtra(ReminderActionReceiver.EXTRA_OCCURRENCE_DAY, it.toEpochDay()) } }
+
 }

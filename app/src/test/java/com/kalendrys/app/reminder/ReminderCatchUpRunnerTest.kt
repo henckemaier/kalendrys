@@ -63,7 +63,7 @@ class ReminderCatchUpRunnerTest {
         var failNextReschedule = false
         val cancelled = mutableListOf<Long>()
 
-        override fun schedule(task: Task, after: Long) {
+        override fun schedule(task: Task, triggerAt: Long) {
             log += "schedule:${task.id}"
         }
 
@@ -73,27 +73,31 @@ class ReminderCatchUpRunnerTest {
 
         override fun dismissNotification(taskId: Long) = Unit
 
-        override fun rescheduleAll(tasks: List<Task>) {
+        override fun rescheduleAll(alarms: List<ReminderAlarm>) {
             if (failNextReschedule) {
                 failNextReschedule = false
                 throw IllegalStateException("processo morreu antes da marca")
             }
-            log += "reschedule:" + tasks.map { it.id }.sorted().joinToString(",")
+            log += "reschedule:" + alarms.map { it.task.id }.sorted().joinToString(",")
         }
     }
 
     private class FakeNotifier(private val log: MutableList<String>) : ReminderCatchUpRunner.Notifier {
         val shown = mutableListOf<Long>()
+
+        /** O instante da OCORRÊNCIA que cada entrega recebeu (NB-E5-B): é dele que sai o dia da notificação. */
+        val firedAt = mutableListOf<Long>()
         val missed = mutableListOf<Int>()
 
         /** Se definido, a entrega espera por ele (segura o Mutex no meio da execução). */
         var gate: CompletableDeferred<Unit>? = null
         val entered = CompletableDeferred<Unit>()
 
-        override suspend fun showReminder(task: Task) {
+        override suspend fun showReminder(task: Task, firedAt: Long) {
             entered.complete(Unit)
             gate?.await()
             shown += task.id
+            this.firedAt += firedAt
             log += "show:${task.id}"
         }
 
@@ -142,6 +146,20 @@ class ReminderCatchUpRunnerTest {
     private suspend fun seenAt(millis: Long) {
         settings.setLastSeen(millis)
         log.clear()
+    }
+
+    @Test
+    fun `ocorrencia de ontem 23h50 entregue hoje chega com o instante dela, e o dia e o de ontem`() = runTest {
+        // NB-E5-B da revisão do Lince: o runner passa o firedAt da ocorrência, não o agora.
+        val yesterday = day.minusDays(1)
+        val task = insertTask(23, 50, repeat = ReminderRepeat.DAILY, date = yesterday.minusDays(3))
+        seenAt(at(23, 40, yesterday))
+
+        runner.run(at(0, 10)) // abriu o app às 0:10 de hoje: a das 23:50 de ontem está na tolerância
+
+        assertEquals(listOf(task.id), notifier.shown)
+        assertEquals(listOf(at(23, 50, yesterday)), notifier.firedAt)
+        assertEquals(yesterday, java.time.Instant.ofEpochMilli(notifier.firedAt.single()).atZone(zone).toLocalDate())
     }
 
     @Test

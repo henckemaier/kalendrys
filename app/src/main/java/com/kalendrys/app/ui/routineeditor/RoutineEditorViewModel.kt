@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
@@ -42,7 +43,9 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
@@ -50,6 +53,8 @@ class RoutineEditorViewModel(
     private val categoryRepository: RoutineCategoryRepository,
     private val shoppingRepository: ShoppingRepository,
     private val exerciseRepository: ExerciseRepository,
+    /** Oferta de Desfazer do app (P8): "Excluir rotina" oferece aqui e a mensagem aparece na origem. */
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -251,10 +256,30 @@ class RoutineEditorViewModel(
         }
     }
 
+    /**
+     * "Excluir rotina" (P8): arquiva, oferece o Desfazer do app ([UndoOffers]) e fecha a tela; a
+     * mensagem "Rotina excluída" aparece na tela de origem (Hoje, Todas as rotinas, Calendário). Sem
+     * confirmação (ação com Desfazer, ADR-0002 5.4).
+     *
+     * Com alterações não salvas, a exclusão vence: o rascunho é descartado sem o "Descartar
+     * alterações?" — os campos não são gravados e as edições de exercício da sessão voltam ao que
+     * eram ao abrir, como no descartar. O Desfazer devolve a rotina como estava GRAVADA, não o
+     * rascunho. O aviso que a exclusão tirou da tela não volta.
+     *
+     * Arquivar e oferecer é UMA operação do [UndoOffers], no escopo do app (NB-E3-C). Reverter as
+     * edições de exercício continua ANTES, aqui, e sem cancelamento: fechar a tela no meio não deixa
+     * o pedido de exclusão para trás.
+     */
     fun delete() {
-        val existing = uiState.value.routine ?: return
+        val state = uiState.value
+        val existing = state.routine ?: return
         viewModelScope.launch {
-            repository.archive(existing)
+            withContext(NonCancellable) {
+                if (state.exerciseItemsChanged) {
+                    state.exerciseBaseline?.let { exerciseRepository.replaceItems(routineId, it) }
+                }
+                undoOffers.deleteRoutine(existing)
+            }
             eventChannel.send(Event.Closed)
         }
     }
@@ -371,6 +396,7 @@ class RoutineEditorViewModel(
                     app.routineCategoryRepository,
                     app.shoppingRepository,
                     app.exerciseRepository,
+                    app.undoOffers,
                 )
             }
         }

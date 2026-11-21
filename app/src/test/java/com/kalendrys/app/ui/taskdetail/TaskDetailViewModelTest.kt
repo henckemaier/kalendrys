@@ -6,6 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
@@ -17,6 +20,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -44,6 +51,7 @@ class TaskDetailViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var taskRepository: TaskRepository
     private lateinit var shoppingRepository: ShoppingRepository
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -53,6 +61,7 @@ class TaskDetailViewModelTest {
         db = testDb.db
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
+        undoOffers = testUndoOffers(testDb)
     }
 
     @After
@@ -62,7 +71,7 @@ class TaskDetailViewModelTest {
     }
 
     private fun viewModel(taskId: Long) = testDb.track(
-        TaskDetailViewModel(SavedStateHandle(mapOf(TASK_ID_ARG to taskId)), taskRepository, shoppingRepository),
+        TaskDetailViewModel(SavedStateHandle(mapOf(TASK_ID_ARG to taskId)), taskRepository, shoppingRepository, undoOffers),
     )
 
     private suspend fun ReceiveTurbine<TaskDetailViewModel.UiState>.awaitState(
@@ -252,5 +261,49 @@ class TaskDetailViewModelTest {
             assertFalse(after.hasChanges)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // --- Excluir pelo detalhe com Desfazer na origem (v1.8.0, E0-D) -------------------------------
+
+    @Test
+    fun `excluir pede ao objeto do app e fecha - a oferta vem com a tarefa como estava`() = runTest {
+        val listId = shoppingRepository.createList("Feira")
+        val id = tomorrowTask(listId)
+        val before = stored(id)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.task != null }
+            vm.delete()
+            assertEquals(TaskDetailViewModel.Event.Deleted, vm.events.first())
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // Excluir e oferecer correm no escopo do app (NB-E3-C): a oferta chega com lembrete e vínculo.
+        val offered = (awaitOffer()!!.target as UndoTarget.DeletedTask).task
+        assertEquals(before, offered)
+        assertEquals(listId, offered.shoppingListId)
+        assertTrue(offered.reminderAt != null)
+        assertNull(db.taskDao().byId(id))
+    }
+
+    @Test
+    fun `fechar a tela logo depois de pedir a exclusao ainda exclui e publica a oferta`() = runTest {
+        val id = tomorrowTask(null)
+        val vm = viewModel(id)
+        vm.uiState.test {
+            awaitState { it.task != null }
+            vm.delete()
+            cancelAndIgnoreRemainingEvents()
+        }
+        // A tela fecha na hora: o escopo dela é cancelado antes de o trabalho do app terminar.
+        vm.viewModelScope.cancel()
+
+        assertEquals(id, (awaitOffer()!!.target as UndoTarget.DeletedTask).task.id)
+        assertNull(db.taskDao().byId(id))
+    }
+
+    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
+    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
+        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
     }
 }

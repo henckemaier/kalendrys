@@ -11,8 +11,15 @@ import java.time.ZoneId
  * tarefas pontuais (com horário) daquele dia. Lógica pura, para a tela de rotinas desenhar sem
  * calcular nada. As tarefas sem horário não entram aqui — a tela as mostra numa faixa à parte.
  *
- * Honra as exceções pontuais (T20): uma ocorrência com `SKIP` some do dia, e uma `RESCHEDULE` entra
- * (ou sai) no horário/dia efetivo — por isso cada [Block] carrega o seu início já resolvido.
+ * Honra as exceções pontuais (T20): uma `RESCHEDULE` entra (ou sai) no horário/dia efetivo — por isso
+ * cada [Block] carrega o seu início já resolvido. Uma ocorrência com `SKIP` some do dia, a não ser
+ * com `includeSkipped` (a Hoje, P5 da v1.8.0): aí o bloco PULADO continua na lista, marcado
+ * ([Block.skipped]), no horário normal, para a tela o mostrar esmaecido com a ação de desfazer.
+ *
+ * O bloco pulado não ocupa o lugar de bloco ativo: não entra nas contas de intervalo ([Gap]) nem de
+ * ligação ([Link]) dos outros, como se não existisse; as ligações dele mesmo são [Link.NONE]. Fica
+ * na ordem pelo início, depois dos itens que começam no mesmo minuto. Quem conta o dia ("próximo
+ * item", progresso, agrupamento) deve ignorar os pulados ([Item.isActive]).
  */
 object DayTimeline {
 
@@ -33,6 +40,9 @@ object DayTimeline {
 
         /** Minuto do dia em que o item começa; ordena a trilha. */
         val startMinute: Int
+
+        /** Conta no dia (não é um bloco pulado): o que "próximo item", progresso e agrupamento olham. */
+        val isActive: Boolean get() = !(this is Block && skipped)
     }
 
     data class Block(
@@ -42,6 +52,14 @@ object DayTimeline {
         override val startMinute: Int,
         val linkAbove: Link,
         val linkBelow: Link,
+        /**
+         * Dia da OCORRÊNCIA: o dia em que mora a exceção dela (`RoutineOverride.epochDay`). É o dia
+         * de ORIGEM quando o bloco veio remarcado de outro dia (A1 do Esquadro na E3); nos outros casos,
+         * o próprio dia mostrado. Pular, Remarcar e Desfazer pular agem neste dia, não no mostrado.
+         */
+        val occurrenceDate: LocalDate,
+        /** Ocorrência pulada (`SKIP`) naquele dia: só vem com `includeSkipped`; ver [DayTimeline]. */
+        val skipped: Boolean = false,
     ) : Item {
         /** Pode passar de 1440 (bloco que termina depois da meia-noite). */
         val endMinute: Int get() = startMinute + routine.durationMinutes
@@ -79,21 +97,39 @@ object DayTimeline {
         tasks: List<Task> = emptyList(),
         doneTaskIds: Set<Long> = emptySet(),
         overrides: Map<Long, List<RoutineOverride>> = emptyMap(),
+        includeSkipped: Boolean = false,
     ): List<Item> {
         // Cada rotina (já honrando SKIP/RESCHEDULE) e cada tarefa com horário, como pontos [start, end]
         // na mesma trilha: a rotina ocupa a sua duração, a tarefa é um ponto (end = start).
         val entries = ArrayList<Entry>(routines.size + tasks.size)
+        // Pulados ficam à parte: entram na lista no fim, sem mexer em intervalos e ligações.
+        val skippedBlocks = ArrayList<Block>()
         routines.forEach { routine ->
             val ov = overrides[routine.id].orEmpty()
-            if (!RoutineSchedule.occursOn(routine, date, zone, ov)) return@forEach
+            if (!RoutineSchedule.occursOn(routine, date, zone, ov)) {
+                if (includeSkipped && isSkippedOn(routine, date, zone, ov)) {
+                    skippedBlocks += Block(
+                        routine = routine,
+                        done = routine.id in doneIds,
+                        startMinute = routine.startMinute,
+                        linkAbove = Link.NONE,
+                        linkBelow = Link.NONE,
+                        // O SKIP mora no próprio dia mostrado.
+                        occurrenceDate = date,
+                        skipped = true,
+                    )
+                }
+                return@forEach
+            }
             val start = RoutineSchedule.startOn(routine, date, ov)
             val startMinute = start.hour * 60 + start.minute
+            val occurrenceDate = occurrenceDateOf(date, ov)
             entries += Entry(
                 startMinute = startMinute,
                 endMinute = startMinute + routine.durationMinutes,
                 isRoutine = true,
                 orderId = routine.id,
-            ) { above, below -> Block(routine, routine.id in doneIds, startMinute, above, below) }
+            ) { above, below -> Block(routine, routine.id in doneIds, startMinute, above, below, occurrenceDate) }
         }
         tasks.forEach { task ->
             val time = TaskSchedule.reminderOn(task, date, zone) ?: return@forEach
@@ -105,7 +141,7 @@ object DayTimeline {
                 orderId = task.id,
             ) { above, below -> TaskItem(task, startMinute, task.id in doneTaskIds, above, below) }
         }
-        if (entries.isEmpty()) return emptyList()
+        if (entries.isEmpty()) return withSkipped(emptyList(), skippedBlocks)
         // Ordem estável por horário; no mesmo minuto a rotina (com duração) vem antes da tarefa pontual.
         entries.sortWith(compareBy({ it.startMinute }, { if (it.isRoutine) 0 else 1 }, { it.orderId }))
 
@@ -137,7 +173,39 @@ object DayTimeline {
             }
             items += entry.toItem(linkAbove, linkBelow)
         }
-        return items
+        return withSkipped(items, skippedBlocks)
+    }
+
+    /**
+     * Dia da ocorrência que aparece em [date]: o de ORIGEM se ela veio remarcada de outro dia (a
+     * mesma remarcação de entrada que o [RoutineSchedule.occursOn] e o [RoutineSchedule.startOn]
+     * honram primeiro); senão, o próprio [date].
+     */
+    private fun occurrenceDateOf(date: LocalDate, overrides: List<RoutineOverride>): LocalDate {
+        val epochDay = date.toEpochDay()
+        val inbound = overrides.firstOrNull { it.type == RoutineOverrideType.RESCHEDULE && it.newEpochDay == epochDay }
+        return if (inbound != null && inbound.epochDay != epochDay) LocalDate.ofEpochDay(inbound.epochDay) else date
+    }
+
+    /**
+     * A ocorrência de [routine] em [date] foi pulada: aconteceria pela regra base, mas há um `SKIP`
+     * naquele dia. Remarcada para outro dia não é "pulada" (ela aparece onde caiu).
+     */
+    private fun isSkippedOn(routine: Routine, date: LocalDate, zone: ZoneId, overrides: List<RoutineOverride>): Boolean {
+        val epochDay = date.toEpochDay()
+        val skip = overrides.firstOrNull { it.epochDay == epochDay }?.type == RoutineOverrideType.SKIP
+        return skip && RoutineSchedule.occursOn(routine, date, zone)
+    }
+
+    /** Põe cada pulado na ordem pelo início, depois dos itens que começam no mesmo minuto (ou antes). */
+    private fun withSkipped(items: List<Item>, skipped: List<Block>): List<Item> {
+        if (skipped.isEmpty()) return items
+        val result = items.toMutableList()
+        skipped.sortedWith(compareBy({ it.startMinute }, { it.routine.id })).forEach { block ->
+            val index = result.indexOfFirst { it.startMinute > block.startMinute }.let { if (it < 0) result.size else it }
+            result.add(index, block)
+        }
+        return result
     }
 
     /** Um item da trilha reduzido ao que o cálculo de intervalo/ligação precisa, com a fábrica do [Item] final. */

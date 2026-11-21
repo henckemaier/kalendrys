@@ -62,7 +62,8 @@ fun fabExpanded(atTop: Boolean, windowHeightDp: Int): Boolean = atTop && !isComp
 
 /**
  * Janela baixa (abaixo de [COMPACT_HEIGHT_DP], paisagem de telefone): o corte único que recolhe o
- * FAB e que devolve o título do painel de nova tarefa para a área que rola (O-1 da matriz v1.7.1).
+ * FAB e que põe título, Cancelar e Salvar do painel de nova tarefa numa linha fixa no topo, com os
+ * campos rolando abaixo (v1.8.0, E6, 14.7; fecha o L29 e o O-1).
  */
 fun isCompactHeight(windowHeightDp: Int): Boolean = windowHeightDp < COMPACT_HEIGHT_DP
 

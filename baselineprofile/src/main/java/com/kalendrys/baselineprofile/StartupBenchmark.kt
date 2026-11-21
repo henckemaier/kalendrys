@@ -29,9 +29,20 @@ class StartupBenchmark {
         compilationMode = compilationMode,
         startupMode = StartupMode.COLD,
         iterations = 10,
-        setupBlock = { pressHome() },
+        // Depois de matar o app, o JobScheduler roda de novo o trabalho do WorkManager que a abertura
+        // anterior deixou (widgets na tela inicial) e reabre o processo; a checagem de abertura a frio
+        // falhava no emulador. Deixa o trabalho terminar e mata o processo de novo, já ocioso.
+        setupBlock = {
+            pressHome()
+            Thread.sleep(SETTLE_MS)
+            killProcess()
+        },
     ) {
         startActivityAndWait()
-        waitForTasksScreen()
+        waitForToday()
+    }
+
+    private companion object {
+        const val SETTLE_MS = 5_000L
     }
 }

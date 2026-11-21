@@ -18,4 +18,14 @@ data class ShoppingList(
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),
     val lastResetKey: String? = null,
-)
+) {
+    companion object {
+        /**
+         * A lista nova como o app a cria, por QUALQUER caminho (aba Listas pelo
+         * [com.kalendrys.app.data.repository.ShoppingRepository.createList] e "Criar nova" no painel de
+         * nova tarefa, junto com a tarefa): nome aparado, sem reinício. Uma regra só; não monte a
+         * entidade de outro jeito. Nome em branco não é lista: quem chama não cria.
+         */
+        fun named(name: String): ShoppingList = ShoppingList(name = name.trim())
+    }
+}

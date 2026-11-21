@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.components
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -17,8 +18,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,7 +66,7 @@ fun AppScaffold(
         topBar = topBar,
         bottomBar = bottomBar,
         floatingActionButton = floatingActionButton,
-        snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } },
+        snackbarHost = { ScreenSnackbars(own = snackbarHostState) },
         contentWindowInsets = WindowInsets.safeDrawing,
     ) { innerPadding ->
         val direction = LocalLayoutDirection.current
@@ -84,6 +88,24 @@ fun AppScaffold(
             )
             content(contentPadding)
         }
+    }
+}
+
+/**
+ * Slot de mensagens da tela: a do app ([LocalAppSnackbarHostState]) em cima e a da própria tela
+ * ([own]) embaixo, uma acima da outra, e o slot inteiro acima do FAB (Material3). A do app só é desenhada
+ * com a tela à frente (RESUMED): na transição de volta o detalhe e a origem ficam compostos juntos e,
+ * sem isso, os dois desenhariam a mesma mensagem.
+ */
+@Composable
+private fun ScreenSnackbars(own: SnackbarHostState?) {
+    val app = LocalAppSnackbarHostState.current
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val showApp = app != null && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    if (!showApp && own == null) return
+    Column {
+        if (showApp) SnackbarHost(app!!)
+        own?.let { SnackbarHost(it) }
     }
 }
 
@@ -120,29 +142,6 @@ fun PaddingValues.plus(horizontal: Dp = 0.dp, top: Dp = 0.dp, bottom: Dp = 0.dp)
         end = calculateEndPadding(direction) + horizontal,
         top = calculateTopPadding() + top,
         bottom = calculateBottomPadding() + bottom,
-    )
-}
-
-/**
- * O preenchimento do [AppScaffold] separado para telas com cabeçalho FIXO acima da lista (busca,
- * filtros): o [top] vai para o cabeçalho, que não rola; as laterais ([start], [end], já com as
- * margens da tela) servem ao cabeçalho e à lista; o fundo (insets e folga do FAB) só à lista.
- */
-@Immutable
-class ScreenPadding(val top: Dp, val start: Dp, val end: Dp, val bottom: Dp) {
-    /** `contentPadding` da lista abaixo do cabeçalho: laterais e fundo, sem o topo. */
-    val list: PaddingValues get() = PaddingValues(start = start, end = end, bottom = bottom)
-}
-
-/** Separa o topo do resto do preenchimento, somando [horizontal] de margem da tela nas laterais. */
-@Composable
-fun PaddingValues.splitTop(horizontal: Dp = 0.dp): ScreenPadding {
-    val direction = LocalLayoutDirection.current
-    return ScreenPadding(
-        top = calculateTopPadding(),
-        start = calculateStartPadding(direction) + horizontal,
-        end = calculateEndPadding(direction) + horizontal,
-        bottom = calculateBottomPadding(),
     )
 }
 
