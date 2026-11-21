@@ -1590,6 +1590,13 @@ objetos.**
   fim; sem a segunda condição, o banco devolveria o texto aparado e apagaria o espaço ou a quebra
   de linha que a pessoa acabou de digitar no fim.
 - **Título vazio** não grava; ao sair, o campo volta ao último título válido (5.3).
+- **Uma fila de gravações por editor, na ordem do toque.** O escopo do app roda em várias
+  threads, e duas gravações lançadas soltas não têm ordem garantida: a mais velha pode chegar
+  por último. Todas as gravações de um editor (texto, campos discretos, exercícios, Reverter)
+  passam por uma fila única, consumida no escopo do app, que termina ao esvaziar depois de a
+  tela fechar. Quando a mudança depende do valor atual (marcar e desmarcar um dia), ela é
+  calculada sobre a linha lida na hora de gravar, não sobre o que a tela mostrava. A fila é
+  peça comum dos dois editores, como o buffer de texto.
 - **Reverter alterações (P2):** retrato dos campos do editor tirado na abertura, guardado no
   ViewModel. Reverter envia de volta **só os campos que a pessoa mudou nesta sessão**, um a um, e
   não mexe no que não é do editor (conclusão, pausa, arquivamento). Mandar de volta todos os
@@ -1609,7 +1616,10 @@ objetos.**
   numa única), a ação principal passa a desfazer essa conclusão. Atende quem chega pelo
   Calendário (14.10). O histórico de outros dias continua só leitura; corrigir um dia passado é
   na Hoje, naquele dia (14.4).
-- **Excluir** continua como na v1.8.0, com "Desfazer" pela oferta do app.
+- **Excluir** continua com "Desfazer" pela oferta do app, mas só exclui **depois das gravações
+  pendentes** e com a linha lida do banco naquele momento. A oferta guarda a tarefa inteira para
+  reinserir; partir de uma cópia atrasada faria o Desfazer devolver um texto antigo e perder uma
+  edição já gravada.
 
 ### 15.5 Editor de rotina (D3)
 
