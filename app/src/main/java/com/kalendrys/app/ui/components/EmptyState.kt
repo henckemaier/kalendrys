@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,6 +46,11 @@ import com.kalendrys.app.ui.theme.Spacing
  * isso, em paisagem de 360dp a ação de baixo ficava fora da tela (E3). Como ITEM de uma lista que
  * rola (altura sem limite, ex.: o vazio da busca de Tarefas, E5), ocupa só a própria altura e quem
  * rola é a lista.
+ *
+ * [contentPadding] (v1.9.0, N-4): o preenchimento da tela (barras, insets e a folga do FAB, o
+ * `padding` da casca) aplicado POR DENTRO da rolagem, como o `contentPadding` de uma lista: o
+ * conteúdo rola por baixo das barras e, rolando até o fim, a ação de baixo fica acima do FAB. Por
+ * fora (`Modifier.padding`) a área de rolagem encolhia e, em paisagem, a ação ficava sob o FAB.
  */
 @Composable
 fun EmptyState(
@@ -52,6 +58,7 @@ fun EmptyState(
     title: String,
     message: String,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     actionLabel: String? = null,
     actionIcon: ImageVector? = null,
     onAction: (() -> Unit)? = null,
@@ -62,7 +69,8 @@ fun EmptyState(
         // Altura mínima = a área toda: o conteúdo fica no centro quando cabe e a rolagem só age quando
         // falta espaço. Sem limite de altura (item de lista), não há área a preencher nem o que rolar aqui.
         val bounded = constraints.hasBoundedHeight
-        val minHeight = maxHeight
+        val minHeight = (maxHeight - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding())
+            .coerceAtLeast(0.dp)
         EmptyStateContent(
             icon = icon,
             title = title,
@@ -76,9 +84,12 @@ fun EmptyState(
                 Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .padding(contentPadding)
                     .heightIn(min = minHeight)
             } else {
-                Modifier.fillMaxWidth()
+                Modifier
+                    .fillMaxWidth()
+                    .padding(contentPadding)
             },
         )
     }

@@ -101,7 +101,7 @@ fun AllRoutinesScreen(
                 message = stringResource(R.string.routines_empty_message),
                 actionLabel = stringResource(R.string.new_routine),
                 onAction = onNewRoutine,
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
             else -> LazyColumn(
                 state = listState,

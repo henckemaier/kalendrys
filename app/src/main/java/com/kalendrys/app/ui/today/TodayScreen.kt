@@ -1,7 +1,6 @@
 package com.kalendrys.app.ui.today
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -150,7 +149,7 @@ fun TodayScreen(
                 onAction = openNewTask,
                 secondaryActionLabel = newRoutineLabel,
                 onSecondaryAction = onNewRoutine,
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
             else -> {
                 val now = rememberCurrentMinute()

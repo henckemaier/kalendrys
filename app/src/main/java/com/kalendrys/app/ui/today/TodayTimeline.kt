@@ -63,6 +63,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -355,7 +357,9 @@ private fun BlockRow(
                 }
                 Text(
                     text = routine.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    // Ensaio (v1.9.0, 15.7): hifenização nos títulos longos; palavra comprida em coluna estreita
+                    // (fonte 2.0) quebra com hífen em vez de deixar a linha de cima curta.
+                    style = MaterialTheme.typography.bodyLarge.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph),
                     color = if (block.done || skipped) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
@@ -482,38 +486,30 @@ private fun GapRow(gap: DayTimeline.Gap) {
  * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira ([full]), como texto
  * do nó, igual a antes; os dois textos desenhados ficam fora da leitura.
  *
- * NB-1 do Esquadro: se nem a forma curta couber (duração longa, "23h 59min", em 320dp com fonte 2.0,
- * sino e lista juntos), ela é medida com a largura disponível como máximo e ganha reticências: a
- * caixa nunca passa da largura que sobra, e o texto não desenha por cima do sino nem do 2/3.
+ * Terceiro degrau (v1.9.0, N-2; antes NB-1 com reticências): se nem a forma curta couber (duração
+ * longa, "23h 59min", em 320dp com fonte 2.0, sino e lista juntos), não aparece nada; a caixa nunca
+ * passa da largura que sobra, e o leitor de tela continua com a frase inteira.
  */
 @Composable
 private fun OneLineTimeRange(full: String, short: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     Layout(
         content = {
             Text(text = full, style = style, color = color, maxLines = 1, softWrap = false)
-            Text(
-                text = short,
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(text = short, style = style, color = color, maxLines = 1, softWrap = false)
         },
         modifier = modifier.clearAndSetSemantics { text = AnnotatedString(full) },
     ) { measurables, constraints ->
-        // A faixa inteira na largura natural, numa linha só, para a escolha: vale se couber na largura
-        // disponível. Senão, a curta medida com essa largura como máximo (reticências se nem ela couber).
+        // Três degraus (v1.9.0, N-2), cada forma medida na largura natural, numa linha só: a faixa
+        // inteira se couber; senão só a curta (a duração); senão NADA, sem reticências. Início e fim
+        // seguem na coluna de horas, e o nó (e a linha mesclada) leva sempre a frase inteira.
         val natural = constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
         val wide = measurables[0].measure(natural)
-        val chosen = if (!constraints.hasBoundedWidth || wide.width <= constraints.maxWidth) {
-            wide
-        } else {
-            measurables[1].measure(constraints.copy(minWidth = 0))
-        }
-        val width = chosen.width.coerceIn(constraints.minWidth, constraints.maxWidth)
-        val height = chosen.height.coerceIn(constraints.minHeight, constraints.maxHeight)
-        layout(width, height) { chosen.placeRelative(0, 0) }
+        val fits = { width: Int -> !constraints.hasBoundedWidth || width <= constraints.maxWidth }
+        val chosen = if (fits(wide.width)) wide else measurables[1].measure(natural).takeIf { fits(it.width) }
+        // Sem forma que caiba: largura mínima, a altura de uma linha (o alinhamento da linha não muda).
+        val width = (chosen?.width ?: 0).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = (chosen?.height ?: wide.height).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) { chosen?.placeRelative(0, 0) }
     }
 }
 
