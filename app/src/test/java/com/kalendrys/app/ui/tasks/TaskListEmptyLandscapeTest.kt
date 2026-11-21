@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -78,9 +79,10 @@ class TaskListEmptyLandscapeTest {
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.waitForIdle()
 
-        val newTask = hasText("Nova tarefa") and hasClickAction()
+        // O FAB pode estar recolhido (só a descrição); a ação do vazio tem o texto.
+        val newTask = (hasText("Nova tarefa") or hasContentDescription("Nova tarefa")) and hasClickAction()
         val nodes = compose.onAllNodes(newTask).fetchSemanticsNodes()
-        assertEquals("FAB e ação do vazio", 2, nodes.size)
+        assertEquals("FAB e ação do vazio: ${nodes.map { it.config }}", 2, nodes.size)
         // O FAB fica no canto de baixo; a ação do vazio é a de cima.
         val (action, fab) = nodes.sortedBy { it.boundsInRoot.top }
         assertTrue("ação do vazio (${action.boundsInRoot}) sob o FAB (${fab.boundsInRoot})", action.boundsInRoot.bottom <= fab.boundsInRoot.top + 0.5f)

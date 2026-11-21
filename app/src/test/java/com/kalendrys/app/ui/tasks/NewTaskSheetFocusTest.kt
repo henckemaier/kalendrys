@@ -9,7 +9,8 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.domain.NewTaskDraft
@@ -54,7 +55,7 @@ class NewTaskSheetFocusTest {
         compose.waitForIdle()
         compose.onNode(title).assertIsFocused()
 
-        compose.onNode(notes).performScrollTo().performClick()
+        compose.onNode(notes).performScrollTo().performSemanticsAction(SemanticsActions.RequestFocus)
         compose.onNode(notes).assertIsFocused()
 
         restoration.emulateSavedInstanceStateRestore()

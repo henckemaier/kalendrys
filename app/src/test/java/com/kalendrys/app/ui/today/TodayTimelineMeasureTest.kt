@@ -347,22 +347,25 @@ class TodayTimelineMeasureTest {
         assertWholeNode("$label, 2/3", tag)
     }
 
-    @Test
-    fun `tres degraus - faixa, so a duracao, nada`() {
-        // A mesma duração em larguras decrescentes: cada degrau aparece inteiro ou não aparece.
+    /** N-2: em qualquer largura o horário é a faixa inteira, só a duração ou nada (largura zero). */
+    private fun assertOneOfThreeSteps(width: Dp) {
         val minutes = 23 * 60 + 59
-        listOf(480.dp, 360.dp, 320.dp).forEach { width ->
-            show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true, withList = true)
-            val label = "fonte 2.0, ${width.value.toInt()}dp"
-            val range = rangeNode(fullRange(minutes))
-            val w = range.size.width
-            val ok = abs(w - fullRangeWidthPx) <= 1 || abs(w - shortRangeWidthPx) <= 1 || w == 0
-            assertTrue("$label: largura $w não é faixa ($fullRangeWidthPx), duração ($shortRangeWidthPx) nem zero", ok)
-            if (w == 0) {
-                drawnText(shortRange(minutes)).assertIsNotDisplayed()
-            }
-        }
+        show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true, withList = true)
+        val label = "fonte 2.0, ${width.value.toInt()}dp"
+        val w = rangeNode(fullRange(minutes)).size.width
+        val ok = abs(w - fullRangeWidthPx) <= 1 || abs(w - shortRangeWidthPx) <= 1 || w == 0
+        assertTrue("$label: largura $w não é faixa ($fullRangeWidthPx), duração ($shortRangeWidthPx) nem zero", ok)
+        if (w == 0) drawnText(shortRange(minutes)).assertIsNotDisplayed()
     }
+
+    @Test
+    fun `tres degraus - 480dp`() = assertOneOfThreeSteps(480.dp)
+
+    @Test
+    fun `tres degraus - 360dp`() = assertOneOfThreeSteps(360.dp)
+
+    @Test
+    fun `tres degraus - 320dp`() = assertOneOfThreeSteps(320.dp)
 
     @Test
     fun `horario numa linha so - bloco sem duracao mostra so a hora`() {
