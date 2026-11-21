@@ -37,7 +37,7 @@ class TaskRepository(
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
     /**
-     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask],
+     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [edit] (data, hora e repetição),
      * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
      * passado não virar atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
      * BackupManager), sem dependência circular com o runner. Vazio nos testes de repositório.
@@ -149,19 +149,6 @@ class TaskRepository(
         }
         logCompletion(taskId, completedAt, now)
         return true
-    }
-
-    /**
-     * Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado.
-     * Grava a linha inteira (detalhe da v1.8.0). Sai na E2 da v1.9.0, quando o detalhe passa a usar [edit].
-     */
-    suspend fun updateTask(task: Task) {
-        closeReminderWindow()
-        alarmLock.withLock {
-            taskDao.update(task)
-            scheduler.cancel(task.id)
-            if (!isFinished(task)) scheduleNext(task)
-        }
     }
 
     /**

@@ -16,12 +16,16 @@ import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.ui.edit.TextFieldBuffer
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +34,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -39,68 +42,120 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Detalhe da tarefa com SALVAR NA HORA (v1.9.0, ADR-0002 15.3 e 15.4). Sem rascunho nem base: a tela
+ * mostra a linha do banco ([TaskRepository.observeTask]) e manda mudanças pelo [TaskRepository.edit],
+ * uma por campo ([TaskChange]), que as aplica sobre a linha mais recente. Concluir, desfazer e excluir
+ * a lista por fora, com a tela aberta, não são desfeitos por uma edição.
+ *
+ * - Texto (título, observações, local): um [TextFieldBuffer] por campo. Grava 500 ms depois da última
+ *   tecla e sempre em [flush] (segundo plano, pela tela) e em [leave] / onCleared, no [editScope] do
+ *   app. Título vazio não grava; ao sair, o campo volta ao último título válido.
+ * - Data, hora e repetição: UMA mudança ([TaskChange.Timing]), enviada só quando a pessoa mexe nelas.
+ *   Uma personalizada antiga sem dia utilizável (NB-E1-A) não é regravada por abrir a tela nem por
+ *   mudar outro campo.
+ * - Concluir passa pela oferta do app ([UndoOffers.completeTask]); concluída (hoje, numa repetida;
+ *   encerrada, numa única), a ação principal desfaz ESSA conclusão (P6).
+ * - Reverter alterações (P2): retrato da abertura; volta SÓ os campos mexidos na sessão (N4), um a um.
+ */
 class TaskDetailViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
     private val undoOffers: UndoOffers,
+    /** Escopo das gravações, o do app ([KalendrysApp.editScope]): sobrevive à tela. */
+    private val editScope: CoroutineScope,
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
     private val zone: ZoneId = ZoneId.systemDefault()
 
+    /** Campos do detalhe que o Reverter conhece. */
+    enum class Field { TITLE, NOTES, LOCATION, TIMING, SHOPPING_LIST }
+
+    /** Retrato da abertura (primeira emissão do banco), para o Reverter. Não sobrevive ao processo. */
+    private data class Snapshot(val task: Task, val timing: TaskTiming)
+
     data class UiState(
         val notFound: Boolean = false,
         val task: Task? = null,
-        val draft: TaskDraft? = null,
+        /** O que os campos de texto mostram (o buffer: digitação pendente ou o banco). */
+        val title: String = "",
+        val notes: String = "",
+        val location: String = "",
+        /** Data, hora e repetição como o banco as tem (leitura tolerante, [TaskTiming.of]). */
+        val timing: TaskTiming? = null,
         val history: List<CompletionLog> = emptyList(),
         /**
          * Quando foi feita: hoje, numa tarefa que se repete; a conclusão mais recente, numa que
          * não se repete (feita uma vez, está encerrada). null = pendente.
          */
         val doneAt: Long? = null,
+        /** O registro da conclusão de [doneAt], o que "Desfazer conclusão" apaga (P6). */
+        val doneLogId: Long? = null,
         val zone: ZoneId = ZoneId.systemDefault(),
-        /**
-         * Resumo da lista de compras anexada ao RASCUNHO ([TaskDraft.shoppingListId]); null sem
-         * lista ou com vínculo órfão (lista inexistente equivale a "sem lista", ADR-0001 4.1).
-         */
+        /** Lista anexada (do banco); null sem lista ou com vínculo órfão (ADR-0001 4.1). */
         val shoppingList: ShoppingListSummary? = null,
         /** Todas as listas, para o "Usar lista existente" do seletor. */
         val availableLists: List<ShoppingListSummary> = emptyList(),
+        /** Algum campo foi mexido nesta sessão: "Reverter alterações" aparece. */
+        val canRevert: Boolean = false,
+        /**
+         * O lembrete mostrado não é mais o da abertura: se já passou, a tela avisa que ele não vai
+         * tocar. O que já estava salvo pode ter tocado e não avisa.
+         */
+        val reminderChanged: Boolean = false,
     ) {
         val repeats: Boolean get() = task != null && task.repeat != ReminderRepeat.NONE
-        val hasChanges: Boolean get() = task != null && draft != null && draft.differsFrom(task, zone)
-        val canSave: Boolean get() = task != null && draft != null && draft.canSaveOver(task, zone)
     }
 
     sealed interface Event {
-        data object Saved : Event
-        data class Completed(val logId: Long) : Event
         data object Deleted : Event
     }
 
-    private val draft = MutableStateFlow<TaskDraft?>(null)
     private val eventChannel = Channel<Event>(Channel.BUFFERED)
     val events: Flow<Event> = eventChannel.receiveAsFlow()
 
-    // Lista anexada ao RASCUNHO: segue o vínculo do draft, não o do banco, para refletir anexar/
-    // desvincular antes de salvar.
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val shoppingList: Flow<ShoppingListSummary?> =
-        draft.map { it?.shoppingListId }
-            .distinctUntilChanged()
-            .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) }
+    private fun writer(change: (String) -> TaskChange): (String) -> Job = { value ->
+        editScope.launch { repository.edit(taskId, change(value), zone) }
+    }
 
+    private val titleBuffer = TextFieldBuffer(
+        timerScope = viewModelScope,
+        writeScope = editScope,
+        isValid = { it.isNotBlank() },
+        write = writer(TaskChange::Title),
+    )
+    private val notesBuffer = TextFieldBuffer(viewModelScope, editScope, write = writer(TaskChange::Notes))
+    private val locationBuffer = TextFieldBuffer(viewModelScope, editScope, write = writer(TaskChange::Location))
+
+    private val snapshot = MutableStateFlow<Snapshot?>(null)
+    private val touched = MutableStateFlow<Set<Field>>(emptySet())
+    private val deleting = MutableStateFlow(false)
+
+    /** Último título gravado (sempre válido), para o [leave] devolver ao campo um título vazio. */
+    private var storedTitle: String? = null
+
+    private val task: Flow<Task?> = repository.observeTask(taskId)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val lists: Flow<Pair<ShoppingListSummary?, List<ShoppingListSummary>>> =
-        combine(shoppingList, shoppingRepository.observeSummaries()) { linked, all -> linked to all }
+        combine(
+            task.map { it?.shoppingListId }
+                .distinctUntilChanged()
+                .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) },
+            shoppingRepository.observeSummaries(),
+        ) { linked, all -> linked to all }
+
+    private val texts: Flow<Triple<String?, String?, String?>> =
+        combine(titleBuffer.text, notesBuffer.text, locationBuffer.text) { t, n, l -> Triple(t, n, l) }
+
+    private val session: Flow<Triple<Snapshot?, Set<Field>, Boolean>> =
+        combine(snapshot, touched, deleting) { s, f, d -> Triple(s, f, d) }
 
     val uiState: StateFlow<UiState> =
-        combine(
-            repository.observeTask(taskId),
-            repository.observeCompletions(taskId),
-            draft,
-            lists,
-        ) { task, logs, draft, (linked, available) ->
+        combine(task, repository.observeCompletions(taskId), lists, texts, session) {
+                task, logs, (linked, available), (title, notes, location), (snap, fields, isDeleting) ->
             val today = LocalDate.now(zone)
             val latest = logs.firstOrNull()
             val doneAt = when {
@@ -110,109 +165,166 @@ class TaskDetailViewModel(
                 Instant.ofEpochMilli(latest.completedAt).atZone(zone).toLocalDate() == today -> latest.completedAt
                 else -> null
             }
+            val timing = task?.let { TaskTiming.of(it, zone) }
             UiState(
-                // Depois de excluir, a tarefa some do banco mas o rascunho segue na tela até ela fechar.
-                notFound = task == null && draft == null,
+                // Depois de excluir, a tela fecha; sem o "não encontrada" piscando no meio.
+                notFound = task == null && !isDeleting,
                 task = task,
-                draft = draft,
+                title = title ?: task?.title.orEmpty(),
+                notes = notes ?: task?.notes.orEmpty(),
+                location = location ?: task?.location.orEmpty(),
+                timing = timing,
                 history = logs,
                 doneAt = doneAt,
+                doneLogId = latest?.id?.takeIf { doneAt != null },
                 zone = zone,
                 shoppingList = linked,
                 availableLists = available,
+                canRevert = snap != null && fields.isNotEmpty(),
+                reminderChanged = snap != null && timing != null && !timing.keepsReminderOf(snap.task, zone),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    /** Tarefa salva de onde o rascunho nasceu (ou o último rebase/salvar); base do [TaskDraft.rebase]. */
-    private var base: Task? = null
-
     init {
-        // A primeira emissão cria o rascunho; as seguintes, se a tarefa mudou por fora (conclusão,
-        // lista excluída), fazem o rebase: campos não editados assumem o banco, edições ficam.
         viewModelScope.launch {
-            repository.observeTask(taskId).filterNotNull().collect { task ->
-                val previous = base
-                when {
-                    previous == null -> if (draft.value == null) draft.value = TaskDraft.from(task, zone)
-                    task != previous -> draft.update { it?.rebase(previous, task, zone) }
-                }
-                base = task
+            task.filterNotNull().collect { task ->
+                if (snapshot.value == null) snapshot.value = Snapshot(task, TaskTiming.of(task, zone))
+                storedTitle = task.title
+                // Texto que mudou por fora só entra no campo sem digitação pendente (o buffer decide).
+                titleBuffer.onStored(task.title)
+                notesBuffer.onStored(task.notes)
+                locationBuffer.onStored(task.location)
             }
         }
     }
 
-    fun updateTitle(title: String) = draft.update { it?.copy(title = title) }
+    private fun touch(field: Field) = touched.update { it + field }
 
-    fun updateNotes(notes: String) = draft.update { it?.copy(notes = notes) }
+    fun updateTitle(title: String) {
+        touch(Field.TITLE)
+        titleBuffer.onType(title)
+    }
 
-    fun updateTiming(timing: TaskTiming) = draft.update { it?.copy(timing = timing) }
+    fun updateNotes(notes: String) {
+        touch(Field.NOTES)
+        notesBuffer.onType(notes)
+    }
 
-    fun updateLocation(location: String) = draft.update { it?.copy(location = location) }
+    fun updateLocation(location: String) {
+        touch(Field.LOCATION)
+        locationBuffer.onType(location)
+    }
 
-    // --- Lista de compras (ADR-0001): o vínculo vive no rascunho, igual ao editor de rotina. ---
+    /** Data, hora e repetição: gravam na hora, juntas ([TaskChange.Timing]). Inválida não grava. */
+    fun updateTiming(timing: TaskTiming) {
+        touch(Field.TIMING)
+        editScope.launch { repository.edit(taskId, TaskChange.Timing(timing), zone) }
+    }
 
-    /** "Usar lista existente": anexa [listId] ao rascunho (grava só ao salvar). */
-    fun attachShoppingList(listId: Long) = draft.update { it?.copy(shoppingListId = listId) }
+    // --- Lista de compras (ADR-0001): grava na hora; os itens são da tela da lista. ---
 
-    /**
-     * "Criar nova": cria a lista na hora (persistida, avulsa até a tarefa ser salva) e a anexa ao
-     * rascunho. Se as alterações forem descartadas, a lista fica na aba Listas como avulsa (P7).
-     */
+    /** "Usar lista existente". Lista excluída no meio não é vinculada (o repositório confere). */
+    fun attachShoppingList(listId: Long) {
+        touch(Field.SHOPPING_LIST)
+        editScope.launch { repository.edit(taskId, TaskChange.ShoppingList(listId), zone) }
+    }
+
+    /** "Criar nova": cria e vincula numa transação só. */
     fun createShoppingList(name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch {
-            val listId = shoppingRepository.createList(name)
-            draft.update { it?.copy(shoppingListId = listId) }
-        }
+        touch(Field.SHOPPING_LIST)
+        editScope.launch { repository.edit(taskId, TaskChange.NewShoppingList(name), zone) }
     }
 
-    /** "Desvincular": tira a lista do rascunho; a lista e os itens continuam na aba Listas. */
-    fun detachShoppingList() = draft.update { it?.copy(shoppingListId = null) }
-
-    fun save() {
-        val task = uiState.value.task ?: return
-        val current = draft.value ?: return
-        if (!current.canSaveOver(task, zone)) return
-        viewModelScope.launch {
-            val updated = current.applyTo(task, zone)
-            repository.updateTask(updated)
-            // A base passa a ser o que foi salvo: a emissão do banco com essa tarefa não é "mudança por fora".
-            base = updated
-            draft.value = TaskDraft.from(updated, zone)
-            eventChannel.send(Event.Saved)
-        }
+    /** "Desvincular": a lista e os itens continuam na aba Listas. */
+    fun detachShoppingList() {
+        touch(Field.SHOPPING_LIST)
+        editScope.launch { repository.edit(taskId, TaskChange.ShoppingList(null), zone) }
     }
 
-    fun complete() {
-        viewModelScope.launch {
-            val logId = repository.logCompletion(taskId)
-            eventChannel.send(Event.Completed(logId))
-        }
-    }
-
-    fun undoCompletion(logId: Long) {
-        viewModelScope.launch { repository.undoCompletion(logId) }
+    /** Grava já a digitação pendente (a tela chama ao ir para segundo plano). */
+    fun flush() {
+        titleBuffer.flush()
+        notesBuffer.flush()
+        locationBuffer.flush()
     }
 
     /**
-     * Exclui (mesmo caminho do deslize na lista), oferece o Desfazer e fecha a tela (v1.8.0, E0-D). A
-     * oferta leva a tarefa como estava no banco (lembrete e vínculo de lista); edições não salvas do
-     * rascunho não voltam. A mensagem aparece na tela de origem, pelo `KalendrysNavHost`.
-     *
-     * Excluir e oferecer é UMA operação do [UndoOffers], no escopo do app (NB-E3-C): a tela só pede e
-     * fecha; fechar no meio não perde a exclusão nem a oferta.
+     * Saindo da tela: grava o pendente e, se o título ficou vazio (não gravável), o campo volta ao
+     * último título válido (5.3); o banco nunca recebeu o vazio.
+     */
+    fun leave() {
+        flush()
+        if (titleBuffer.hasPending) storedTitle?.let(titleBuffer::reset)
+    }
+
+    /** Concluir pela oferta do app (14.2): a mensagem com Desfazer aparece mesmo se a tela fechar. */
+    fun complete() {
+        val task = uiState.value.task ?: return
+        undoOffers.completeTask(task)
+    }
+
+    /** P6: desfaz a conclusão mostrada (a de hoje, numa repetida; a que encerrou, numa única). */
+    fun undoCompletion() {
+        val logId = uiState.value.doneLogId ?: return
+        editScope.launch { repository.undoCompletion(logId) }
+    }
+
+    /**
+     * Reverter alterações (P2, N4): manda de volta, um a um, SÓ os campos mexidos nesta sessão, com
+     * o valor do retrato da abertura. O que mudou por fora (a data reescrita por uma conclusão, uma
+     * lista excluída) e não foi mexido aqui fica como está. Data, hora e repetição voltam como o
+     * retrato as leu ([TaskTiming.of]; uma personalizada antiga sem dia volta como "não repete").
+     */
+    fun revert() {
+        val snap = snapshot.value ?: return
+        val fields = touched.value
+        if (fields.isEmpty()) return
+        val original = snap.task
+        // Os buffers esquecem a digitação pendente antes: nenhuma gravação atrasada vem depois.
+        if (Field.TITLE in fields) titleBuffer.reset(original.title)
+        if (Field.NOTES in fields) notesBuffer.reset(original.notes)
+        if (Field.LOCATION in fields) locationBuffer.reset(original.location)
+        val changes = fields.sortedBy { it.ordinal }.map { field ->
+            when (field) {
+                Field.TITLE -> TaskChange.Title(original.title)
+                Field.NOTES -> TaskChange.Notes(original.notes)
+                Field.LOCATION -> TaskChange.Location(original.location)
+                Field.TIMING -> TaskChange.Timing(snap.timing)
+                Field.SHOPPING_LIST -> TaskChange.ShoppingList(original.shoppingListId)
+            }
+        }
+        touched.value = emptySet()
+        editScope.launch { changes.forEach { repository.edit(taskId, it, zone) } }
+    }
+
+    /**
+     * Exclui (mesmo caminho do deslize na lista), oferece o Desfazer e fecha a tela (v1.8.0, E0-D).
+     * A oferta leva a tarefa como estava no banco; digitação ainda não gravada não volta no Desfazer.
+     * Excluir e oferecer é UMA operação do [UndoOffers], no escopo do app (NB-E3-C).
      */
     fun delete() {
         val task = uiState.value.task ?: return
+        deleting.value = true
         undoOffers.deleteTask(task)
         viewModelScope.launch { eventChannel.send(Event.Deleted) }
+    }
+
+    override fun onCleared() {
+        leave()
     }
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskDetailViewModel(createSavedStateHandle(), app.repository, app.shoppingRepository, app.undoOffers)
+                TaskDetailViewModel(
+                    createSavedStateHandle(),
+                    app.repository,
+                    app.shoppingRepository,
+                    app.undoOffers,
+                    app.editScope,
+                )
             }
         }
     }
