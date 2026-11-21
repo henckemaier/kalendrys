@@ -427,7 +427,7 @@ class TaskDetailViewModelTest {
     @Test
     fun `usar lista existente e desvincular gravam na hora e a lista fica`() = runBlocking {
         val listId = shoppingRepository.createList("Mercado")
-        shoppingRepository.add(listId, "Café")
+        shoppingRepository.add(listId, "Café", quantity = 1, priceCents = 0)
         val id = db.taskDao().insert(Task(title = "Mercado"))
         val vm = viewModel(id)
         vm.awaitUi { it.task != null }

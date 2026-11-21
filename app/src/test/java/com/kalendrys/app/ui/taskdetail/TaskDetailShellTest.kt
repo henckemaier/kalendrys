@@ -6,6 +6,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToKeyAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -13,7 +14,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -101,6 +102,9 @@ class TaskDetailShellTest {
 
     private val titleField get() = compose.onNode(hasSetTextAction() and hasText("Título"))
 
+    /** O cartão de situação fica mais abaixo na lista (LazyColumn): rola até ele para compô-lo. */
+    private fun scrollToStatus() = compose.onNode(hasScrollToKeyAction()).performScrollToKey("status")
+
     private fun openMenu() = compose.onNodeWithContentDescription("Mais opções").performClick()
 
     @Test
@@ -150,15 +154,17 @@ class TaskDetailShellTest {
     @Test
     fun `pendente mostra Concluir`() {
         show()
-        compose.onNode(hasText("Concluir") and hasClickAction()).performScrollTo().assertIsDisplayed()
+        scrollToStatus()
+        compose.onNode(hasText("Concluir") and hasClickAction()).assertIsDisplayed()
         assertEquals(0, compose.onAllNodesWithText("Desfazer conclusão").fetchSemanticsNodes().size)
     }
 
     @Test
     fun `concluida mostra Desfazer conclusao e o toque volta a pendente`() {
         val id = show(completed = true)
+        scrollToStatus()
 
-        compose.onNode(hasText("Desfazer conclusão") and hasClickAction()).performScrollTo().assertIsDisplayed().performClick()
+        compose.onNode(hasText("Desfazer conclusão") and hasClickAction()).assertIsDisplayed().performClick()
 
         waitFor { runBlocking { testDb.db.completionLogDao().all() }.none { it.taskId == id } }
         waitFor { compose.onAllNodes(hasText("Concluir") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
