@@ -1471,3 +1471,53 @@ passou sem bloqueante e trouxe mais quatro achados, nenhum para a v1.8.0:
   v1.9.0.
 - **Dias passados mostram as rotinas excluídas:** intencional, é a regra da 14.4 (excluir é
   arquivar; a rotina some de hoje em diante e os dias passados ficam no histórico).
+
+### 14.14 Fechamento da v1.8.0
+
+#### Baseline Profile
+
+Regerado no fechamento, sobre o código final (as jornadas passam pela Hoje como tela inicial e
+pelo painel de nova tarefa). A jornada que digita e salva no painel passou a buscar o campo de
+novo a cada passo, porque o painel recompõe ao trazer o campo em foco para a área visível (14.13).
+
+#### Abertura a frio (2026-11-21): NÃO MEDIDA
+
+O aparelho do usuário não foi usado (14.9). A medição foi tentada no emulador, pelo protocolo da
+11.8.3 (`StartupBenchmark`, 10 aberturas a frio por rodada, tempo até o primeiro quadro, com
+perfil, uma rodada de aquecimento descartada), e a **sessão é inválida**. Números do time; o
+arquiteto conferiu as contas, não refez a medição.
+
+| Rodada | Versão | Mediana (ms) | p90 (ms) | p90 sobre a mediana |
+|--------|--------|--------------|----------|---------------------|
+| Aquecimento (descartada) | v1.7.1 | 884,4 | 957,1 | +8,2% |
+| A1 | v1.7.1 | 1031,1 | 1354,2 | +31,3% |
+| D1 | v1.8.0 | 987,8 | 1208,0 | +22,3% |
+| D2 | v1.8.0 | 1016,0 | 1066,6 | +5,0% |
+| A2 | v1.7.1 | não rodou | | |
+
+- **Por que é inválida:** a A1 e a D1 passam do limite de 20% de p90 sobre a mediana, e sem a A2
+  não há os dois "antes" para comparar. O mesmo build da v1.7.1 deu 884 e 1031 ms na mesma
+  sessão, uma diferença de 17%. A memória livre do host ficou acima de 4 GB o tempo todo
+  (mínimo de 4,99 GB) e a temperatura constante: a dispersão é do emulador, não do host.
+- **O que os números dizem:** nada. Não mostram a v1.8.0 mais lenta nem mais rápida que a
+  v1.7.1, e não podem ser usados como "antes" de outra sessão.
+- **Por que a A2 não rodou:** um widget acordou a v1.8.0 entre a limpeza dos dados e a
+  instalação da v1.7.1, o banco foi recriado na versão 11 e a v1.7.1 não abre um banco mais novo.
+  Regra para as próximas sessões que trocam de versão: **instalar a versão antes de limpar os
+  dados**, nunca o contrário.
+- **Pendência:** a troca da tela inicial pela Hoje é a mudança desta versão com mais chance de
+  pesar na abertura (14.9), e ela fica **sem medida**. Medir no aparelho físico, v1.7.1 contra
+  v1.8.0, quando o usuário liberar; até lá a regra dos 10% não tem número para aplicar.
+
+**Mudança no arnês de medição.** Com widgets do app na tela inicial do emulador, o agendador do
+sistema reabria o processo logo depois de o benchmark matá-lo, para rodar o trabalho de
+atualização dos widgets, e toda rodada falhava na checagem de que o app não está rodando antes
+da abertura a frio. O `StartupBenchmark` passou a ir para a tela inicial, esperar o trabalho
+terminar e matar o processo de novo antes de cada abertura. Só o módulo de medição mudou; o app
+não. O mesmo trecho foi aplicado ao "antes" numa cópia temporária, para os dois lados medirem
+igual. Em aparelho com widgets do app na tela inicial, toda medição futura precisa desse passo.
+
+#### Leitor de tela
+
+Sem passada com fala real, por decisão do usuário (14.9). A verificação ficou nos testes de
+semântica e na árvore de acessibilidade conferida no emulador, sem o TalkBack ligado.
