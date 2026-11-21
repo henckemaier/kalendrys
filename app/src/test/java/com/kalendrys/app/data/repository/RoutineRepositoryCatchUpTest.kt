@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -224,7 +225,7 @@ class RoutineRepositoryCatchUpTest {
         val ten = addAt(block("Bloco", 10), 8, 0)
 
         clockMillis = at(9, 20)
-        repository.update(ten.copy(startMinute = 9 * 60))
+        repository.edit(ten.id, RoutineChange.Start(9 * 60))
         repository.catchUp(nowOverride = at(9, 25))
 
         assertTrue(delivered.isEmpty())
@@ -376,7 +377,7 @@ class RoutineRepositoryCatchUpTest {
         clockMillis = at(9, 3) // o bloco das 9:00 está na janela: a entrega segura o salvar
         alarms.reset()
         withContext(Dispatchers.Default) {
-            val save = launch { repository.update(other.copy(startMinute = 12 * 60)) }
+            val save = launch { repository.edit(other.id, RoutineChange.Start(12 * 60)) }
             deliveryEntered.await()
             val leave = launch { save.cancelAndJoin() } // "Salvar" e voltar na hora
             deliveryGate!!.complete(Unit)
@@ -396,9 +397,10 @@ class RoutineRepositoryCatchUpTest {
         clockMillis = at(9, 3)
         alarms.reset()
 
-        repository.update(other.copy(title = "Outro editado"))
+        // Mudança de agenda (passa pelo catch-up, v1.9.0): a entrega falha e a gravação segue.
+        repository.edit(other.id, RoutineChange.Start(12 * 60))
 
-        assertEquals("Outro editado", db.routineDao().byId(other.id)?.title)
+        assertEquals(12 * 60, db.routineDao().byId(other.id)?.startMinute)
         assertEquals(1, alarms.calls.size)
         assertEquals(at(9, 3), mark.get())
     }

@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -191,11 +192,11 @@ class RoutineRepositoryTest {
     }
 
     @Test
-    fun `editar rotina reagenda o proximo alarme`() = runTest {
+    fun `editar o horario da rotina reagenda o proximo alarme`() = runTest {
         val saved = repository.add(routine())
         alarms.reset()
 
-        repository.update(saved.copy(title = "Treino da manhã"))
+        repository.edit(saved.id, RoutineChange.Start(7 * 60))
 
         assertEquals(1, alarms.calls.size)
     }

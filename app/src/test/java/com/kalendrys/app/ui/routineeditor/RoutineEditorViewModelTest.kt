@@ -2,36 +2,42 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
-import androidx.room.Room
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.cash.turbine.ReceiveTurbine
-import app.cash.turbine.test
+import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
-import com.kalendrys.app.domain.RoutineCategoryKind
+import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
+import com.kalendrys.app.domain.RoutineDays
+import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.testutil.FakeRoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.testRoutineRepository
+import com.kalendrys.app.testutil.testUndoOffers
+import java.time.DayOfWeek
+import java.time.LocalTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import com.kalendrys.app.testutil.ViewModelTestDatabase
-import com.kalendrys.app.testutil.testUndoOffers
-import com.kalendrys.app.UndoOffers
-import com.kalendrys.app.UndoTarget
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,11 +49,13 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Semântica do "Descartar alterações?" (T37/A3+B3 e ADR-0001 P7): as edições de EXERCÍCIO que
- * persistem na hora são REVERTIDAS ao descartar e MANTIDAS ao salvar; o vínculo da lista de compras
- * é do rascunho (volta ao descartar), mas os itens da lista nunca são revertidos. Room em memória +
- * coroutines-test + Turbine; o editor captura o snapshot de abertura na 1ª leitura da lista, então
- * cada teste coleta o [RoutineEditorViewModel.uiState] (Turbine) para dirigir e observar o fluxo.
+ * Editor de rotina com salvar na hora (v1.9.0, ADR-0002 15.3 e 15.5). Criação: nada é gravado nem
+ * agendado antes do "Criar rotina", que grava a rotina e a lista nova juntas e fecha. Edição: cada
+ * campo vira uma mudança sobre a linha mais recente; pausar por fora não é desfeito; título vazio não
+ * grava; sair grava o texto pendente; Reverter só mexe no que foi mexido na sessão.
+ *
+ * As gravações da edição rodam no escopo "do app" do teste, em outra thread: [eventually] espera o
+ * banco chegar ao estado, com prazo.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -56,372 +64,410 @@ class RoutineEditorViewModelTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var db: AppDatabase
-    private lateinit var routineRepository: RoutineRepository
-    private lateinit var categoryRepository: RoutineCategoryRepository
-    private lateinit var shoppingRepository: ShoppingRepository
-    private lateinit var exerciseRepository: ExerciseRepository
+    private lateinit var alarms: FakeRoutineAlarms
+    private lateinit var routines: RoutineRepository
+    private lateinit var shopping: ShoppingRepository
+    private lateinit var exercises: ExerciseRepository
     private lateinit var undoOffers: UndoOffers
+    private val viewModels = mutableListOf<RoutineEditorViewModel>()
 
     @Before
     fun setup() {
-        // viewModelScope roda no Main; Unconfined executa as operações do editor na hora.
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        routineRepository = RoutineRepository(
-            db.routineDao(),
-            db.routineCompletionDao(),
-            db.routineOverrideDao(),
-            FakeRoutineAlarms(context),
-            FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
-            InMemoryRoutineCatchUpMark(),
-        )
-        categoryRepository = RoutineCategoryRepository(db)
-        shoppingRepository = ShoppingRepository(db)
-        exerciseRepository = ExerciseRepository(db.exerciseItemDao())
-        undoOffers = testUndoOffers(testDb, routineRepository)
+        alarms = FakeRoutineAlarms(context)
+        routines = testRoutineRepository(db, alarms)
+        shopping = ShoppingRepository(db)
+        exercises = ExerciseRepository(db.exerciseItemDao())
+        undoOffers = testUndoOffers(testDb, routines)
     }
 
     @After
     fun tearDown() {
-        testDb.close() // cancela os ViewModels e drena o Room antes de fechar e do resetMain
+        // N7 da revisão da E3: a fila roda no escopo do app e o edit é NonCancellable. Espera as
+        // gravações terminarem ANTES de fechar, em vez de cancelar o escopo por cima delas.
+        runBlocking { viewModels.forEach { withTimeoutOrNull(TIMEOUT_MS) { it.awaitPendingWrites() } } }
+        testDb.close()
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(routineId: Long) = testDb.track(
-        RoutineEditorViewModel(
-            SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
-            routineRepository,
-            categoryRepository,
-            shoppingRepository,
-            exerciseRepository,
-            undoOffers,
-        ),
-    )
-
-    @Test
-    fun `descartar reverte reordenacao, add, edicao e remocao de exercicio`() = runTest {
-        val categoryId = categoryRepository.create("Academia", RoutineColor.GREEN.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
-        exerciseRepository.add(routine.id, "Agachamento", sets = 3, reps = 10, load = "40kg", restSeconds = 60)
-        exerciseRepository.add(routine.id, "Supino", sets = 3, reps = 12, load = null, restSeconds = null)
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            // Snapshot de abertura.
-            var state = awaitItem()
-            while (state.exerciseItems.map { it.name } != listOf("Agachamento", "Supino")) state = awaitItem()
-            assertFalse(state.hasChanges)
-
-            // Reordena: desce o Agachamento → ordem vira [Supino, Agachamento].
-            vm.moveExerciseItem(state.exerciseItems.first { it.name == "Agachamento" }, up = false)
-            var moved = awaitItem()
-            while (moved.exerciseItems.map { it.name } != listOf("Supino", "Agachamento")) moved = awaitItem()
-
-            // Edita o Agachamento, adiciona o Terra e remove o Supino (referências frescas pós-reorder).
-            vm.updateExerciseItem(
-                moved.exerciseItems.first { it.name == "Agachamento" },
-                name = "Agachamento livre", sets = 4, reps = 8, load = "50kg", restSeconds = 90,
-            )
-            vm.addExerciseItem("Terra", sets = 1, reps = 5, load = "80kg", restSeconds = 120)
-            vm.removeExerciseItem(moved.exerciseItems.first { it.name == "Supino" })
-            var changed = awaitItem()
-            while (changed.exerciseItems.map { it.name } != listOf("Agachamento livre", "Terra")) changed = awaitItem()
-            assertTrue("edições de item deveriam armar o descarte", changed.exerciseItemsChanged)
-            assertTrue(changed.hasChanges)
-
-            // Descartar reverte tudo ao snapshot: ordem, nome, campos — e some o Terra.
-            vm.discardChanges()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            var restored = awaitItem()
-            while (restored.exerciseItems.map { it.name } != listOf("Agachamento", "Supino")) restored = awaitItem()
-            assertEquals(listOf(3, 3), restored.exerciseItems.map { it.sets })
-            assertEquals("40kg", restored.exerciseItems.first().load)
-            assertFalse(restored.exerciseItemsChanged)
-            cancelAndIgnoreRemainingEvents()
-        }
+    private fun TestScope.viewModel(routineId: Long = NEW_ROUTINE_ID): RoutineEditorViewModel {
+        val vm = testDb.track(
+            RoutineEditorViewModel(
+                SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
+                routines,
+                RoutineCategoryRepository(db),
+                shopping,
+                exercises,
+                undoOffers,
+                testDb.appScope(),
+            ),
+        )
+        // O estado é WhileSubscribed: mantém alguém assinando, como a tela.
+        backgroundScope.launch { vm.uiState.collect {} }
+        viewModels += vm
+        return vm
     }
 
-    @Test
-    fun `salvar mantem as edicoes de item`() = runTest {
-        val categoryId = categoryRepository.create("Academia", RoutineColor.GREEN.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
-        exerciseRepository.add(routine.id, "Agachamento", sets = 3, reps = 10, load = "40kg", restSeconds = 60)
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            var state = awaitItem()
-            while (state.exerciseItems.map { it.name } != listOf("Agachamento")) state = awaitItem()
-
-            vm.updateExerciseItem(
-                state.exerciseItems.single(),
-                name = "Agachamento livre", sets = 4, reps = 8, load = "50kg", restSeconds = 90,
-            )
-            vm.addExerciseItem("Terra", sets = 1, reps = 5, load = "80kg", restSeconds = 120)
-            var changed = awaitItem()
-            while (changed.exerciseItems.map { it.name } != listOf("Agachamento livre", "Terra")) changed = awaitItem()
-
-            vm.save()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        // Salvar fecha SEM reverter: as edições de item permanecem no banco.
-        val persisted = exerciseRepository.observeItems(routine.id).first()
-        assertEquals(listOf("Agachamento livre", "Terra"), persisted.map { it.name })
-        assertEquals(4, persisted.first().sets)
-        assertEquals("50kg", persisted.first().load)
+    /** Espera (no relógio de verdade, fora do tempo virtual) até [condition] valer. */
+    private suspend fun eventually(condition: suspend () -> Boolean) = withContext(Dispatchers.Default) {
+        withTimeout(TIMEOUT_MS) { while (!condition()) delay(10) }
     }
 
-    // --- Lista de compras (ADR-0001, fatia 4): o vínculo é do rascunho; os itens são da lista. ---
+    private suspend fun row(id: Long) = db.routineDao().byId(id)!!
 
-    private suspend fun ReceiveTurbine<RoutineEditorViewModel.UiState>.awaitState(
-        predicate: (RoutineEditorViewModel.UiState) -> Boolean,
-    ): RoutineEditorViewModel.UiState {
-        var state = awaitItem()
-        while (!predicate(state)) state = awaitItem()
-        return state
-    }
+    private suspend fun RoutineEditorViewModel.awaitLoaded() = eventually { uiState.value.fields != null }
 
-    private suspend fun stored(id: Long): Routine = routineRepository.observeRoutine(id).filterNotNull().first()
+    private suspend fun RoutineEditorViewModel.awaitClosed() =
+        withContext(Dispatchers.Default) { withTimeout(TIMEOUT_MS) { events.first() } }
 
-    @Test
-    fun `rotina de qualquer categoria mostra a lista anexada com resumo`() = runTest {
-        // Sem categoria nenhuma (nada de COMPRAS): a lista aparece mesmo assim (P6).
-        val listId = shoppingRepository.createList("Feira")
-        shoppingRepository.add(listId, "Arroz", quantity = 2, priceCents = 500)
-        val routine = routineRepository.add(Routine(title = "Sábado", startMinute = 600, shoppingListId = listId))
+    private suspend fun saved(days: Int = RoutineDays.ALL) =
+        routines.add(Routine(title = "Treino", startMinute = 600, durationMinutes = 30, daysOfWeek = days))
 
-        viewModel(routine.id).uiState.test {
-            val state = awaitState { it.shoppingList?.progress?.total == 1 }
-            assertEquals("Feira", state.shoppingList?.name)
-            assertEquals(1_000L, state.shoppingList?.totalCents)
-            assertFalse(state.hasChanges)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
+    // --- Criação ------------------------------------------------------------------------------------
 
     @Test
-    fun `usar lista existente entra no rascunho e salvar grava o vinculo`() = runTest {
-        val listId = shoppingRepository.createList("Mercado")
-        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600))
+    fun `criacao - nada gravado nem agendado antes do Criar rotina`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        alarms.reset()
 
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            val opened = awaitState { it.draft != null && it.availableLists.any { l -> l.id == listId } }
-            assertNull(opened.shoppingList)
+        vm.updateTitle("Corrida")
+        vm.updateStart(LocalTime.of(7, 0))
+        vm.toggleDay(DayOfWeek.SUNDAY)
+        vm.updateColor(RoutineColor.entries.last())
+        vm.createShoppingList("Feira")
 
-            vm.attachShoppingList(listId)
-            val attached = awaitState { it.shoppingList?.id == listId }
-            assertEquals(listId, attached.draft?.shoppingListId)
-            assertTrue("anexar a lista é alteração do rascunho", attached.hasChanges)
-            // Só ao salvar o vínculo vai para o banco.
-            assertNull(stored(routine.id).shoppingListId)
-
-            vm.save()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-        assertEquals(listId, stored(routine.id).shoppingListId)
-    }
-
-    @Test
-    fun `descartar reverte o vinculo e nao toca nos itens`() = runTest {
-        val original = shoppingRepository.createList("Original")
-        shoppingRepository.add(original, "Arroz", quantity = 1, priceCents = null)
-        val other = shoppingRepository.createList("Outra")
-        val routine = routineRepository.add(Routine(title = "Compras", startMinute = 600, shoppingListId = original))
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            awaitState { it.shoppingList?.id == original }
-            // Item adicionado na lista durante a sessão (persiste na hora, como na tela da lista).
-            shoppingRepository.add(original, "Feijão", quantity = 1, priceCents = null)
-            awaitState { it.shoppingList?.progress?.total == 2 }
-            // Sem mexer no vínculo, itens não armam o descarte (P7).
-            assertFalse(vm.uiState.value.hasChanges)
-
-            vm.detachShoppingList()
-            vm.attachShoppingList(other)
-            assertTrue(awaitState { it.shoppingList?.id == other }.hasChanges)
-
-            vm.discardChanges()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-        assertEquals(original, stored(routine.id).shoppingListId)
-        assertEquals(listOf("Arroz", "Feijão"), shoppingRepository.observeItems(original).first().map { it.name })
-    }
-
-    @Test
-    fun `desvincular e salvar tira o vinculo mas a lista continua`() = runTest {
-        val listId = shoppingRepository.createList("Feira")
-        shoppingRepository.add(listId, "Arroz", quantity = 1, priceCents = null)
-        val routine = routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = listId))
-
-        val vm = viewModel(routine.id)
-        vm.uiState.test {
-            awaitState { it.shoppingList != null }
-            vm.detachShoppingList()
-            val detached = awaitState { it.shoppingList == null }
-            assertTrue(detached.hasChanges)
-            vm.save()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-        assertNull(stored(routine.id).shoppingListId)
-        val summary = shoppingRepository.observeSummary(listId).first()
-        assertEquals(1, summary?.progress?.total)
-        assertTrue("sem dono, vira avulsa", summary?.owners.orEmpty().isEmpty())
-    }
-
-    @Test
-    fun `rotina nova aceita lista criada na hora`() = runTest {
-        val vm = viewModel(NEW_ROUTINE_ID)
-        vm.uiState.test {
-            awaitState { it.draft != null }
-            vm.updateTitle("Feira de sábado")
-            vm.createShoppingList("Feira de sábado")
-            val state = awaitState { it.shoppingList != null }
-            assertEquals("Feira de sábado", state.shoppingList?.name)
-            assertTrue(state.hasChanges)
-            vm.save()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-        val created = db.routineDao().all().single()
-        val listId = shoppingRepository.observeLists().first().single().id
-        assertEquals(listId, created.shoppingListId)
-    }
-
-    @Test
-    fun `lista criada e descartada continua como avulsa`() = runTest {
-        val vm = viewModel(NEW_ROUTINE_ID)
-        vm.uiState.test {
-            awaitState { it.draft != null }
-            vm.createShoppingList("Rascunho")
-            assertTrue(awaitState { it.shoppingList != null }.hasChanges)
-            vm.discardChanges()
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
         assertTrue(db.routineDao().all().isEmpty())
-        val summaries = shoppingRepository.observeSummaries().first()
-        assertEquals(listOf("Rascunho"), summaries.map { it.name })
-        assertTrue(summaries.single().owners.isEmpty())
+        assertTrue(db.shoppingListDao().all().isEmpty())
+        assertTrue(alarms.calls.isEmpty())
+        assertEquals("Feira", vm.uiState.value.pendingListName)
+        assertTrue(vm.uiState.value.hasDraftChanges)
     }
 
     @Test
-    fun `aplicar modelo mantem a lista anexada`() = runTest {
-        val listId = shoppingRepository.createList("Mercado")
-        val vm = viewModel(NEW_ROUTINE_ID)
-        vm.uiState.test {
-            awaitState { it.draft != null }
-            vm.attachShoppingList(listId)
-            awaitState { it.shoppingList != null }
-            vm.applyDraft(RoutineTemplate.READING.toDraft("Leitura"))
-            val state = awaitState { it.draft?.title == "Leitura" }
-            assertEquals(listId, state.draft?.shoppingListId)
-            cancelAndIgnoreRemainingEvents()
-        }
+    fun `criacao - Criar rotina grava rotina e lista nova juntas, agenda e fecha`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateTitle("Feira")
+        vm.createShoppingList(" Hortifruti ")
+
+        vm.create()
+        vm.awaitClosed()
+
+        val routine = db.routineDao().all().single()
+        val list = db.shoppingListDao().all().single()
+        assertEquals("Feira", routine.title)
+        assertEquals("Hortifruti", list.name)
+        assertEquals(list.id, routine.shoppingListId)
+        assertTrue(alarms.calls.isNotEmpty())
     }
 
     @Test
-    fun `duplicar nao leva o vinculo`() = runTest {
-        val listId = shoppingRepository.createList("Feira")
-        val routine = routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = listId))
+    fun `criacao - sem titulo nao cria`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
 
+        assertFalse(vm.uiState.value.canCreate)
+        vm.create()
+
+        assertTrue(db.routineDao().all().isEmpty())
+    }
+
+    @Test
+    fun `criacao - o ultimo dia nao desmarca`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.setDays(0b1) // só segunda
+
+        vm.toggleDay(DayOfWeek.MONDAY)
+
+        assertEquals(0b1, vm.uiState.value.fields!!.daysOfWeek)
+    }
+
+    @Test
+    fun `criacao - fim antes do inicio e inalcancavel e inicio depois do fim limpa o fim`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateStartDate(100)
+
+        vm.updateEndDate(50)
+        assertNull(vm.uiState.value.fields!!.endEpochDay)
+
+        vm.updateEndDate(150)
+        vm.updateStartDate(200)
+        assertEquals(200L, vm.uiState.value.fields!!.startEpochDay)
+        assertNull(vm.uiState.value.fields!!.endEpochDay)
+    }
+
+    @Test
+    fun `criacao - descartar fecha sem gravar nem criar lista`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateTitle("Rascunho")
+        vm.createShoppingList("Feira")
+
+        vm.discardDraft()
+        vm.awaitClosed()
+
+        assertTrue(db.routineDao().all().isEmpty())
+        assertTrue(db.shoppingListDao().all().isEmpty())
+    }
+
+    @Test
+    fun `criacao - modelo mantem a lista ja escolhida`() = runTest {
+        val listId = shopping.createList("Mercado")
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.attachShoppingList(listId)
+
+        vm.applyDraft(RoutineDraft(title = "Treino", startMinute = 1080))
+
+        assertEquals(listId, vm.uiState.value.fields!!.shoppingListId)
+    }
+
+    // --- Edição -------------------------------------------------------------------------------------
+
+    @Test
+    fun `edicao - campos discretos gravam na hora`() = runTest {
+        val routine = saved()
         val vm = viewModel(routine.id)
-        vm.uiState.test {
-            awaitState { it.routine != null && it.draft != null }
-            vm.duplicate("Feira (cópia)")
-            // Espera o fim da operação (Event.Closed) antes de sair: sem isso a corrotina do
-            // viewModelScope ainda volta ao Main durante o resetMain do tearDown (flaky).
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
+        vm.awaitLoaded()
+
+        vm.updateColor(RoutineColor.entries.last())
+        vm.updateIcon(RoutineIcon.entries.last())
+        vm.updateStart(LocalTime.of(18, 15))
+        vm.updateDuration(45)
+        vm.updateRemind(false)
+        vm.updateWeekInterval(3)
+
+        eventually {
+            val r = row(routine.id)
+            r.color == RoutineColor.entries.last().name && r.icon == RoutineIcon.entries.last().name &&
+                r.startMinute == 18 * 60 + 15 && r.durationMinutes == 45 && !r.remind && r.weekInterval == 3
         }
-        val all = db.routineDao().all()
-        assertEquals(listId, all.single { it.id == routine.id }.shoppingListId)
-        assertNull(all.single { it.id != routine.id }.shoppingListId)
+        assertFalse(vm.uiState.value.hasDraftChanges)
     }
 
     @Test
-    fun `vinculo orfao equivale a sem lista`() = runTest {
-        val routine = routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = 999))
-
-        viewModel(routine.id).uiState.test {
-            val state = awaitState { it.draft != null }
-            assertNull(state.shoppingList)
-            assertFalse(state.hasChanges)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    // --- P8 (v1.8.0): "Excluir rotina" sem confirmação, com o Desfazer do app ---
-
-    @Test
-    fun `excluir arquiva, oferece Desfazer da rotina e fecha`() = runTest {
-        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420))
+    fun `edicao - dois toques seguidos nos dias nao se anulam`() = runTest {
+        val routine = saved(days = 0b1) // segunda
         val vm = viewModel(routine.id)
+        vm.awaitLoaded()
 
-        vm.uiState.test {
-            awaitState { it.draft != null }
-            vm.delete()
-            assertEquals(RoutineEditorViewModel.Event.Closed, vm.events.first())
-            cancelAndIgnoreRemainingEvents()
-        }
-        // Arquivar e oferecer correm no escopo do app (NB-E3-C): a oferta chega depois do arquivar.
-        assertEquals(UndoTarget.DeletedRoutine(routine.id), awaitOffer()?.target)
-        assertTrue(db.routineDao().byId(routine.id)!!.archivedAt != null)
-    }
+        vm.toggleDay(DayOfWeek.TUESDAY)
+        vm.toggleDay(DayOfWeek.WEDNESDAY)
 
-    /** A oferta do app publicada pela exclusão (no escopo do app, tempo real). */
-    private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
-        withTimeoutOrNull(5_000) { undoOffers.pending.first { it != null } }
+        eventually { row(routine.id).daysOfWeek == 0b111 }
     }
 
     @Test
-    fun `excluir com alteracoes nao salvas - a exclusao vence e Desfazer devolve a rotina gravada`() = runTest {
-        val categoryId = categoryRepository.create("Academia", RoutineColor.GREEN.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routineRepository.add(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
-        exerciseRepository.add(routine.id, "Agachamento", sets = 3, reps = 10, load = null, restSeconds = null)
+    fun `edicao - o ultimo dia nao desmarca`() = runTest {
+        val routine = saved(days = 0b1)
         val vm = viewModel(routine.id)
+        vm.awaitLoaded()
 
-        vm.uiState.test {
-            awaitState { it.exerciseItems.map { item -> item.name } == listOf("Agachamento") }
-            vm.updateTitle("Treino pesado")
-            vm.addExerciseItem("Terra", sets = 1, reps = 5, load = null, restSeconds = null)
-            awaitState { it.hasChanges && it.exerciseItems.size == 2 }
+        vm.toggleDay(DayOfWeek.MONDAY)
+        vm.updateColor(RoutineColor.entries.last()) // marcador: a fila passou do toque
 
-            vm.delete()
-            vm.events.first()
-            cancelAndIgnoreRemainingEvents()
-        }
-        val offer = awaitOffer()!!
-        // O rascunho não foi gravado e as edições de exercício da sessão voltaram.
-        val stored = db.routineDao().byId(routine.id)!!
-        assertEquals("Treino", stored.title)
-        assertEquals(listOf("Agachamento"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+        eventually { row(routine.id).color == RoutineColor.entries.last().name }
+        assertEquals(0b1, row(routine.id).daysOfWeek)
+    }
 
-        undoOffers.undo(offer).join()
-        val back = db.routineDao().byId(routine.id)!!
-        assertNull(back.archivedAt)
-        assertEquals("Treino", back.title)
+    @Test
+    fun `edicao - pausar por fora com o editor aberto nao e desfeito pela edicao nem pelo Reverter`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        routines.pause(routine, now = 5_000L)
+        vm.updateColor(RoutineColor.entries.last())
+        eventually { row(routine.id).color == RoutineColor.entries.last().name }
+        assertEquals(5_000L, row(routine.id).pausedAt)
+
+        vm.revert()
+        eventually { row(routine.id).color == routine.color }
+        assertEquals(5_000L, row(routine.id).pausedAt)
+    }
+
+    @Test
+    fun `edicao - titulo vazio nao grava e mostra o erro`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateTitle("")
+        vm.flushPending()
+        vm.updateColor(RoutineColor.entries.last()) // marcador da fila
+        eventually { row(routine.id).color == RoutineColor.entries.last().name }
+
+        assertEquals("Treino", row(routine.id).title)
+        assertTrue(vm.uiState.value.titleError)
+    }
+
+    @Test
+    fun `edicao - sair no meio da digitacao grava o texto`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateTitle("Corrida")
+        vm.updateNotes("leve")
+        // Fechar a tela: o fim do viewModelScope grava o pendente e fecha a fila.
+        vm.viewModelScope.cancel()
+
+        eventually { row(routine.id).title == "Corrida" && row(routine.id).notes == "leve" }
+    }
+
+    @Test
+    fun `edicao - o texto do banco nao sobrescreve a digitacao pendente`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateNotes("digitando")
+        routines.edit(routine.id, RoutineChange.Notes("de fora"))
+
+        // O banco reemitiu "de fora", mas o campo segue com a digitação pendente...
+        assertEquals("digitando", vm.uiState.value.fields!!.notes)
+        // ...e, gravada, ela vence (é a última mudança da pessoa).
+        vm.flushPending()
+        eventually { row(routine.id).notes == "digitando" }
+        assertEquals("digitando", vm.uiState.value.fields!!.notes)
+    }
+
+    @Test
+    fun `edicao - Reverter volta so os campos mexidos na sessao`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateColor(RoutineColor.entries.last())
+        vm.updateTitle("Corrida")
+        vm.flushPending()
+        eventually { row(routine.id).title == "Corrida" }
+        // Mudança de FORA num campo que o editor não mexeu.
+        routines.edit(routine.id, RoutineChange.Start(900))
+        assertTrue(vm.uiState.value.canRevert)
+
+        vm.revert()
+
+        eventually { row(routine.id).color == routine.color && row(routine.id).title == "Treino" }
+        assertEquals(900, row(routine.id).startMinute)
+        assertFalse(vm.uiState.value.canRevert)
+        assertEquals("Treino", vm.uiState.value.fields!!.title)
+    }
+
+    @Test
+    fun `edicao - lista existente, nova e desvincular`() = runTest {
+        val routine = saved()
+        val listId = shopping.createList("Mercado")
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.attachShoppingList(listId)
+        eventually { row(routine.id).shoppingListId == listId }
+
+        vm.createShoppingList("Farmácia")
+        eventually { db.shoppingListDao().all().size == 2 && row(routine.id).shoppingListId != listId }
+
+        vm.detachShoppingList()
+        eventually { row(routine.id).shoppingListId == null }
+        assertEquals(2, db.shoppingListDao().all().size)
+    }
+
+    @Test
+    fun `edicao - vinculo orfao equivale a sem lista`() = runTest {
+        val routine = routines.add(Routine(title = "Feira", startMinute = 480, shoppingListId = 999))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        assertNull(vm.uiState.value.shoppingList)
+    }
+
+    @Test
+    fun `edicao - excluir grava o pendente, arquiva, oferece Desfazer e fecha`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        eventually { vm.uiState.value.routine != null }
+
+        vm.updateTitle("Treino novo")
+        vm.delete()
+        vm.awaitClosed()
+
+        eventually { row(routine.id).archivedAt != null && row(routine.id).title == "Treino novo" }
+        // A oferta sai logo depois de arquivar, no escopo do app: espera por ela também.
+        eventually { undoOffers.pending.value != null }
+        assertEquals(UndoTarget.DeletedRoutine(routine.id), undoOffers.pending.value?.target)
+    }
+
+    @Test
+    fun `edicao - duplicar copia a linha gravada, sem lista nem pausa, e fecha`() = runTest {
+        val listId = shopping.createList("Mercado")
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, shoppingListId = listId))
+        routines.pause(routine, now = 1L)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateColor(RoutineColor.entries.last())
+        vm.duplicate("Treino (cópia)")
+        vm.awaitClosed()
+
+        val copy = db.routineDao().all().single { it.id != routine.id }
+        assertEquals("Treino (cópia)", copy.title)
+        assertEquals(RoutineColor.entries.last().name, copy.color)
+        assertNull(copy.shoppingListId)
+        assertNull(copy.pausedAt)
+    }
+
+    @Test
+    fun `edicao - pausar e retomar pelo menu`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        eventually { vm.uiState.value.routine != null }
+
+        vm.togglePause()
+        eventually { row(routine.id).pausedAt != null && vm.uiState.value.routine?.pausedAt != null }
+        vm.togglePause()
+        eventually { row(routine.id).pausedAt == null }
+    }
+
+    @Test
+    fun `edicao - dois toques rapidos em pausar pausam e retomam`() = runTest {
+        // N2 da revisão da E3: decide pela linha lida na hora, não pelo estado da tela.
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.togglePause()
+        vm.togglePause()
+        vm.awaitPendingWrites()
+
+        assertNull(row(routine.id).pausedAt)
+    }
+
+    @Test
+    fun `edicao - Reverter depois de criar lista nova deixa a lista avulsa`() = runTest {
+        // N4 da revisão da E3: o vínculo volta ao do retrato; a lista criada continua na aba Listas.
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.createShoppingList("Feira")
+        eventually { row(routine.id).shoppingListId != null }
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        assertNull(row(routine.id).shoppingListId)
+        assertEquals(listOf("Feira"), db.shoppingListDao().all().map { it.name })
+    }
+
+    private companion object {
+        const val TIMEOUT_MS = 5_000L
     }
 }

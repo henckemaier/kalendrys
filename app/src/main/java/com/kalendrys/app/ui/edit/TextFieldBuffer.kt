@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
  * - Grava [debounceMillis] depois da última tecla e SEMPRE em [flush] (o ViewModel chama ao sair da
  *   tela, ao ir para segundo plano e no onCleared). A gravação roda em [writeScope], o escopo do app
  *   ([com.kalendrys.app.KalendrysApp.editScope]), para não morrer com a tela.
- * - Texto que mudou por fora ([onStored]) só entra no campo se não houver digitação pendente.
+ * - Texto que mudou por fora ([onStored]) só entra no campo se não houver digitação pendente, e o
+ *   eco da própria gravação (o mesmo texto depois de [normalize]) não troca o campo.
  * - Valor que [isValid] recusa (título vazio) não é gravado. O campo fica com ele (a tela mostra o
  *   erro) até a pessoa corrigir ou sair; ao reabrir a tela, o campo vem do banco, com o último valor
  *   válido (5.3).
@@ -32,11 +33,17 @@ class TextFieldBuffer(
     private val writeScope: CoroutineScope,
     /** Se o valor pode ser gravado (título: não vazio). Recusado não grava. */
     private val isValid: (String) -> Boolean = { true },
+    /**
+     * A mesma normalização que a gravação aplica (o edit apara título, observações e local). Serve
+     * para o buffer reconhecer o PRÓPRIO eco ([onStored]): sem isso, o banco devolvia o texto aparado e
+     * apagava o espaço ou a quebra de linha do fim enquanto a pessoa digitava (A1 da revisão da E3).
+     */
+    private val normalize: (String) -> String = { it.trim() },
     private val debounceMillis: Long = DEBOUNCE_MILLIS,
     /**
      * Dispara a gravação de fato (o edit do repositório) e devolve o trabalho dela. É chamada de forma
      * SÍNCRONA no [flush]: quem enfileira gravações em ordem (o editor de rotina) enfileira aqui mesmo,
-     * e o onCleared do ViewModel pode dar [flush] e logo depois fechar a fila sem perder o texto.
+     * e o fim do ViewModel pode dar [flush] e logo depois fechar a fila sem perder o texto.
      */
     private val write: (String) -> Job,
 ) {
@@ -56,9 +63,16 @@ class TextFieldBuffer(
     /** Há digitação que ainda não foi gravada (ou que foi recusada por [isValid]). */
     val hasPending: Boolean get() = pending.value != null
 
-    /** O banco reemitiu [value]. Entra no campo só sem digitação pendente. */
+    /**
+     * O banco reemitiu [value]. Entra no campo só sem digitação pendente E se for diferente do que o
+     * campo mostra depois de normalizado: o eco da própria gravação ("Comprar " gravado como
+     * "Comprar") não troca o campo, e uma mudança de fora de verdade entra.
+     */
     fun onStored(value: String) {
-        if (pending.value == null) _text.value = value
+        if (pending.value != null) return
+        val current = _text.value
+        if (current != null && normalize(current) == value) return
+        _text.value = value
     }
 
     /** A pessoa digitou: o campo mostra na hora e a gravação espera [debounceMillis] sem tecla. */
