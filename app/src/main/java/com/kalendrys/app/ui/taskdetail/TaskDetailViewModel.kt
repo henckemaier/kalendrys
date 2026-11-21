@@ -129,6 +129,9 @@ class TaskDetailViewModel(
 
     private fun enqueue(change: TaskChange): Job = writes.enqueue { repository.edit(taskId, change, zone) }
 
+    /** Barreira: espera as gravações já pedidas terminarem (excluir; testes, N7). */
+    internal suspend fun awaitPendingWrites() = writes.awaitIdle()
+
     private fun writer(change: (String) -> TaskChange): (String) -> Job = { value -> enqueue(change(value)) }
 
     private val titleBuffer = TextFieldBuffer(
@@ -346,7 +349,7 @@ class TaskDetailViewModel(
         deleting.value = true
         flush()
         editScope.launch {
-            writes.awaitIdle()
+            awaitPendingWrites()
             val latest = repository.observeTask(taskId).first() ?: return@launch
             undoOffers.deleteTask(latest)
         }
