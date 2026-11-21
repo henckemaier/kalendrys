@@ -68,6 +68,8 @@ class TaskDetailShellTest {
     fun tearDown() {
         // N7: as gravações já pedidas terminam antes de fechar o banco.
         runBlocking { withTimeoutOrNull(TIMEOUT_MS) { viewModel?.awaitPendingWrites() } }
+        // B2: o fim do ViewModel (o que o onCleared faz), antes de fechar o banco.
+        compose.runOnIdle { viewModel?.finish() }
         testDb.close()
     }
 

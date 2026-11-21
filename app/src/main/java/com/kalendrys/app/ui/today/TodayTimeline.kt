@@ -331,7 +331,10 @@ private fun BlockRow(
                 // pode não aparecer, no terceiro degrau); o leitor de tela a lê uma vez, no nó mesclado do bloco.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.semantics { text = AnnotatedString(timeRange) },
+                    // Largura inteira: a linha tem tamanho mesmo sem sino, sem lista e sem horário desenhado.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { text = AnnotatedString(timeRange) },
                 ) {
                     // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros. O-7: sempre numa linha:
                     // a faixa inteira se couber, senão só a duração ("2h"), senão nada (N-2).

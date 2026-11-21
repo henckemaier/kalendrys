@@ -67,6 +67,8 @@ class TaskDetailLegacyCustomTest {
     @After
     fun tearDown() {
         runBlocking { viewModels.forEach { withTimeoutOrNull(TIMEOUT_MS) { it.awaitPendingWrites() } } }
+        // B2: o fim do ViewModel (o que o onCleared faz), na thread do teste, antes de fechar o banco.
+        viewModels.forEach { it.finish() }
         testDb.close()
         Dispatchers.resetMain()
     }

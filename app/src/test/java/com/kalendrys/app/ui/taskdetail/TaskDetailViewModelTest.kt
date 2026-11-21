@@ -2,7 +2,6 @@ package com.kalendrys.app.ui.taskdetail
 
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
@@ -24,7 +23,6 @@ import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -86,6 +84,8 @@ class TaskDetailViewModelTest {
     fun tearDown() {
         // N7: espera as gravações já pedidas terminarem ANTES de fechar o banco.
         runBlocking { viewModels.forEach { withTimeoutOrNull(TIMEOUT_MS) { it.awaitPendingWrites() } } }
+        // B2: o fim do ViewModel (o que o onCleared faz), na thread do teste, antes de fechar o banco.
+        viewModels.forEach { it.finish() }
         testDb.close()
         Dispatchers.resetMain()
     }
@@ -159,7 +159,7 @@ class TaskDetailViewModelTest {
         vm.updateNotes("Levar os documentos")
         vm.updateLocation("Oficina do centro")
         // A tela fecha antes dos 500 ms: o fim do ViewModel grava pela fila, no escopo do app.
-        vm.viewModelScope.cancel()
+        vm.finish()
 
         val after = awaitStored(id) { it.notes == "Levar os documentos" && it.location == "Oficina do centro" }
         assertEquals("Levar o carro", after.title)
@@ -265,7 +265,7 @@ class TaskDetailViewModelTest {
         vm.awaitUi { it.doneAt != null }
         assertEquals("a digitação segue no campo", "Remédio da pressão", vm.uiState.value.title)
 
-        vm.viewModelScope.cancel() // sai da tela
+        vm.finish() // sai da tela
 
         awaitStored(id) { it.title == "Remédio da pressão" }
         assertEquals("a conclusão ficou", 1, db.completionLogDao().all().count { it.taskId == id })
@@ -508,10 +508,27 @@ class TaskDetailViewModelTest {
         vm.awaitUi { it.task != null }
 
         vm.delete()
-        vm.viewModelScope.cancel()
+        vm.finish()
 
         assertEquals(id, (awaitOffer()!!.target as UndoTarget.DeletedTask).task.id)
         assertNull(db.taskDao().byId(id))
+    }
+
+    @Test
+    fun `digitar, excluir e fechar a tela na mesma hora - o Desfazer devolve o digitado`() = runBlocking {
+        // B1: sem avançar o relógio entre os três; a exclusão é ação da fila, depois do pendente.
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        vm.awaitUi { it.task != null }
+
+        vm.updateTitle("Levar o carro e trocar o óleo")
+        vm.delete()
+        vm.finish()
+
+        val offer = awaitOffer()!!
+        assertEquals("Levar o carro e trocar o óleo", (offer.target as UndoTarget.DeletedTask).task.title)
+        withContext(Dispatchers.Default) { undoOffers.undo(offer).join() }
+        assertEquals("Levar o carro e trocar o óleo", awaitStored(id) { true }.title)
     }
 
     private companion object {

@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
  * - TODAS as gravações passam por UMA fila ([EditQueue], A1 do Esquadro), na ordem do toque: o
  *   [editScope] tem várias threads e dois `launch` seguidos não teriam ordem.
  * - Texto (título, observações, local): um [TextFieldBuffer] por campo. Grava 500 ms depois da última
- *   tecla e sempre em [flush] (segundo plano, pela tela) e em [leave] (fim do ViewModel), pela fila,
+ *   tecla e sempre em [flush] (segundo plano, pela tela) e em [finish] (fim do ViewModel), pela fila,
  *   no [editScope] do app. Título vazio não grava; ao sair, o campo volta ao último título válido.
  * - Data, hora e repetição: UMA mudança ([TaskChange.Timing]), enviada só quando a pessoa mexe nelas.
  *   A última enviada é mostrada até a fila gravá-la (A3): dois toques seguidos não se desfazem.
@@ -123,7 +123,7 @@ class TaskDetailViewModel(
 
     /**
      * A fila das gravações do detalhe (A1): uma por vez, na ordem em que foram pedidas, no escopo do
-     * app. Fechada no fim do ViewModel, depois do [leave].
+     * app. Fechada no fim do ViewModel ([finish]), depois do [leave].
      */
     private val writes = EditQueue(editScope) { repository.observeTask(taskId).first() }
 
@@ -210,12 +210,6 @@ class TaskDetailViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     init {
-        // Fim do ViewModel (A1): grava o pendente e fecha a fila. Pelo fim do viewModelScope, não pelo
-        // onCleared: os testes (ViewModelTestDatabase) só cancelam o escopo.
-        viewModelScope.coroutineContext[Job]?.invokeOnCompletion {
-            leave()
-            writes.close()
-        }
         viewModelScope.launch {
             task.filterNotNull().collect { task ->
                 if (snapshot.value == null) snapshot.value = Snapshot(task, TaskTiming.of(task, zone))
@@ -340,21 +334,30 @@ class TaskDetailViewModel(
 
     /**
      * Exclui (mesmo caminho do deslize na lista), oferece o Desfazer e fecha a tela (v1.8.0, E0-D).
-     * Antes grava a digitação pendente e espera a fila (A2): a oferta leva a tarefa como a pessoa a
-     * via, e o Desfazer devolve o que ela digitou. Excluir e oferecer é UMA operação do [UndoOffers],
+     * Antes grava a digitação pendente e entra na fila depois dela (A2, B1): a oferta leva a tarefa
+     * como a pessoa a via, e o Desfazer devolve o que ela digitou. Excluir e oferecer é UMA operação do [UndoOffers],
      * no escopo do app (NB-E3-C).
      */
     fun delete() {
         if (uiState.value.task == null) return
         deleting.value = true
         flush()
-        editScope.launch {
-            awaitPendingWrites()
-            val latest = repository.observeTask(taskId).first() ?: return@launch
-            undoOffers.deleteTask(latest)
-        }
+        // Uma AÇÃO DA FILA (B1), enfileirada aqui, já, depois do pendente: recebe a linha mais recente
+        // (com o que a pessoa digitou) e roda mesmo que a tela feche e a fila seja fechada em seguida.
+        writes.enqueue { latest -> undoOffers.deleteTask(latest).join() }
         viewModelScope.launch { eventChannel.send(Event.Deleted) }
     }
+
+    /**
+     * Fim do ViewModel (B2): grava o pendente ([leave]) e fecha a fila; o que já está nela termina.
+     * Na thread principal, pelo [onCleared] (os testes chamam direto, antes de fechar o banco).
+     */
+    internal fun finish() {
+        leave()
+        writes.close()
+    }
+
+    override fun onCleared() = finish()
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {

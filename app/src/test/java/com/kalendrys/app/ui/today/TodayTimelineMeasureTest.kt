@@ -366,6 +366,22 @@ class TodayTimelineMeasureTest {
     }
 
     @Test
+    fun `terceiro degrau sem sino e sem lista - a linha do horario tem largura e leva a frase`() {
+        // N-8: sem sino nem lista, a linha que declara a frase só tem o horário, que no terceiro
+        // degrau não tem largura; ela ocupa a largura toda e não some da árvore de acessibilidade.
+        val minutes = 23 * 60 + 59
+        show(fontScale = 2f, minutes = minutes, columnWidth = 140.dp)
+        val label = "fonte 2.0, 140dp, 23h59 sem sino e sem lista"
+        assertEquals("$label: chegou ao terceiro degrau", 0, rangeNode().size.width)
+        assertPhraseOnce(label, minutes)
+        val line = compose.onNode(
+            hasText(fullRange(minutes)) and !SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+            useUnmergedTree = true,
+        ).fetchSemanticsNode()
+        assertTrue("$label: a linha do horário ficou sem largura", line.size.width > 0)
+    }
+
+    @Test
     fun `tres degraus - 480dp`() = assertOneOfThreeSteps(480.dp)
 
     @Test
