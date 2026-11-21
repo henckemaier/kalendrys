@@ -1434,3 +1434,40 @@ A matriz manual no APK de release passou sem bloqueante e trouxe cinco observaç
   sai de baixo dele rolando. A Hoje tem o concluir à direita, do lado do botão, e por isso o caso é
   mais fácil de acontecer nela do que na aba Tarefas; rever a posição do concluir na Hoje fica
   registrado para a v1.9.0, como decisão de desenho.
+
+O reteste das quatro correções no APK de release passou. Ele trouxe achados menores, todos de fonte
+2.0 em tela estreita, que **não entram na v1.8.0** e ficam como dívida da v1.9.0, com o desenho já
+decidido:
+
+- **Faixa da semana quebrando o nome do dia** ("Dom" em duas linhas, 360dp): o nome do dia fica
+  sempre em uma linha; se a forma de três letras não couber, a faixa inteira usa a forma de uma
+  letra, a mesma para os sete dias, escolhida por medida.
+- **Horário do bloco virando reticências** (bloco com sino e lista, 360dp e 320dp): quando nem a
+  duração cabe, o horário não é desenhado; reticências sozinhas não informam nada, e o início e o
+  fim continuam na coluna de horas. O leitor de tela continua com a frase inteira.
+- **Título do bloco quebrando no meio da palavra** (320dp): limite aceito; o critério da 14.5 é não
+  cortar, e ele vale. Avaliar hifenização automática na v1.9.0.
+- **Ícone de repetição duas vezes na linha da tarefa repetida**: fica como está.
+- **Painel de nova tarefa:** depois de girar a tela ou trocar a fonte o foco volta ao Título (o
+  pedido de foco deve valer só na primeira abertura); em paisagem com teclado, arrastar o conteúdo
+  para baixo pode fechar o painel, com o rascunho guardado. Os dois ficam para a v1.9.0, junto com
+  os editores.
+
+O fechamento dos casos que faltavam (Desfazer, conclusão retroativa, notificações, estados vazios)
+passou sem bloqueante e trouxe mais quatro achados, nenhum para a v1.8.0:
+
+- **Estado vazio da Hoje e da aba Tarefas em paisagem mostrando só o ícone e o título:** v1.9.0.
+  A folga do botão flutuante é aplicada por fora do estado vazio e encolhe a área que rola. O
+  `EmptyState` passa a receber o preenchimento da tela como preenchimento **de dentro** da rolagem,
+  como uma lista, e a área que rola volta a ser a tela inteira. Nova tarefa continua no botão
+  flutuante e Nova rotina no menu da barra.
+- **Dia sem nada, com dados em outros dias:** intencional. O estado vazio com as duas ações é o do
+  app sem conteúdo; num dia vazio a tela mantém a faixa da semana, e criar continua no botão
+  flutuante e no menu. Esconder o "0 de 0" do progresso num dia sem itens fica como ajuste de texto
+  para a v1.9.0.
+- **Ocorrência não feita de uma tarefa repetida não aparece como atrasada:** é a regra desde que a
+  repetição existe (a tarefa passa para a ocorrência seguinte). Mudar é decisão de produto e mexe
+  no modelo, porque o estado passaria a ser por ocorrência; fica como pergunta ao usuário na
+  v1.9.0.
+- **Dias passados mostram as rotinas excluídas:** intencional, é a regra da 14.4 (excluir é
+  arquivar; a rotina some de hoje em diante e os dias passados ficam no histórico).
