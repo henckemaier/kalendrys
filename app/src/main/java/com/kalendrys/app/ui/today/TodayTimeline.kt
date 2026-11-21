@@ -58,13 +58,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.Hyphens
-import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -327,11 +326,17 @@ private fun BlockRow(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val timeRange = routineTimeRange(block.startMinute, routine.durationMinutes)
+                // N-8 (v1.9.0): a frase inteira do horário mora nesta linha, que SEMPRE tem tamanho (o horário
+                // pode não aparecer, no terceiro degrau); o leitor de tela a lê uma vez, no nó mesclado do bloco.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.semantics { text = AnnotatedString(timeRange) },
+                ) {
                     // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros. O-7: sempre numa linha:
-                    // a faixa inteira se couber, senão só a duração ("2h"); o leitor de tela lê a frase inteira.
+                    // a faixa inteira se couber, senão só a duração ("2h"), senão nada (N-2).
                     OneLineTimeRange(
-                        full = routineTimeRange(block.startMinute, routine.durationMinutes),
+                        full = timeRange,
                         short = if (routine.durationMinutes > 0) {
                             DurationFormat.format(routine.durationMinutes)
                         } else {
@@ -357,9 +362,7 @@ private fun BlockRow(
                 }
                 Text(
                     text = routine.title,
-                    // Ensaio (v1.9.0, 15.7): hifenização nos títulos longos; palavra comprida em coluna estreita
-                    // (fonte 2.0) quebra com hífen em vez de deixar a linha de cima curta.
-                    style = MaterialTheme.typography.bodyLarge.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph),
+                    style = MaterialTheme.typography.bodyLarge,
                     color = if (block.done || skipped) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
@@ -483,13 +486,17 @@ private fun GapRow(gap: DayTimeline.Gap) {
  * na largura que sobra, senão [short] (só a duração, "2h"; num bloco sem duração os dois são a hora).
  * Escolha por medida, no molde da linha do tempo livre, mas com um `Layout` simples em vez de
  * `BoxWithConstraints`: o bloco mede a altura pelas intrínsecas (`IntrinsicSize.Min`) e um
- * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira ([full]), como texto
- * do nó, igual a antes; os dois textos desenhados ficam fora da leitura.
+ * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira, que a LINHA do
+ * horário declara (N-8: no terceiro degrau este nó não tem largura); os dois textos desenhados ficam
+ * fora da leitura.
  *
  * Terceiro degrau (v1.9.0, N-2; antes NB-1 com reticências): se nem a forma curta couber (duração
  * longa, "23h 59min", em 320dp com fonte 2.0, sino e lista juntos), não aparece nada; a caixa nunca
- * passa da largura que sobra, e o leitor de tela continua com a frase inteira.
+ * passa da largura que sobra, e o leitor de tela continua com a frase inteira (da linha).
  */
+/** Marca de teste do horário do bloco (medida da N-2). */
+internal const val TIME_RANGE_TAG = "timeline-time-range"
+
 @Composable
 private fun OneLineTimeRange(full: String, short: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     Layout(
@@ -497,7 +504,8 @@ private fun OneLineTimeRange(full: String, short: String, style: TextStyle, colo
             Text(text = full, style = style, color = color, maxLines = 1, softWrap = false)
             Text(text = short, style = style, color = color, maxLines = 1, softWrap = false)
         },
-        modifier = modifier.clearAndSetSemantics { text = AnnotatedString(full) },
+        // Sem semântica própria (N-8): a frase vem da linha que o contém; aqui só a marca de teste.
+        modifier = modifier.clearAndSetSemantics { testTag = TIME_RANGE_TAG },
     ) { measurables, constraints ->
         // Três degraus (v1.9.0, N-2), cada forma medida na largura natural, numa linha só: a faixa
         // inteira se couber; senão só a curta (a duração); senão NADA, sem reticências. Início e fim
