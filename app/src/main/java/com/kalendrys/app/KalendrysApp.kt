@@ -167,6 +167,14 @@ class KalendrysApp : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * Escopo das gravações do salvar na hora (v1.9.0, ADR-0002 5.2 e 15.3): o mesmo do painel de nova
+     * tarefa e das ofertas de Desfazer. A gravação final de um editor, ao sair da tela ou ir para
+     * segundo plano, roda aqui e não no viewModelScope, que é cancelado ao fechar a tela. Só para
+     * gravar; nada de estado de tela aqui.
+     */
+    val editScope: CoroutineScope get() = appScope
+
     private val _appearance = MutableStateFlow<Appearance?>(null)
 
     /**
