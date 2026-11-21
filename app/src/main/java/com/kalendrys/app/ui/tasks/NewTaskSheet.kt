@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -113,13 +114,21 @@ internal fun NewTaskSheet(
     val compact = isCompactHeight(windowHeightDp())
     val cancel = { hideThen(onCancel) }
     val save = { hideThen(onSave) }
+    // Teclado aberto, lido DENTRO do painel (a janela dele) e subido para cá.
+    var imeOpen by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = if (compact) null else ({ BottomSheetDefaults.DragHandle() }),
+        // Arrastar NÃO fecha em altura compacta com o teclado aberto (v1.9.0, 15.7): com os campos no topo
+        // da rolagem, um arrasto rápido para baixo passava ao painel e o fechava no meio da digitação
+        // (reproduzido no emulador em paisagem). Voltar, tocar fora e Cancelar seguem fechando.
+        sheetGesturesEnabled = sheetDragEnabled(compact = compact, imeOpen = imeOpen),
     ) {
         // Dentro do painel: o teclado lido aqui é o da janela do painel, não o da Activity.
+        val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+        SideEffect { imeOpen = imeBottom > 0 }
         val keepTitleVisible = rememberKeepVisibleWhileFocused()
         val keepNotesVisible = rememberKeepVisibleWhileFocused()
         val keepLocationVisible = rememberKeepVisibleWhileFocused()
@@ -231,6 +240,9 @@ internal fun NewTaskSheet(
         )
     }
 }
+
+/** Arrastar move/fecha o painel? Não em altura compacta com o teclado aberto (v1.9.0, 15.7). */
+internal fun sheetDragEnabled(compact: Boolean, imeOpen: Boolean): Boolean = !(compact && imeOpen)
 
 /**
  * Traz o campo em foco para a área visível da rolagem (O-6) também quando a área ENCOLHE depois do foco:
