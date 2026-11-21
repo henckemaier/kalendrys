@@ -152,11 +152,36 @@ private fun MacrobenchmarkScope.clickInList(text: String): Boolean {
     return false
 }
 
-/** Preenche o primeiro campo de texto do painel ou editor aberto e salva. */
+/**
+ * Roda [action] sobre um objeto buscado de novo a cada tentativa: se a tela recompõe entre achar e
+ * agir (StaleObjectException), espera assentar e busca outra vez. False se não achou ou não conseguiu.
+ */
+private fun MacrobenchmarkScope.actOnFresh(selector: BySelector, action: (UiObject2) -> Unit): Boolean {
+    repeat(3) {
+        val target = device.findObject(selector) ?: return false
+        try {
+            action(target)
+            return true
+        } catch (_: StaleObjectException) {
+            device.waitForIdle()
+        }
+    }
+    return false
+}
+
+/**
+ * Preenche o primeiro campo de texto do painel ou editor aberto e salva. O painel de nova tarefa
+ * (v1.8.0, O-6) recompõe o campo enquanto entra e traz o campo à vista: o objeto achado podia ficar
+ * obsoleto antes de receber o texto (derrubava a geração no emulador). Por isso espera assentar e
+ * busca de novo a cada tentativa.
+ */
 private fun MacrobenchmarkScope.typeAndSave(text: String) {
-    device.wait(Until.hasObject(By.clazz("android.widget.EditText")), TIMEOUT_MS)
-    device.findObject(By.clazz("android.widget.EditText"))?.text = text
-    device.findObject(By.text("Salvar"))?.click()
+    val field = By.clazz("android.widget.EditText")
+    device.wait(Until.hasObject(field), TIMEOUT_MS)
+    device.waitForIdle()
+    actOnFresh(field) { it.text = text }
+    device.waitForIdle()
+    actOnFresh(By.text("Salvar")) { it.click() }
     // Espera o painel ou o editor fechar.
     device.wait(Until.gone(By.text("Salvar")), TIMEOUT_MS)
 }
