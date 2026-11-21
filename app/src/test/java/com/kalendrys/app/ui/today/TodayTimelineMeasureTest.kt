@@ -12,11 +12,14 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -308,9 +311,17 @@ class TodayTimelineMeasureTest {
         assertEquals("$label: altura visível", node.size.height.toFloat(), node.boundsInRoot.height, 0.5f)
     }
 
+    /** Os `Text` desenhados do horário (com layout de texto, ao contrário do nó do `Layout`). */
+    private fun drawnText(text: String) =
+        compose.onNode(
+            hasText(text) and SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult),
+            useUnmergedTree = true,
+        )
+
     @Test
-    fun `horario de duracao longa com sino e lista - curta com reticencias, sem passar por cima`() {
-        // NB-1: 23h 59min em 320dp com fonte 2.0, sino e lista juntos: nem a forma curta cabe.
+    fun `horario de duracao longa com sino e lista - terceiro degrau, nada desenhado`() {
+        // N-2 (antes NB-1, com reticências): 23h 59min em 320dp com fonte 2.0, sino e lista juntos:
+        // nem a forma curta cabe, então o horário NÃO aparece (nem cortado); a frase segue no leitor.
         val minutes = 23 * 60 + 59
         show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true, withList = true)
         val label = "fonte 2.0, 320dp, 23h59 com sino e lista"
@@ -318,11 +329,17 @@ class TodayTimelineMeasureTest {
         val range = rangeNode(fullRange(minutes))
         val texts = range.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
         assertEquals("$label: leitor de tela lê a frase inteira", listOf(fullRange(minutes)), texts)
-        assertTrue("$label: horário em mais de uma linha", range.size.height in 1..(timeLabelHeightPx + 1))
+        assertEquals("$label: nada desenhado, sem largura", 0, range.size.width)
+        assertTrue("$label: altura de uma linha", range.size.height in 1..(timeLabelHeightPx + 1))
+        drawnText(fullRange(minutes)).assertIsNotDisplayed()
+        drawnText(shortRange(minutes)).assertIsNotDisplayed()
+        // A linha (nó mesclado, o que o leitor de tela foca) continua com a frase inteira.
+        val row = compose.onNode(hasText(title(minutes), substring = true) and hasState).fetchSemanticsNode()
+        val rowTexts = row.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+        assertTrue("$label: linha sem a frase do horário ($rowTexts)", fullRange(minutes) in rowTexts)
 
         val bell = compose.onNode(hasContentDescription("Avisa no início"), useUnmergedTree = true).fetchSemanticsNode()
         val tag = compose.onNode(hasContentDescription("2 de 3", substring = true), useUnmergedTree = true).fetchSemanticsNode()
-        // A caixa do horário termina antes do sino (que vem antes do 2/3): não desenha por cima deles.
         assertTrue(
             "$label: horário (${range.boundsInRoot.right}) passa por cima do sino (${bell.boundsInRoot.left})",
             range.boundsInRoot.right <= bell.boundsInRoot.left + 0.5f,
@@ -331,6 +348,36 @@ class TodayTimelineMeasureTest {
         assertWholeNode("$label, sino", bell)
         assertWholeNode("$label, 2/3", tag)
     }
+
+    @Test
+    fun `titulo do bloco com hifenizacao automatica (ensaio)`() {
+        show(fontScale = 2f, minutes = 30, columnWidth = 320.dp)
+        val style = unmerged(title(30)).layout().layoutInput.style
+        assertEquals(Hyphens.Auto, style.hyphens)
+        assertEquals(LineBreak.Paragraph, style.lineBreak)
+        // O título continua inteiro (sem reticências nem corte) com a hifenização.
+        assertWhole("hifenização", unmerged(title(30)))
+    }
+
+    /** N-2: em qualquer largura o horário é a faixa inteira, só a duração ou nada (largura zero). */
+    private fun assertOneOfThreeSteps(width: Dp) {
+        val minutes = 23 * 60 + 59
+        show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true, withList = true)
+        val label = "fonte 2.0, ${width.value.toInt()}dp"
+        val w = rangeNode(fullRange(minutes)).size.width
+        val ok = abs(w - fullRangeWidthPx) <= 1 || abs(w - shortRangeWidthPx) <= 1 || w == 0
+        assertTrue("$label: largura $w não é faixa ($fullRangeWidthPx), duração ($shortRangeWidthPx) nem zero", ok)
+        if (w == 0) drawnText(shortRange(minutes)).assertIsNotDisplayed()
+    }
+
+    @Test
+    fun `tres degraus - 480dp`() = assertOneOfThreeSteps(480.dp)
+
+    @Test
+    fun `tres degraus - 360dp`() = assertOneOfThreeSteps(360.dp)
+
+    @Test
+    fun `tres degraus - 320dp`() = assertOneOfThreeSteps(320.dp)
 
     @Test
     fun `horario numa linha so - bloco sem duracao mostra so a hora`() {

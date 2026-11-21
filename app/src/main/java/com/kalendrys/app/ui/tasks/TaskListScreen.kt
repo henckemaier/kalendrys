@@ -129,7 +129,7 @@ fun TaskListScreen(
                 message = stringResource(R.string.empty_tasks_message),
                 actionLabel = stringResource(R.string.new_task),
                 onAction = { onNewTask(LocalDate.now()) },
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
             // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas
             // (antes ficavam fixos acima dela, e em paisagem com fonte 2.0 não sobrava tarefa visível
