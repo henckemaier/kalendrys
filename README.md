@@ -57,10 +57,11 @@ app/src/main/java/com/kalendrys/app/
 ├── ui/
 │   ├── theme/               # Paleta azul-ardósia (Material 3), Aparência (Sistema/Claro/Escuro, Material You), formas, tipografia
 │   ├── components/          # Design system: AppScaffold, AppTopBar, CollapsingFab, SwipeRow, ListRow, QuickAddField, GroupedCard, EmptyState...
-│   ├── navigation/          # Bottom bar: Tarefas | Rotinas | Calendário | Listas
+│   ├── navigation/          # Bottom bar: Hoje | Tarefas | Calendário | Listas; painel de nova tarefa e Desfazer no topo
+│   ├── today/               # Tela Hoje (inicial): progresso, próximo, linha do tempo, tarefas do dia, Concluídas
 │   ├── tasks/               # Lista em seções, arrastar p/ excluir, desfazer, NewTaskSheet, ReminderPicker
 │   ├── taskdetail/          # Detalhe/edição: título, observações, lembrete, status do dia, histórico
-│   ├── routines/            # Faixa da semana + linha do tempo; paleta e ícones das rotinas
+│   ├── routines/            # Todas as rotinas (ativas e pausadas, filtro por categoria); paleta e ícones
 │   ├── routineeditor/       # Criar/editar rotina: ícone, cor, horário, duração, dias, aviso, lista anexada
 │   ├── shopping/            # Aba Listas, tela da lista, cartão-resumo e seletor de lista
 │   ├── calendar/            # Mês com marcadores, agenda do dia (rotinas, lembretes, conclusões)
@@ -80,7 +81,9 @@ baselineprofile/             # Gera o Baseline Profile e mede a abertura (Macrob
 
 O schema do Room fica versionado em `app/schemas/` (base para as migrações; a v4, das rotinas,
 é uma `@AutoMigration` conferida contra esses arquivos; a v10, das listas, é a `MIGRATION_9_10`
-manual, com backfill — ver `docs/architecture/ADR-0001-listas-de-compras-independentes.md`).
+manual, com backfill — ver `docs/architecture/ADR-0001-listas-de-compras-independentes.md`; a
+v11, da v1.8.0, é automática e só acrescenta ao `completion_log` três colunas opcionais com a
+data e o lembrete que uma conclusão adiantada sobrescreveu, para o Desfazer devolvê-los).
 
 ## Tarefas
 
@@ -106,9 +109,21 @@ em que ela acontece tem a própria conclusão. A lista separa *Atrasadas*, *Hoje
 
 ## Rotinas
 
-Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na aba **Rotinas**:
+Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na tela **Hoje**
+(inicial desde a v1.8.0, no lugar da aba Rotinas; o endereço `kalendrys://routines/{data}`
+continua abrindo a Hoje na data):
 
-- **Linha do tempo do dia**: pílula colorida com ícone, mais alta quanto maior a duração;
+- **Tela Hoje**: progresso do dia, próximo item, linha do tempo e as tarefas do dia em
+  *Atrasadas*, *Hoje* e *Sem data*, mais **Concluídas (n)** no fim, recolhível e com desmarcar;
+  os números são os mesmos do widget Resumo (`TodayOverview`). A tela inteira rola e acompanha a
+  virada do dia. O "+" cria tarefa; "Nova rotina" fica no menu.
+- **Todas as rotinas** (menu da Hoje): ativas e pausadas, filtro por categoria, editar, pausar,
+  retomar e excluir com Desfazer.
+- **Pular com Desfazer** (segurar o bloco: "Pular este dia", "Remarcar este dia"): o bloco
+  pulado fica esmaecido no dia, com o controle de desfazer. As ações valem para o dia da
+  ocorrência, inclusive em bloco remarcado.
+- **Linha do tempo do dia**: pílula colorida com ícone; a duração dá a altura mínima e o bloco
+  cresce para caber o título e o horário com fonte grande;
   ligação cheia entre blocos que encostam e tracejada nos intervalos; intervalos de 30 min ou
   mais mostram "Tempo livre · 1h 20min". O bloco em andamento ganha "Agora".
 - **Faixa da semana** no topo (deslize para trocar de semana), com um ponto por bloco: cheio se
@@ -120,7 +135,8 @@ Blocos de horário que se repetem (ex.: *Treino, 17:20–17:35, seg a sex*), na 
   título mostra o progresso. Um único alarme no `AlarmManager` cobre todas as rotinas: o próximo início. Bloco
   já feito não avisa. As rotinas seguem o relógio local (inclusive no horário de verão).
 - **Excluir arquiva**: a rotina some de hoje em diante, mas os dias passados mantêm o bloco e
-  as conclusões. Editar muda também como os dias passados aparecem.
+  as conclusões. Desde a v1.8.0 "Excluir rotina" não pede confirmação e oferece Desfazer na tela
+  de origem. Editar muda também como os dias passados aparecem.
 - **Lista de compras**: qualquer rotina pode anexar uma lista (nova ou existente) pelo cartão do
   editor; os itens se editam na tela da lista. Concluir o bloco de **hoje** zera as marcações
   (pela tela, pelo widget ou pela notificação) e o "Desfazer" as devolve. Marcar um dia passado
