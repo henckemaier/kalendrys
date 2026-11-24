@@ -139,7 +139,8 @@ class TaskDetailViewModelTest {
         vm.awaitUi { it.task != null }
 
         vm.updateTitle("Levar o carro na revisão")
-        assertEquals("o campo mostra o digitado na hora", "Levar o carro na revisão", vm.uiState.value.title)
+        // O campo lê o estado de composição (titleInput), síncrono; o uiState é combinação e chega depois.
+        assertEquals("o campo mostra o digitado na hora", "Levar o carro na revisão", vm.titleInput)
         scheduler.advanceTimeBy(499)
         scheduler.runCurrent()
         vm.awaitPendingWrites()
@@ -147,7 +148,7 @@ class TaskDetailViewModelTest {
 
         passDebounce()
         awaitStored(id) { it.title == "Levar o carro na revisão" }
-        assertTrue(vm.uiState.value.canRevert)
+        assertTrue(vm.awaitUi { it.canRevert }.canRevert)
     }
 
     @Test
@@ -188,7 +189,7 @@ class TaskDetailViewModelTest {
         passDebounce()
         vm.flush()
         vm.awaitPendingWrites()
-        assertEquals("o campo mostra o vazio enquanto a tela está aberta", "", vm.uiState.value.title)
+        assertEquals("o campo mostra o vazio enquanto a tela está aberta", "", vm.titleInput)
 
         vm.leave()
         assertEquals("Levar o carro", vm.awaitUi { it.title.isNotEmpty() }.title)
@@ -206,7 +207,7 @@ class TaskDetailViewModelTest {
         vm.updateTitle("Levar o carro já")
         vm.leave()
 
-        assertEquals("Levar o carro já", vm.uiState.value.title)
+        assertEquals("Levar o carro já", vm.titleInput)
         awaitStored(id) { it.title == "Levar o carro já" }
         Unit
     }
@@ -225,7 +226,7 @@ class TaskDetailViewModelTest {
         vm.updateNotes("Digitado aqui")
         taskRepository.edit(id, TaskChange.Notes("Outra de fora"))
         awaitStored(id) { it.notes == "Outra de fora" }
-        assertEquals("Digitado aqui", vm.uiState.value.notes)
+        assertEquals("Digitado aqui", vm.notesInput)
 
         passDebounce()
         awaitStored(id) { it.notes == "Digitado aqui" }
@@ -244,7 +245,7 @@ class TaskDetailViewModelTest {
         awaitStored(id) { it.location == "Oficina" }
         vm.awaitPendingWrites()
 
-        assertEquals("Oficina ", vm.uiState.value.location)
+        assertEquals("Oficina ", vm.locationInput)
     }
 
     // --- Aceite da 15.8: conclusão pela notificação com digitação pendente ----------------------
@@ -263,7 +264,7 @@ class TaskDetailViewModelTest {
         // O Concluir da notificação chega no meio da digitação.
         assertTrue(taskRepository.completeFromReminder(id, today, now = System.currentTimeMillis()))
         vm.awaitUi { it.doneAt != null }
-        assertEquals("a digitação segue no campo", "Remédio da pressão", vm.uiState.value.title)
+        assertEquals("a digitação segue no campo", "Remédio da pressão", vm.titleInput)
 
         vm.finish() // sai da tela
 
@@ -279,9 +280,12 @@ class TaskDetailViewModelTest {
         val vm = viewModel(id)
         val opened = vm.awaitUi { it.timing != null }.timing!!
 
-        // A3: a segunda é montada sobre o que a tela mostra, que já é a primeira (ainda não gravada).
-        vm.updateTiming(opened.copy(time = null))
-        vm.updateTiming(vm.uiState.value.timing!!.copy(repeat = ReminderRepeat.WEEKLY))
+        // A3: a segunda é montada sobre o que a tela mostra, que já é a primeira (o pendente, ainda não
+        // gravado). Espera a TELA mostrar a primeira (o uiState é combinação e chega depois), não o banco.
+        val first = opened.copy(time = null)
+        vm.updateTiming(first)
+        val shown = vm.awaitUi { it.timing == first }.timing!!
+        vm.updateTiming(shown.copy(repeat = ReminderRepeat.WEEKLY))
         vm.awaitPendingWrites()
 
         val after = stored(id)
@@ -398,7 +402,7 @@ class TaskDetailViewModelTest {
         val opened = stored(id)
         val vm = viewModel(id)
         vm.awaitUi { it.task != null }
-        assertFalse(vm.uiState.value.canRevert)
+        assertFalse(vm.awaitUi { !it.canRevert }.canRevert)
 
         vm.updateTitle("Levar o carro ao lava-rápido")
         vm.flush()
