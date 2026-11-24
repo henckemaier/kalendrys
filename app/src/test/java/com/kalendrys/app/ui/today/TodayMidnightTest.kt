@@ -73,7 +73,7 @@ class TodayMidnightTest {
             },
             clock = { (if (readsClock) wallClockDay else dates.value).atTime(10, 0) },
         )
-        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today))
+        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today, repos.undoOffers))
     }
 
     private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(

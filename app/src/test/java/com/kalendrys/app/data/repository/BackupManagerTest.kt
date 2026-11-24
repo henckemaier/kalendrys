@@ -114,8 +114,8 @@ class BackupManagerTest {
                 ShoppingList(id = 51, name = "Farmácia", createdAt = 200),
             ),
         )
-        sourceDb.routineDao().update(sourceDb.routineDao().byId(5)!!.copy(shoppingListId = 50))
-        sourceDb.taskDao().update(sourceDb.taskDao().byId(1)!!.copy(shoppingListId = 50))
+        sourceDb.routineDao().updateShoppingList(5, 50)
+        sourceDb.taskDao().updateShoppingList(1, 50)
         // Itens de compras: preço nullable, picked, position e pickedBeforeReset têm que sobreviver.
         sourceDb.shoppingItemDao().insertAll(
             listOf(

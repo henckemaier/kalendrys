@@ -8,6 +8,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -83,7 +84,7 @@ class UndoOffersTest {
             "Feira",
             timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)),
         )
-        repository.updateTask(repository.observeTask(task.id).first()!!.copy(shoppingListId = listId))
+        repository.edit(task.id, TaskChange.ShoppingList(listId))
         return task.id
     }
 
@@ -347,5 +348,122 @@ class UndoOffersTest {
         // A antiga, substituída, terminando depois não faz nada.
         offers.finish(deleteOffer)
         assertNull(repository.observeTask(deleted.id).first())
+    }
+
+    // --- v1.9.0, E4: concluir e pular pela Hoje ----------------------------------------------------
+
+    @Test
+    fun `concluir rotina oferece e o Desfazer desfaz a conclusao do dia`() = runTest {
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+
+        offers.completeRoutine(routine.id, today, today).join()
+
+        assertEquals(UndoTarget.CompletedRoutine(routine.id, today.toEpochDay()), offers.pending.value?.target)
+        assertTrue(routine.id in testDb.db.routineCompletionDao().doneOn(today.toEpochDay()))
+        offers.undo(offers.pending.value!!).join()
+        assertTrue(routine.id !in testDb.db.routineCompletionDao().doneOn(today.toEpochDay()))
+    }
+
+    @Test
+    fun `concluir rotina ja concluida nao oferece`() = runTest {
+        // Um segundo toque (widget e Hoje juntos) não gera um Desfazer que apagaria a conclusão do primeiro.
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        routines.complete(routine.id, today, today)
+
+        offers.completeRoutine(routine.id, today, today).join()
+
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `A1 - desmarcar direto descarta a oferta e a conclusao do widget depois fica intacta`() = runTest {
+        // Concluir pela Hoje (oferta), desmarcar no bloco (direto), concluir pelo widget (sem oferta):
+        // não sobra mensagem com Desfazer para apagar a conclusão do widget.
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+
+        offers.completeRoutine(routine.id, today, today).join()
+        offers.discardRoutineCompletion(routine.id, epochDay)
+        routines.uncomplete(routine.id, today)
+        routines.complete(routine.id, today, today) // o widget
+
+        assertNull("sem mensagem na tela", offers.pending.value)
+        assertTrue(routine.id in testDb.db.routineCompletionDao().doneOn(epochDay))
+    }
+
+    @Test
+    fun `descartar so tira a oferta do mesmo bloco e dia`() = runTest {
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        offers.completeRoutine(routine.id, today, today).join()
+
+        offers.discardRoutineCompletion(routine.id, today.minusDays(1).toEpochDay())
+        offers.discardRoutineCompletion(routine.id + 1, today.toEpochDay())
+
+        assertEquals(UndoTarget.CompletedRoutine(routine.id, today.toEpochDay()), offers.pending.value?.target)
+    }
+
+    @Test
+    fun `pular oferece com a excecao anterior e o Desfazer a devolve`() = runTest {
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val epochDay = today.toEpochDay()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        routines.rescheduleOccurrence(routine.id, epochDay, newStartMinute = 930, newEpochDay = null)
+
+        offers.skipRoutine(routine.id, today).join()
+
+        val target = offers.pending.value?.target as UndoTarget.SkippedRoutine
+        assertEquals(930, target.previous?.newStartMinute)
+        offers.undo(offers.pending.value!!).join()
+        assertEquals(930, routines.occurrenceOverride(routine.id, epochDay)?.newStartMinute)
+    }
+
+    @Test
+    fun `desfazer pular do bloco descarta a oferta do pular`() = runTest {
+        val offers = offers(this)
+        val today = LocalDate.now()
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        offers.skipRoutine(routine.id, today).join()
+
+        offers.discardRoutineSkip(routine.id, today.toEpochDay())
+
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `concluir tarefa num dia passado grava naquele dia e o Desfazer apaga esse registro`() = runTest {
+        // A Hoje passa o instante do dia mostrado (conclusão retroativa, 14.4).
+        val offers = offers(this)
+        val task = repository.addTask("Remédio", timing = TaskTiming(date = LocalDate.now().minusDays(3)))
+        val yesterday = LocalDate.now().minusDays(1).atTime(10, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+        offers.completeTask(task, completedAt = yesterday, now = System.currentTimeMillis()).join()
+
+        val logId = (offers.pending.value?.target as UndoTarget.CompletedTask).logId
+        assertEquals(yesterday, testDb.db.completionLogDao().byId(logId)?.completedAt)
+        offers.undo(offers.pending.value!!).join()
+        assertNull(testDb.db.completionLogDao().byId(logId))
+    }
+
+    @Test
+    fun `E4-B - desfazer a conclusao direto descarta a oferta do mesmo registro`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+        offers.completeTask(task).join()
+        val logId = (offers.pending.value!!.target as UndoTarget.CompletedTask).logId
+
+        offers.discardTaskCompletion(logId + 1) // outro registro: fica
+        assertEquals(UndoTarget.CompletedTask(logId), offers.pending.value?.target)
+
+        offers.discardTaskCompletion(logId)
+        assertNull("sem mensagem na tela", offers.pending.value)
     }
 }

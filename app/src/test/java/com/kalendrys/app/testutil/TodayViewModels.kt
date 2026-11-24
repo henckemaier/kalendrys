@@ -1,5 +1,9 @@
 package com.kalendrys.app.testutil
 
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import com.kalendrys.app.UndoOffers
 import android.content.Context
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.RoutineRepository
@@ -9,8 +13,16 @@ import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.ui.today.TodayViewModel
 import java.time.DayOfWeek
 
-/** Repositórios da tela Hoje sobre o banco de teste, com alarmes e notificações falsos. */
-class TodayRepositories(context: Context, db: AppDatabase) {
+/**
+ * Repositórios da tela Hoje sobre o banco de teste, com alarmes e notificações falsos. [appScope] é o
+ * escopo "do app" da oferta de Desfazer ([undoOffers], v1.9.0 E4); passe o do ViewModelTestDatabase
+ * quando o teste concluir ou pular pela Hoje, para o trabalho dela terminar antes de o banco fechar.
+ */
+class TodayRepositories(
+    context: Context,
+    db: AppDatabase,
+    appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
     val routines = RoutineRepository(
         db.routineDao(),
         db.routineCompletionDao(),
@@ -26,6 +38,9 @@ class TodayRepositories(context: Context, db: AppDatabase) {
     /** O mesmo retrato do widget Resumo (fonte única das pendências da Hoje). */
     val today = TodayRepository(tasks, routines, shopping)
 
+    /** A oferta de Desfazer do app (concluir e pular pela Hoje, v1.9.0 E4). */
+    val undoOffers = UndoOffers(tasks, routines, appScope)
+
     fun viewModel(firstDayOfWeek: DayOfWeek = DayOfWeek.SUNDAY) =
-        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, today)
+        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, today, undoOffers)
 }

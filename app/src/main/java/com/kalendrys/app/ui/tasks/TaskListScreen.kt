@@ -129,7 +129,7 @@ fun TaskListScreen(
                 message = stringResource(R.string.empty_tasks_message),
                 actionLabel = stringResource(R.string.new_task),
                 onAction = { onNewTask(LocalDate.now()) },
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
             // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas
             // (antes ficavam fixos acima dela, e em paisagem com fonte 2.0 não sobrava tarefa visível
@@ -299,7 +299,10 @@ private fun LazyListScope.taskSection(
     item(key = "header_$key", contentType = "header") {
         TaskSectionHeader(title = title, count = items.size, modifier = Modifier.animateItem())
     }
-    itemsIndexed(items, key = { _, item -> item.task.id }, contentType = { _, _ -> "task" }) { index, item ->
+    // A chave leva a SEÇÃO (A2 da revisão da E4): com a P5 a mesma tarefa pode estar em duas seções ao
+    // mesmo tempo (Concluídas hoje e Próximas, ou Concluídas hoje e Atrasadas), e chave repetida derruba
+    // a lista.
+    itemsIndexed(items, key = { _, item -> "${key}_${item.task.id}" }, contentType = { _, _ -> "task" }) { index, item ->
         SwipeableTaskRow(
             item = item,
             done = done,

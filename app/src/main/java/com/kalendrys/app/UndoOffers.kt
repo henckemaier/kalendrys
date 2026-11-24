@@ -1,9 +1,11 @@
 package com.kalendrys.app
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -31,6 +33,21 @@ sealed interface UndoTarget {
      * que o Desfazer apaga (pelo registro, regra da E0).
      */
     data class CompletedTask(val logId: Long) : UndoTarget
+
+    /**
+     * Rotina concluída pela Hoje (v1.9.0, E4) na ocorrência do dia [epochDay]. O Desfazer é o
+     * [RoutineRepository.uncomplete] daquele dia, que devolve também as marcações da lista que a
+     * conclusão zerou. Sem identidade própria (é por rotina e dia): por isso o desmarcar direto descarta
+     * a oferta pendente do mesmo bloco ([UndoOffers.discardRoutineCompletion], A1 da revisão).
+     */
+    data class CompletedRoutine(val routineId: Long, val epochDay: Long) : UndoTarget
+
+    /**
+     * Ocorrência do dia [epochDay] pulada pela Hoje (v1.9.0, E4). [previous]: a exceção que o pular
+     * substituiu naquele dia (ex.: uma remarcação), `null` se não havia. O Desfazer é o
+     * [RoutineRepository.restoreOccurrenceException], que só age se o dia ainda está pulado.
+     */
+    data class SkippedRoutine(val routineId: Long, val epochDay: Long, val previous: RoutineOverride?) : UndoTarget
 }
 
 /**
@@ -104,9 +121,60 @@ class UndoOffers(
      * Tarefas só pede. Girar a tela ou fechar a lista logo depois de pedir não perde nem a conclusão
      * nem a oferta; o Desfazer apaga o registro criado aqui.
      */
-    fun completeTask(task: Task): Job = scope.launch {
-        val logId = tasks.logCompletion(task.id)
+    fun completeTask(
+        task: Task,
+        /** Instante da conclusão; a Hoje passa o do dia mostrado (conclusão retroativa, 14.4). */
+        completedAt: Long = clock(),
+        now: Long = clock(),
+    ): Job = scope.launch {
+        val logId = tasks.logCompletion(task.id, completedAt, now)
         offer(UndoTarget.CompletedTask(logId))
+    }
+
+    /**
+     * CONCLUIR E OFERECER a rotina no dia [date] (v1.9.0, E4: a Hoje só pede). Só oferece se a conclusão
+     * foi GRAVADA agora: um segundo toque não gera um Desfazer que apagaria a conclusão do primeiro.
+     */
+    fun completeRoutine(routineId: Long, date: LocalDate, today: LocalDate): Job = scope.launch {
+        if (routines.complete(routineId, date, today)) offer(UndoTarget.CompletedRoutine(routineId, date.toEpochDay()))
+    }
+
+    /** PULAR E OFERECER a ocorrência de [routineId] em [date] (v1.9.0, E4: a Hoje só pede). */
+    fun skipRoutine(routineId: Long, date: LocalDate): Job = scope.launch {
+        val previous = routines.skipOccurrence(routineId, date.toEpochDay())
+        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), previous))
+    }
+
+    /**
+     * A conclusão de [routineId] em [epochDay] foi desfeita POR FORA da mensagem (o toque direto no bloco
+     * da Hoje): a oferta pendente dela, se for a pendente, some sem desfazer nada (A1 da revisão da E4).
+     * Sem isso, concluir pela Hoje, desmarcar no bloco, concluir pelo widget e tocar no Desfazer ainda na
+     * tela apagava a conclusão do widget.
+     */
+    fun discardRoutineCompletion(routineId: Long, epochDay: Long) {
+        _pending.value?.let { offer ->
+            if (offer.target == UndoTarget.CompletedRoutine(routineId, epochDay)) finish(offer)
+        }
+    }
+
+    /**
+     * A conclusão de tarefa do registro [logId] foi desfeita POR FORA da mensagem (o círculo da Hoje, o
+     * "Desfazer conclusão" do detalhe): a oferta pendente dela, se for a pendente, some sem desfazer nada
+     * (E4-B da Coruja: a mensagem "Tarefa concluída / Desfazer" ficava 1-2 s na tela com um Desfazer que
+     * já não agia).
+     */
+    fun discardTaskCompletion(logId: Long) {
+        _pending.value?.let { offer ->
+            if (offer.target == UndoTarget.CompletedTask(logId)) finish(offer)
+        }
+    }
+
+    /** Idem para o pular desfeito pelo "Desfazer pular" do bloco esmaecido (simetria do A1). */
+    fun discardRoutineSkip(routineId: Long, epochDay: Long) {
+        _pending.value?.let { offer ->
+            val target = offer.target
+            if (target is UndoTarget.SkippedRoutine && target.routineId == routineId && target.epochDay == epochDay) finish(offer)
+        }
     }
 
     /** [offer] passou do prazo de validade e não deve mais ser mostrada. */
@@ -132,6 +200,8 @@ class UndoOffers(
                 is UndoTarget.DeletedTask -> tasks.restoreTask(target.task)
                 is UndoTarget.DeletedRoutine -> routines.unarchive(target.routineId)
                 is UndoTarget.CompletedTask -> tasks.undoCompletion(target.logId)
+                is UndoTarget.CompletedRoutine -> routines.uncomplete(target.routineId, LocalDate.ofEpochDay(target.epochDay))
+                is UndoTarget.SkippedRoutine -> routines.restoreOccurrenceException(target.routineId, target.epochDay, target.previous)
             }
         }
         finish(offer)

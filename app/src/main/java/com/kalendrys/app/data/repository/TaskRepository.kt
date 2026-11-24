@@ -2,6 +2,7 @@ package com.kalendrys.app.data.repository
 
 import android.util.Log
 import com.kalendrys.app.data.local.dao.CompletionLogDao
+import com.kalendrys.app.data.local.dao.DateRestore
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
 import com.kalendrys.app.data.local.entity.CompletionLog
@@ -11,6 +12,7 @@ import com.kalendrys.app.domain.ReminderCatchUp
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingReset
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderAlarm
@@ -20,11 +22,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Fonte única das tarefas: mantém banco e alarmes de lembrete sempre em sincronia. */
 class TaskRepository(
@@ -33,7 +37,7 @@ class TaskRepository(
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
     /**
-     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [updateTask],
+     * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [edit] (data, hora e repetição),
      * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
      * passado não virar atrasado nem perdido. Passado pelo KalendrysApp (mesmo padrão do afterRestore do
      * BackupManager), sem dependência circular com o runner. Vazio nos testes de repositório.
@@ -147,13 +151,65 @@ class TaskRepository(
         return true
     }
 
-    /** Salva a edição e refaz o alarme: o lembrete pode ter mudado, sido removido ou já ter passado. */
-    suspend fun updateTask(task: Task) {
-        closeReminderWindow()
-        alarmLock.withLock {
-            taskDao.update(task)
-            scheduler.cancel(task.id)
-            if (!isFinished(task)) scheduleNext(task)
+    /**
+     * Salvar na hora (v1.9.0, ADR-0002 15.2): aplica [change] sobre a linha MAIS RECENTE da tarefa,
+     * lida DENTRO da [alarmLock], e grava só as colunas da mudança. Concluir, desfazer e excluir a
+     * lista vinculada por fora, com o detalhe aberto, não são desfeitos por uma edição.
+     *
+     * - Mudança inválida ([TaskChange.applyTo] devolve null; título vazio, repetição sem dia) não grava.
+     * - Tarefa que não existe mais, ou mudança que não muda nada: nada acontece.
+     * - Vincular a uma lista excluída no meio não grava (a lista é conferida na transação).
+     * - Lista nova ([TaskChange.NewShoppingList]): cria e vincula numa transação só.
+     * - Alarme: SÓ [TaskChange.Timing] fecha a janela do catch-up (antes e FORA da trava, ordem da 14.3)
+     *   e refaz o alarme pela conta de sempre ([scheduleNext]). Texto e lista não tocam em alarme.
+     *
+     * A notificação de lembrete já na tela NÃO é reemitida com o título novo: ela continua com o texto
+     * de quando tocou (como antes da v1.9.0); a próxima sai com o título novo.
+     *
+     * Devolve se gravou.
+     */
+    suspend fun edit(taskId: Long, change: TaskChange, zone: ZoneId = ZoneId.systemDefault()): Boolean {
+        if (change.touchesReminder) closeReminderWindow()
+        return alarmLock.withLock {
+            val current = taskDao.byId(taskId) ?: return@withLock false
+            val updated = change.applyTo(current, zone) ?: return@withLock false
+            when (change) {
+                is TaskChange.NewShoppingList -> {
+                    taskDao.linkNewList(taskId, ShoppingList.named(change.name))
+                    return@withLock true
+                }
+                is TaskChange.ShoppingList -> {
+                    if (updated.shoppingListId == current.shoppingListId) return@withLock false
+                    val listId = updated.shoppingListId
+                    if (listId == null) taskDao.updateShoppingList(taskId, null) else return@withLock taskDao.linkExistingList(taskId, listId)
+                }
+                else -> {
+                    if (updated == current) return@withLock false
+                    when (change) {
+                        is TaskChange.Title -> taskDao.updateTitle(taskId, updated.title)
+                        is TaskChange.Notes -> taskDao.updateNotes(taskId, updated.notes)
+                        is TaskChange.Location -> taskDao.updateLocation(taskId, updated.location)
+                        // Gravar e reagendar sem cancelamento (NB-E1-B, como o change{} da rotina): cortado
+                        // entre os dois, o banco ficaria com a data nova e o alarme antigo (ou nenhum).
+                        is TaskChange.Timing -> withContext(NonCancellable) {
+                            taskDao.updateTiming(
+                                id = taskId,
+                                dueDate = updated.dueDate,
+                                reminderAt = updated.reminderAt,
+                                repeat = updated.repeat,
+                                intervalEvery = updated.intervalEvery,
+                                intervalUnit = updated.intervalUnit,
+                                byWeekdays = updated.byWeekdays,
+                            )
+                            // A conta de sempre: cancela e, se ainda lembra, marca a próxima entregue.
+                            scheduler.cancel(taskId)
+                            if (!isFinished(updated)) scheduleNext(updated)
+                        }
+                        is TaskChange.NewShoppingList, is TaskChange.ShoppingList -> Unit // tratados acima
+                    }
+                }
+            }
+            true
         }
     }
 
@@ -224,10 +280,12 @@ class TaskRepository(
             scheduler.cancel(taskId)
             val dayEpoch = day.toEpochDay()
             if (!retroactive && task.dueDate != null && task.dueDate > dayEpoch) {
-                // Data e lembrete sobrescritos vão no próprio registro, na mesma transação da tarefa.
+                // Data e lembrete sobrescritos vão no próprio registro, na mesma transação da tarefa. Só
+                // data e lembrete são gravados (15.2): o resto da linha fica como está no banco.
                 logId = completionLogDao.rewriteAndInsert(
-                    task.copy(dueDate = dayEpoch, reminderAt = null),
-                    log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = dayEpoch),
+                    taskId = taskId,
+                    rewrittenDueDate = dayEpoch,
+                    log = log.copy(previousDueDate = task.dueDate, previousReminderAt = task.reminderAt, rewrittenDueDate = dayEpoch),
                 )
             }
         }
@@ -265,8 +323,12 @@ class TaskRepository(
             val restored = current?.takeIf {
                 previousDue != null && it.dueDate == log.rewrittenDueDate && it.reminderAt == null
             }?.copy(dueDate = previousDue, reminderAt = log.previousReminderAt)
-            // Apagar o registro e devolver a data numa transação só (A1 da revisão da E0).
-            completionLogDao.deleteAndRestore(logId, restored)
+            // Apagar o registro e devolver a data numa transação só (A1 da revisão da E0). Só data e
+            // lembrete voltam (15.2): título, texto e lista ficam como estão no banco.
+            completionLogDao.deleteAndRestore(
+                logId,
+                restored?.let { DateRestore(it.id, it.dueDate, it.reminderAt) },
+            )
             shoppingItemDao.restoreReset(ShoppingReset.taskKey(logId))
             val task = restored ?: current ?: return@withLock
             if (!isFinished(task)) scheduleNext(task)

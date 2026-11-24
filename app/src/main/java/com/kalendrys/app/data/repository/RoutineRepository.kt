@@ -8,7 +8,9 @@ import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.domain.RoutineCatchUp
+import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.ShoppingReset
@@ -88,17 +90,88 @@ class RoutineRepository(
     fun observeCompletionsBetween(start: LocalDate, endExclusive: LocalDate): Flow<List<RoutineCompletion>> =
         completionDao.observeBetween(start.toEpochDay(), endExclusive.toEpochDay())
 
-    suspend fun add(routine: Routine): Routine = change {
-        routine.copy(id = routineDao.insert(routine))
+    /**
+     * Cria a rotina e agenda. Com [newListName] não em branco, cria TAMBÉM uma lista nova
+     * ([ShoppingList.named]) e vincula a rotina a ela numa transação só (v1.9.0, 15.5, como o painel
+     * de nova tarefa já faz): falhar a rotina não deixa lista avulsa. Nesse caso o
+     * [Routine.shoppingListId] de [routine] é ignorado.
+     */
+    suspend fun add(routine: Routine, newListName: String? = null): Routine = change {
+        val newList = newListName?.takeIf { it.isNotBlank() }?.let(ShoppingList::named)
+        if (newList == null) {
+            routine.copy(id = routineDao.insert(routine))
+        } else {
+            checkNotNull(routineDao.byId(routineDao.insertRoutineWithNewList(newList, routine)))
+        }
     }
 
-    suspend fun update(routine: Routine): Unit = change {
-        routineDao.update(routine)
+    /**
+     * Salvar na hora (v1.9.0, ADR-0002 15.2): aplica [change] sobre a linha MAIS RECENTE da rotina,
+     * lida DENTRO do [mutex], e grava só as colunas da mudança. Pausar, arquivar ou excluir a lista
+     * vinculada por fora, com o editor aberto, não são desfeitos por uma edição.
+     *
+     * - Mudança inválida ([RoutineChange.applyTo] devolve null) não grava. Rotina inexistente ou
+     *   mudança que não muda nada: nada acontece.
+     * - Vincular a uma lista excluída no meio não grava; lista nova cria e vincula numa transação só.
+     * - Alarme: SÓ as mudanças de [RoutineChange.touchesSchedule] (início, dias, intervalo, vigência,
+     *   lembrar) passam pelo [change]: catch-up com a configuração antiga, gravação e reagendamento.
+     *   Texto, duração, cor, ícone, categoria e lista gravam sob o mesmo [mutex] sem tocar em alarme.
+     *
+     * O aviso de bloco já na tela NÃO é reemitido com o título novo; o próximo sai com ele.
+     *
+     * Devolve se gravou.
+     */
+    suspend fun edit(routineId: Long, routineChange: RoutineChange): Boolean =
+        if (routineChange.touchesSchedule) {
+            change { editLocked(routineId, routineChange) }
+        } else {
+            mutex.withLock { withContext(NonCancellable) { editLocked(routineId, routineChange) } }
+        }
+
+    /** Só dentro do [mutex] (pelo [edit]). */
+    private suspend fun editLocked(routineId: Long, change: RoutineChange): Boolean {
+        val current = routineDao.byId(routineId) ?: return false
+        val updated = change.applyTo(current) ?: return false
+        when (change) {
+            is RoutineChange.NewShoppingList -> {
+                routineDao.linkNewList(routineId, ShoppingList.named(change.name))
+                return true
+            }
+            is RoutineChange.ShoppingList -> {
+                if (updated.shoppingListId == current.shoppingListId) return false
+                val listId = updated.shoppingListId ?: run {
+                    routineDao.updateShoppingList(routineId, null)
+                    return true
+                }
+                return routineDao.linkExistingList(routineId, listId)
+            }
+            else -> Unit
+        }
+        if (updated == current) return false
+        when (change) {
+            is RoutineChange.Title -> routineDao.updateTitle(routineId, updated.title)
+            is RoutineChange.Notes -> routineDao.updateNotes(routineId, updated.notes)
+            is RoutineChange.Start -> routineDao.updateStart(routineId, updated.startMinute)
+            is RoutineChange.Duration -> routineDao.updateDuration(routineId, updated.durationMinutes)
+            is RoutineChange.Days -> routineDao.updateDays(routineId, updated.daysOfWeek)
+            is RoutineChange.WeekInterval -> routineDao.updateWeekInterval(routineId, updated.weekInterval)
+            is RoutineChange.ValidFrom, is RoutineChange.ValidUntil ->
+                routineDao.updateValidity(routineId, updated.startEpochDay, updated.endEpochDay)
+            is RoutineChange.Remind -> routineDao.updateRemind(routineId, updated.remind)
+            is RoutineChange.Category -> routineDao.updateCategory(routineId, updated.categoryId)
+            is RoutineChange.Color -> routineDao.updateColor(routineId, updated.color)
+            is RoutineChange.Icon -> routineDao.updateIcon(routineId, updated.icon)
+            is RoutineChange.NewShoppingList, is RoutineChange.ShoppingList -> Unit // tratados acima
+        }
+        return true
     }
 
-    /** "Excluir": some de hoje em diante, mas os dias passados mantêm o bloco e a conclusão. */
+    /**
+     * "Excluir": some de hoje em diante, mas os dias passados mantêm o bloco e a conclusão. Grava só
+     * a data de arquivamento (v1.9.0): uma edição feita depois de [routine] ter sido lida não se perde.
+     */
     suspend fun archive(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
-        routineDao.update(routine.copy(archivedAt = now))
+        routineDao.updateArchivedAt(routine.id, now)
         notifications.cancel(routine.id)
     }
 
@@ -110,22 +183,23 @@ class RoutineRepository(
      */
     suspend fun unarchive(routineId: Long): Unit = change {
         val current = routineDao.byId(routineId) ?: return@change
-        if (current.archivedAt != null) routineDao.update(current.copy(archivedAt = null))
+        if (current.archivedAt != null) routineDao.updateArchivedAt(routineId, null)
     }
 
     /**
      * "Pausar": a rotina para de agendar e avisar, mas a configuração e o histórico ficam
      * intactos. Distinta de arquivar (excluir): dá pra retomar depois. Reagenda sem ela e tira
-     * da tela qualquer aviso já mostrado.
+     * da tela qualquer aviso já mostrado. Grava só a pausa (v1.9.0): pausar com o editor aberto e
+     * editar depois, ou o contrário, não desfaz o outro lado.
      */
     suspend fun pause(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
-        routineDao.update(routine.copy(pausedAt = now))
+        routineDao.updatePausedAt(routine.id, now)
         notifications.cancel(routine.id)
     }
 
     /** "Retomar": a rotina volta a agendar/avisar com a configuração e o histórico preservados. */
     suspend fun resume(routine: Routine): Unit = change {
-        routineDao.update(routine.copy(pausedAt = null))
+        routineDao.updatePausedAt(routine.id, null)
     }
 
     /**
@@ -136,15 +210,20 @@ class RoutineRepository(
      * da lista (ADR-0001, P4), de forma reversível pelo [uncomplete]. Mora aqui, e não na tela, para
      * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
      * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
+     *
+     * Devolve se a conclusão foi GRAVADA agora (v1.9.0, E4): falso se já estava feita ou se a rotina não
+     * existe. Quem oferece Desfazer só oferece quando gravou: um segundo toque (widget e Hoje juntos) não
+     * pode gerar um Desfazer que apagaria a conclusão do primeiro. Widget e notificação ignoram o retorno.
      */
-    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Unit = change {
-        val routine = routineDao.byId(routineId) ?: return@change
+    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Boolean = change {
+        val routine = routineDao.byId(routineId) ?: return@change false
         val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
         if (date == today) notifications.cancel(routineId)
         val listId = routine.shoppingListId
         if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
             shoppingItemDao.resetPicked(listId, ShoppingReset.routineKey(routineId, date.toEpochDay()))
         }
+        inserted
     }
 
     /**

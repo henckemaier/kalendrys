@@ -1,13 +1,11 @@
 package com.kalendrys.app.ui.today
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WbSunny
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,13 +30,11 @@ import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.rememberCurrentMinute
 import com.kalendrys.app.ui.components.rememberFabExpanded
-import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.time.LocalTime
-import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Tela Hoje (ADR-0002, 14.4; v1.8.0, E2 e E3). A tela inteira é UMA lista: a faixa da semana rola
@@ -66,7 +62,6 @@ fun TodayScreen(
     viewModel: TodayViewModel = viewModel(factory = TodayViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     val fabExpanded by rememberFabExpanded(listState)
     // Seções recolhíveis: fechadas por padrão; aberta/fechada é estado de tela.
@@ -81,27 +76,8 @@ fun TodayScreen(
             onRequestedDateHandled()
         }
     }
-    val completedMessage = stringResource(R.string.routine_completed)
-    val taskCompletedMessage = stringResource(R.string.task_completed)
-    val skippedMessage = stringResource(R.string.today_routine_skipped)
-    val undoLabel = stringResource(R.string.undo)
-    LaunchedEffect(viewModel, snackbarHostState) {
-        viewModel.completed.collectLatest { completed ->
-            if (snackbarHostState.showUndo(completedMessage, undoLabel)) viewModel.undo(completed)
-        }
-    }
-    LaunchedEffect(viewModel, snackbarHostState) {
-        viewModel.taskCompleted.collectLatest { logId ->
-            if (snackbarHostState.showUndo(taskCompletedMessage, undoLabel)) viewModel.undoTaskCompletion(logId)
-        }
-    }
-    // P5: o Desfazer da mensagem devolve o dia ao que era antes (inclusive uma remarcação que já
-    // existisse); o "Desfazer pular" do bloco, mais tarde, só tira o pular.
-    LaunchedEffect(viewModel, snackbarHostState) {
-        viewModel.skipped.collectLatest { event ->
-            if (snackbarHostState.showUndo(skippedMessage, undoLabel)) viewModel.undoSkip(event)
-        }
-    }
+    // Concluir e pular pela Hoje oferecem Desfazer pela oferta do app (v1.9.0, E4, 15.6): a mensagem é
+    // a do KalendrysNavHost (UndoOfferEffect) e sobrevive a girar e a trocar de aba. Sem mensagem própria.
 
     val todayLabel = stringResource(R.string.calendar_today)
     val settingsLabel = stringResource(R.string.settings_title)
@@ -137,7 +113,6 @@ fun TodayScreen(
             }
         },
         hasFab = true,
-        snackbarHostState = snackbarHostState,
     ) { padding ->
         when {
             !state.isLoaded -> Unit
@@ -150,7 +125,7 @@ fun TodayScreen(
                 onAction = openNewTask,
                 secondaryActionLabel = newRoutineLabel,
                 onSecondaryAction = onNewRoutine,
-                modifier = Modifier.padding(padding),
+                contentPadding = padding,
             )
             else -> {
                 val now = rememberCurrentMinute()

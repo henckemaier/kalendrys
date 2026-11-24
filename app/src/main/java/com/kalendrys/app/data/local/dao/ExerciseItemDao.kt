@@ -5,7 +5,6 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import kotlinx.coroutines.flow.Flow
 
@@ -27,8 +26,39 @@ interface ExerciseItemDao {
     @Insert
     suspend fun insertAll(items: List<ExerciseItem>)
 
-    @Update
-    suspend fun update(item: ExerciseItem)
+    // --- Salvar na hora (v1.9.0, NB-E3-A do Lince): gravações por id, só das colunas que mudam. ----
+    // O item que a tela tem pode estar velho (outra mudança já passou pela fila): nada aqui regrava a
+    // linha inteira a partir dele.
+
+    /** Edita nome, séries, repetições, carga e descanso; id, rotina, posição e criação ficam. */
+    @Query(
+        "UPDATE exercise_item SET name = :name, sets = :sets, reps = :reps, load = :load, " +
+            "restSeconds = :restSeconds WHERE id = :id",
+    )
+    suspend fun updateFields(id: Long, name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?)
+
+    @Query("UPDATE exercise_item SET position = :position WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int)
+
+    /**
+     * Reordena: lê a lista ATUAL da rotina do item [itemId] (na ordem da tela, position e id), troca o
+     * item de lugar com o vizinho acima ([up]) ou abaixo e regrava a posição pelo ÍNDICE de todo item
+     * que estiver fora dele, numa transação. Em lista sã (sem buracos) são as duas gravações de uma troca;
+     * em lista com posições repetidas (o defeito do mover da v1.8.0) ela é consertada, em vez de o
+     * item ficar preso trocando dois valores iguais. Nos extremos, ou com o item já excluído, nada muda.
+     */
+    @Transaction
+    suspend fun moveById(routineId: Long, itemId: Long, up: Boolean) {
+        val items = byRoutine(routineId).toMutableList()
+        val index = items.indexOfFirst { it.id == itemId }
+        if (index < 0) return
+        val target = if (up) index - 1 else index + 1
+        if (target !in items.indices) return
+        items[index] = items[target].also { items[target] = items[index] }
+        items.forEachIndexed { position, item ->
+            if (item.position != position) updatePosition(item.id, position)
+        }
+    }
 
     @Delete
     suspend fun delete(item: ExerciseItem)

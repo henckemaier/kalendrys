@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -33,8 +32,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -53,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
@@ -66,7 +66,6 @@ import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
 import com.kalendrys.app.ui.components.plus
-import com.kalendrys.app.ui.components.showUndo
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.shopping.ShoppingListCard
 import com.kalendrys.app.ui.shopping.ShoppingListPicker
@@ -94,53 +93,47 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel = viewModel(factory = TaskDetailViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
-    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     // Seletor "Criar nova / Usar lista existente" da lista de compras.
     var showListPicker by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
 
-    val savedMessage = stringResource(R.string.changes_saved)
-    val completedMessage = stringResource(R.string.task_completed)
-    val undoLabel = stringResource(R.string.undo)
-    LaunchedEffect(viewModel, snackbarHostState) {
+    LaunchedEffect(viewModel) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                Event.Saved -> snackbarHostState.showSnackbar(savedMessage)
-                is Event.Completed -> {
-                    if (snackbarHostState.showUndo(completedMessage, undoLabel)) viewModel.undoCompletion(event.logId)
-                }
                 Event.Deleted -> currentOnBack()
             }
         }
     }
+    // Salvar na hora (15.3): ir para segundo plano grava a digitação pendente. Sair da tela grava pelo
+    // onCleared do ViewModel; o voltar da barra também devolve o título vazio ao último válido.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.flush() }
 
-    fun requestBack() {
-        if (state.hasChanges) showDiscardDialog = true else onBack()
-    }
-    BackHandler(enabled = state.hasChanges) { showDiscardDialog = true }
-
-    // Salvar fica escrito na barra; Excluir (rara) vai para o menu com rótulo (ADR-0002, 4.2).
-    val hasDraft = state.draft != null
-    val saveLabel = stringResource(R.string.save)
+    // Sem Salvar nem "Descartar alterações?" (15.4): o voltar preditivo funciona. No menu, com rótulo,
+    // Reverter (só com algo mexido nesta sessão) e Excluir (ADR-0002, 4.2).
+    val revertLabel = stringResource(R.string.editor_revert)
     val deleteLabel = stringResource(R.string.delete_task)
+    val loaded = state.task != null
     AppScaffold(
         topBar = {
             AppTopBar(
                 title = stringResource(R.string.task_detail_title),
-                onBack = { requestBack() },
-                actions = if (hasDraft) {
-                    listOf(TopBarAction(saveLabel, enabled = state.canSave, prominent = true, onClick = viewModel::save))
+                onBack = {
+                    viewModel.leave()
+                    onBack()
+                },
+                menu = if (loaded) {
+                    listOfNotNull(
+                        TopBarAction(revertLabel, onClick = viewModel::revert).takeIf { state.canRevert },
+                        TopBarAction(deleteLabel) { showDeleteDialog = true },
+                    )
                 } else {
                     emptyList()
                 },
-                menu = if (hasDraft) listOf(TopBarAction(deleteLabel) { showDeleteDialog = true }) else emptyList(),
             )
         },
-        snackbarHostState = snackbarHostState,
     ) { padding ->
-        val draft = state.draft
+        val timing = state.timing
         when {
             state.notFound -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
@@ -148,15 +141,19 @@ fun TaskDetailScreen(
                 message = stringResource(R.string.task_not_found_message),
                 modifier = Modifier.padding(padding),
             )
-            draft == null -> Unit
+            timing == null -> Unit
             else -> TaskDetailContent(
                 state = state,
-                draft = draft,
+                title = viewModel.titleInput,
+                notes = viewModel.notesInput,
+                location = viewModel.locationInput,
+                timing = timing,
                 onTitleChange = viewModel::updateTitle,
                 onNotesChange = viewModel::updateNotes,
                 onTimingChange = viewModel::updateTiming,
                 onLocationChange = viewModel::updateLocation,
                 onComplete = viewModel::complete,
+                onUndoCompletion = viewModel::undoCompletion,
                 onOpenShoppingList = { listId -> state.task?.let { onOpenShoppingList(listId, it.id) } },
                 onAddShoppingList = { showListPicker = true },
                 onDetachShoppingList = viewModel::detachShoppingList,
@@ -190,7 +187,7 @@ fun TaskDetailScreen(
     if (showListPicker) {
         ShoppingListPicker(
             lists = state.availableLists,
-            suggestedName = state.draft?.title.orEmpty(),
+            suggestedName = state.title,
             onCreate = { name ->
                 viewModel.createShoppingList(name)
                 showListPicker = false
@@ -202,38 +199,22 @@ fun TaskDetailScreen(
             onDismiss = { showListPicker = false },
         )
     }
-
-    if (showDiscardDialog) {
-        AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
-            title = { Text(stringResource(R.string.discard_changes_title)) },
-            text = { Text(stringResource(R.string.discard_changes_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDiscardDialog = false
-                        onBack()
-                    },
-                ) {
-                    Text(stringResource(R.string.discard))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) { Text(stringResource(R.string.keep_editing)) }
-            },
-        )
-    }
 }
 
 @Composable
 private fun TaskDetailContent(
     state: TaskDetailViewModel.UiState,
-    draft: TaskDraft,
+    /** Texto dos campos: estado de composição do ViewModel, lido direto (E3-A), nunca o do [state]. */
+    title: String,
+    notes: String,
+    location: String,
+    timing: TaskTiming,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
     onTimingChange: (TaskTiming) -> Unit,
     onLocationChange: (String) -> Unit,
     onComplete: () -> Unit,
+    onUndoCompletion: () -> Unit,
     onOpenShoppingList: (listId: Long) -> Unit,
     onAddShoppingList: () -> Unit,
     onDetachShoppingList: () -> Unit,
@@ -247,11 +228,12 @@ private fun TaskDetailContent(
     ) {
         item(key = "title") {
             OutlinedTextField(
-                value = draft.title,
+                value = title,
                 onValueChange = onTitleChange,
                 label = { Text(stringResource(R.string.task_title_label)) },
                 singleLine = true,
-                isError = draft.title.isBlank(),
+                // Vazio não grava (o banco fica com o último título válido) e aparece como erro.
+                isError = title.isBlank(),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -260,16 +242,16 @@ private fun TaskDetailContent(
         }
         item(key = "timing") {
             TaskTimingField(
-                timing = draft.timing,
+                timing = timing,
                 onTimingChange = onTimingChange,
-                // O lembrete já salvo pode ter tocado; só um lembrete novo precisa estar no futuro.
-                warnIfPast = state.task?.let { !draft.keepsReminderOf(it, zone) } ?: true,
+                // O lembrete da abertura pode ter tocado; só um escolhido aqui precisa estar no futuro.
+                warnIfPast = state.reminderChanged,
                 modifier = Modifier.padding(bottom = SectionSpacing),
             )
         }
         item(key = "notes") {
             OutlinedTextField(
-                value = draft.notes,
+                value = notes,
                 onValueChange = onNotesChange,
                 label = { Text(stringResource(R.string.task_notes_label)) },
                 minLines = 3,
@@ -282,12 +264,12 @@ private fun TaskDetailContent(
         }
         item(key = "location") {
             LocationField(
-                value = draft.location,
+                value = location,
                 onValueChange = onLocationChange,
                 modifier = Modifier.padding(bottom = SectionSpacing),
-                trailing = if (draft.location.isNotBlank()) {
+                trailing = if (location.isNotBlank()) {
                     {
-                        IconButton(onClick = { openInMaps(context, draft.location) }) {
+                        IconButton(onClick = { openInMaps(context, location) }) {
                             Icon(Icons.Outlined.Map, contentDescription = stringResource(R.string.task_open_map))
                         }
                     }
@@ -329,7 +311,13 @@ private fun TaskDetailContent(
             }
         }
         item(key = "status") {
-            StatusCard(doneAt = state.doneAt, repeats = state.repeats, zone = zone, onComplete = onComplete)
+            StatusCard(
+                doneAt = state.doneAt,
+                repeats = state.repeats,
+                zone = zone,
+                onComplete = onComplete,
+                onUndoCompletion = onUndoCompletion,
+            )
         }
         state.task?.let { task ->
             item(key = "created") {
@@ -385,9 +373,18 @@ private fun TaskDetailContent(
     }
 }
 
-/** Situação da tarefa: hoje (se ela se repete) ou de vez (se não se repete). */
+/**
+ * Situação da tarefa: hoje (se ela se repete) ou de vez (se não se repete). A ação principal conclui
+ * ou, concluída, desfaz ESSA conclusão (P6, 15.4); o histórico de outros dias é só leitura.
+ */
 @Composable
-private fun StatusCard(doneAt: Long?, repeats: Boolean, zone: ZoneId, onComplete: () -> Unit) {
+private fun StatusCard(
+    doneAt: Long?,
+    repeats: Boolean,
+    zone: ZoneId,
+    onComplete: () -> Unit,
+    onUndoCompletion: () -> Unit,
+) {
     val done = doneAt != null
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -421,7 +418,11 @@ private fun StatusCard(doneAt: Long?, repeats: Boolean, zone: ZoneId, onComplete
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
             )
-            if (!done) {
+            if (done) {
+                OutlinedButton(onClick = onUndoCompletion) {
+                    Text(stringResource(R.string.task_undo_completion))
+                }
+            } else {
                 FilledTonalButton(onClick = onComplete) {
                     Text(stringResource(R.string.complete_today))
                 }

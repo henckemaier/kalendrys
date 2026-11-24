@@ -1,5 +1,10 @@
 package com.kalendrys.app.ui.today
 
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import com.kalendrys.app.testutil.testUndoOffers
+import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.UndoOffers
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,6 +20,7 @@ import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
@@ -55,6 +61,7 @@ class TodayViewModelTest {
     private lateinit var routineRepository: RoutineRepository
     private lateinit var taskRepository: TaskRepository
     private lateinit var shoppingRepository: ShoppingRepository
+    private lateinit var undoOffers: UndoOffers
 
     @Before
     fun setup() {
@@ -73,6 +80,7 @@ class TodayViewModelTest {
         )
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
         shoppingRepository = ShoppingRepository(db)
+        undoOffers = testUndoOffers(testDb, routineRepository, tasks = taskRepository)
     }
 
     @After
@@ -88,8 +96,17 @@ class TodayViewModelTest {
             DayOfWeek.MONDAY,
             shoppingRepository,
             TodayRepository(taskRepository, routineRepository, shoppingRepository),
+            undoOffers,
         ),
     )
+
+    /** A oferta de Desfazer do app que a Hoje pediu (v1.9.0, E4), no escopo do app (tempo real). */
+    private suspend fun awaitOffer(): UndoTarget = withContext(Dispatchers.Default) {
+        withTimeout(5_000) { undoOffers.pending.first { it != null }!!.target }
+    }
+
+    /** O Desfazer da mensagem (o que o coletor do app faz ao tocar). */
+    private suspend fun undoPending() = undoOffers.undo(undoOffers.pending.value!!).join()
 
     private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(
         predicate: (TodayViewModel.UiState) -> Boolean,
@@ -149,7 +166,8 @@ class TodayViewModelTest {
         val id = taskRepository.addTask("Levar o carro", timing = timing).id
         val a = taskRepository.logCompletion(id, completedAt = aAt)
         assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)
-        taskRepository.updateTask(db.taskDao().byId(id)!!.copy(dueDate = today.plusDays(3).toEpochDay()))
+        val reopened = TaskTiming.of(db.taskDao().byId(id)!!, java.time.ZoneId.systemDefault()).copy(date = today.plusDays(3))
+        taskRepository.edit(id, TaskChange.Timing(reopened))
         val b = taskRepository.logCompletion(id, completedAt = bAt)
         assertEquals("B é outro registro (a tarefa estava reaberta)", true, b != a)
         assertEquals(today.toEpochDay(), db.taskDao().byId(id)!!.dueDate)
@@ -214,7 +232,7 @@ class TodayViewModelTest {
             vm.skip(treino.id, today)
             val skipped = awaitState { it.block("Treino").skipped }
             assertEquals(false, skipped.block("Treino").isActive)
-            assertEquals(TodayViewModel.Skipped(treino.id, today, previous = null), vm.skipped.first())
+            assertEquals(UndoTarget.SkippedRoutine(treino.id, today.toEpochDay(), previous = null), awaitOffer())
             assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, today.toEpochDay())?.type)
 
             vm.unskip(treino.id, today)
@@ -237,11 +255,11 @@ class TodayViewModelTest {
             awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block && item.startMinute == 930 } }
             vm.skip(treino.id, today)
             awaitState { it.block("Treino").skipped }
-            val event = vm.skipped.first()
+            val event = awaitOffer() as UndoTarget.SkippedRoutine
             assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
             assertEquals(930, event.previous?.newStartMinute)
 
-            vm.undoSkip(event)
+            undoPending()
             val back = awaitState { !it.block("Treino").skipped }
             assertEquals(930, back.block("Treino").startMinute)
             val restored = routineRepository.occurrenceOverride(treino.id, epochDay)
@@ -281,10 +299,10 @@ class TodayViewModelTest {
             awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
             vm.skip(treino.id, today)
             awaitState { it.block("Treino").skipped }
-            val event = vm.skipped.first()
+            val event = awaitOffer() as UndoTarget.SkippedRoutine
             assertNull(event.previous)
 
-            vm.undoSkip(event)
+            undoPending()
             awaitState { !it.block("Treino").skipped }
             assertNull(routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
             cancelAndIgnoreRemainingEvents()
@@ -330,13 +348,13 @@ class TodayViewModelTest {
             // A tela passa o dia da ocorrência (block.occurrenceDate), não o mostrado.
             vm.skip(treino.id, shown.occurrenceDate)
             awaitState { state -> state.timeline.none { it is DayTimeline.Block && it.routine.id == treino.id } }
-            val event = vm.skipped.first()
-            assertEquals(yesterday, event.date)
+            val event = awaitOffer() as UndoTarget.SkippedRoutine
+            assertEquals(yesterday.toEpochDay(), event.epochDay)
             assertEquals(RoutineOverrideType.RESCHEDULE, event.previous?.type)
             assertEquals(RoutineOverrideType.SKIP, routineRepository.occurrenceOverride(treino.id, yesterday.toEpochDay())?.type)
             assertNull("nenhum pular inútil no dia mostrado", routineRepository.occurrenceOverride(treino.id, today.toEpochDay()))
 
-            vm.undoSkip(event)
+            undoPending()
             val back = awaitState { state -> state.timeline.any { it is DayTimeline.Block && it.routine.id == treino.id } }
             assertEquals(930, back.block("Treino").startMinute)
             assertEquals(yesterday, back.block("Treino").occurrenceDate)

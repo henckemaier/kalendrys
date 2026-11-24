@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -28,11 +30,16 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.HorizontalSwipeContent
 import com.kalendrys.app.ui.components.WeekdayName
+import com.kalendrys.app.ui.components.firstDayOfWeek
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.routines.routineTone
@@ -43,6 +50,10 @@ import java.time.LocalDate
 /**
  * Faixa da semana da Hoje: sete dias (aba, com o dia selecionado), pontos das rotinas e deslize para
  * trocar de semana, com "Semana anterior"/"Próxima semana" como ações de acessibilidade equivalentes.
+ *
+ * Nome do dia SEMPRE numa linha (v1.9.0, N-1): três letras ("Dom") se as sete couberem na largura
+ * da célula; senão a faixa INTEIRA passa a uma letra ("D"), escolhida por medida e igual para os sete
+ * dias. O leitor de tela ouve o nome completo (descrição da célula).
  */
 @Composable
 internal fun TodayWeekStrip(
@@ -68,26 +79,51 @@ internal fun TodayWeekStrip(
                 )
             },
     ) { weekStart ->
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Na lista da Hoje a margem lateral já vem do contentPadding.
-                .padding(bottom = 8.dp),
-        ) {
-            for (offset in 0L until 7L) {
-                val date = weekStart.plusDays(offset)
-                WeekDayCell(
-                    date = date,
-                    // Durante a animação a semana que sai não tem mais dados: aparece sem pontos.
-                    day = byDate[date],
-                    isToday = date == state.today,
-                    isSelected = date == state.selectedDate,
-                    onClick = { onSelect(date) },
-                    modifier = Modifier.weight(1f),
-                )
+        // Na lista da Hoje a margem lateral já vem do contentPadding.
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            val nameStyle = weekdayNameStyle(maxWidth / 7)
+            Row(modifier = Modifier.fillMaxWidth()) {
+                for (offset in 0L until 7L) {
+                    val date = weekStart.plusDays(offset)
+                    WeekDayCell(
+                        date = date,
+                        // Durante a animação a semana que sai não tem mais dados: aparece sem pontos.
+                        day = byDate[date],
+                        isToday = date == state.today,
+                        isSelected = date == state.selectedDate,
+                        onClick = { onSelect(date) },
+                        nameStyle = nameStyle,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
+}
+
+/** Marca de teste do nome do dia (medida da N-1). */
+internal const val WEEKDAY_NAME_TAG = "today-week-name"
+
+/** Estilo do nome do dia na faixa. */
+@Composable
+internal fun weekdayLabelStyle(): TextStyle = MaterialTheme.typography.labelMedium
+
+/**
+ * Três letras se o nome curto MAIS LARGO dos sete couber numa linha em [cellWidth]; senão uma letra
+ * para todos (N-1). Medido com a fonte em vigor, então a fonte grande também cai para uma letra.
+ */
+@Composable
+internal fun weekdayNameStyle(cellWidth: Dp): WeekdayName {
+    val firstDay = firstDayOfWeek()
+    val shortNames = (0L until 7L).map { weekdayName(firstDay.plus(it), WeekdayName.SHORT) }
+    val style = weekdayLabelStyle()
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val widest = remember(shortNames, style, density) {
+        shortNames.maxOf { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width }
+    }
+    val cellPx = with(density) { cellWidth.roundToPx() }
+    return if (widest <= cellPx) WeekdayName.SHORT else WeekdayName.NARROW
 }
 
 @Composable
@@ -97,6 +133,7 @@ private fun WeekDayCell(
     isToday: Boolean,
     isSelected: Boolean,
     onClick: () -> Unit,
+    nameStyle: WeekdayName,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -114,10 +151,13 @@ private fun WeekDayCell(
             .padding(vertical = 6.dp),
     ) {
         Text(
-            text = weekdayName(date.dayOfWeek, WeekdayName.SHORT),
-            style = MaterialTheme.typography.labelMedium,
+            text = weekdayName(date.dayOfWeek, nameStyle),
+            style = weekdayLabelStyle(),
             color = colors.onSurfaceVariant,
-            modifier = Modifier.clearAndSetSemantics {},
+            maxLines = 1,
+            softWrap = false,
+            // Só a marca de teste: o leitor de tela ouve o nome completo pela célula.
+            modifier = Modifier.clearAndSetSemantics { testTag = WEEKDAY_NAME_TAG },
         )
         Spacer(Modifier.height(4.dp))
         Box(

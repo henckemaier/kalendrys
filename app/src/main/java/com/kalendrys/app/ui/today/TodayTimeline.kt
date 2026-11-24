@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -325,11 +326,20 @@ private fun BlockRow(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val timeRange = routineTimeRange(block.startMinute, routine.durationMinutes)
+                // N-8 (v1.9.0): a frase inteira do horário mora nesta linha, que SEMPRE tem tamanho (o horário
+                // pode não aparecer, no terceiro degrau); o leitor de tela a lê uma vez, no nó mesclado do bloco.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    // Largura inteira: a linha tem tamanho mesmo sem sino, sem lista e sem horário desenhado.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { text = AnnotatedString(timeRange) },
+                ) {
                     // M-1: o horário cede espaço para o sino e o 2/3 ficarem inteiros. O-7: sempre numa linha:
-                    // a faixa inteira se couber, senão só a duração ("2h"); o leitor de tela lê a frase inteira.
+                    // a faixa inteira se couber, senão só a duração ("2h"), senão nada (N-2).
                     OneLineTimeRange(
-                        full = routineTimeRange(block.startMinute, routine.durationMinutes),
+                        full = timeRange,
                         short = if (routine.durationMinutes > 0) {
                             DurationFormat.format(routine.durationMinutes)
                         } else {
@@ -479,41 +489,38 @@ private fun GapRow(gap: DayTimeline.Gap) {
  * na largura que sobra, senão [short] (só a duração, "2h"; num bloco sem duração os dois são a hora).
  * Escolha por medida, no molde da linha do tempo livre, mas com um `Layout` simples em vez de
  * `BoxWithConstraints`: o bloco mede a altura pelas intrínsecas (`IntrinsicSize.Min`) e um
- * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira ([full]), como texto
- * do nó, igual a antes; os dois textos desenhados ficam fora da leitura.
+ * `SubcomposeLayout` não as responde. O leitor de tela lê sempre a frase inteira, que a LINHA do
+ * horário declara (N-8: no terceiro degrau este nó não tem largura); os dois textos desenhados ficam
+ * fora da leitura.
  *
- * NB-1 do Esquadro: se nem a forma curta couber (duração longa, "23h 59min", em 320dp com fonte 2.0,
- * sino e lista juntos), ela é medida com a largura disponível como máximo e ganha reticências: a
- * caixa nunca passa da largura que sobra, e o texto não desenha por cima do sino nem do 2/3.
+ * Terceiro degrau (v1.9.0, N-2; antes NB-1 com reticências): se nem a forma curta couber (duração
+ * longa, "23h 59min", em 320dp com fonte 2.0, sino e lista juntos), não aparece nada; a caixa nunca
+ * passa da largura que sobra, e o leitor de tela continua com a frase inteira (da linha).
  */
+/** Marca de teste do horário do bloco (medida da N-2). */
+internal const val TIME_RANGE_TAG = "timeline-time-range"
+
 @Composable
 private fun OneLineTimeRange(full: String, short: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     Layout(
         content = {
             Text(text = full, style = style, color = color, maxLines = 1, softWrap = false)
-            Text(
-                text = short,
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(text = short, style = style, color = color, maxLines = 1, softWrap = false)
         },
-        modifier = modifier.clearAndSetSemantics { text = AnnotatedString(full) },
+        // Sem semântica própria (N-8): a frase vem da linha que o contém; aqui só a marca de teste.
+        modifier = modifier.clearAndSetSemantics { testTag = TIME_RANGE_TAG },
     ) { measurables, constraints ->
-        // A faixa inteira na largura natural, numa linha só, para a escolha: vale se couber na largura
-        // disponível. Senão, a curta medida com essa largura como máximo (reticências se nem ela couber).
+        // Três degraus (v1.9.0, N-2), cada forma medida na largura natural, numa linha só: a faixa
+        // inteira se couber; senão só a curta (a duração); senão NADA, sem reticências. Início e fim
+        // seguem na coluna de horas, e o nó (e a linha mesclada) leva sempre a frase inteira.
         val natural = constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
         val wide = measurables[0].measure(natural)
-        val chosen = if (!constraints.hasBoundedWidth || wide.width <= constraints.maxWidth) {
-            wide
-        } else {
-            measurables[1].measure(constraints.copy(minWidth = 0))
-        }
-        val width = chosen.width.coerceIn(constraints.minWidth, constraints.maxWidth)
-        val height = chosen.height.coerceIn(constraints.minHeight, constraints.maxHeight)
-        layout(width, height) { chosen.placeRelative(0, 0) }
+        val fits = { width: Int -> !constraints.hasBoundedWidth || width <= constraints.maxWidth }
+        val chosen = if (fits(wide.width)) wide else measurables[1].measure(natural).takeIf { fits(it.width) }
+        // Sem forma que caiba: largura mínima, a altura de uma linha (o alinhamento da linha não muda).
+        val width = (chosen?.width ?: 0).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = (chosen?.height ?: wide.height).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) { chosen?.placeRelative(0, 0) }
     }
 }
 

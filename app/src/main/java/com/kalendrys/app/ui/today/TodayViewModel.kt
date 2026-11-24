@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
@@ -31,7 +32,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,7 +42,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -59,6 +58,11 @@ class TodayViewModel(
     private val shoppingRepository: ShoppingRepository,
     /** Fonte única das pendências de hoje (E3): o mesmo retrato do widget Resumo e do resumo diário. */
     private val todayRepository: TodayRepository,
+    /**
+     * Oferta de Desfazer do app (v1.9.0, E4, 15.6): concluir e pular pela Hoje fazem E oferecem ali, no
+     * escopo do app, e a mensagem sobrevive a girar e a trocar de aba. A Hoje não tem mensagem própria.
+     */
+    private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
     /** Um ponto na faixa da semana: a cor do bloco e se ele foi feito. */
@@ -114,9 +118,6 @@ class TodayViewModel(
         /** Pendentes hoje (tarefas e blocos): o mesmo número do widget Resumo ([TodayOverview.pendingCount]). */
         val pendingToday: Int? get() = overview?.pendingCount
     }
-
-    /** Conclusão de rotina que o snackbar oferece desfazer. */
-    data class Completed(val routineId: Long, val date: LocalDate)
 
     /**
      * O que a Hoje mostra (NB-E3-B): ACOMPANHANDO HOJE (padrão) ou UM DIA ESCOLHIDO. Tocar em Hoje, ou
@@ -262,22 +263,6 @@ class TodayViewModel(
             day.copy(listProgress = progress)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    private val completedEvents = Channel<Completed>(Channel.BUFFERED)
-    val completed: Flow<Completed> = completedEvents.receiveAsFlow()
-
-    /**
-     * Ocorrência pulada que o snackbar oferece desfazer (P5). [previous]: a exceção que o pular
-     * substituiu naquele dia (ex.: uma remarcação), `null` se não havia; o [undoSkip] a recoloca.
-     */
-    data class Skipped(val routineId: Long, val date: LocalDate, val previous: RoutineOverride? = null)
-
-    private val skippedEvents = Channel<Skipped>(Channel.BUFFERED)
-    val skipped: Flow<Skipped> = skippedEvents.receiveAsFlow()
-
-    /** Conclusão de tarefa (id do log) que o snackbar oferece desfazer. */
-    private val taskCompletedEvents = Channel<Long>(Channel.BUFFERED)
-    val taskCompleted: Flow<Long> = taskCompletedEvents.receiveAsFlow()
-
     // --- Dia e trilha ------------------------------------------------------------------------------
 
     private fun List<RoutineCompletion>.groupLogs(): Map<Long, Set<Long>> =
@@ -326,49 +311,40 @@ class TodayViewModel(
         lastDay?.let { select(it.selected.plusWeeks(1)) }
     }
 
-    /** Marca como feito (com "Desfazer" no snackbar) ou, se já estava feito, desmarca. */
+    /**
+     * Marca como feito ou, se já estava feito, desmarca. Concluir pede ao [UndoOffers] (faz e oferece
+     * Desfazer no escopo do app, 15.6). Desmarcar é direto, sem oferta, e DESCARTA a oferta pendente da
+     * conclusão deste bloco neste dia (A1 da revisão da E4): o Desfazer dela não pode apagar uma conclusão
+     * feita depois por outro caminho (widget).
+     */
     fun toggle(block: DayTimeline.Block) {
         val (now, date) = lastDay ?: return
         // Pulado não se conclui: primeiro desfaz o pular.
         if (block.skipped || date.isAfter(now)) return
-        viewModelScope.launch {
-            if (block.done) {
-                repository.uncomplete(block.routine.id, date)
-            } else {
-                repository.complete(block.routine.id, date)
-                completedEvents.send(Completed(block.routine.id, date))
-            }
+        val routineId = block.routine.id
+        if (block.done) {
+            undoOffers.discardRoutineCompletion(routineId, date.toEpochDay())
+            viewModelScope.launch { repository.uncomplete(routineId, date) }
+        } else {
+            undoOffers.completeRoutine(routineId, date, today = now)
         }
     }
 
-    fun undo(completed: Completed) {
-        viewModelScope.launch { repository.uncomplete(completed.routineId, completed.date) }
-    }
-
     /**
-     * Pular a ocorrência de [routineId] em [date] (P5): o MESMO [RoutineRepository.skipOccurrence] da
-     * tela de exceção (reagenda os alarmes), e avisa a tela para oferecer Desfazer ([skipped]), com a
-     * exceção que o pular substituiu. O bloco continua na trilha, marcado ([DayTimeline.Block.skipped]).
+     * Pular a ocorrência de [routineId] em [date] (P5): pede ao [UndoOffers], que usa o MESMO
+     * [RoutineRepository.skipOccurrence] da tela de exceção (reagenda os alarmes) e oferece Desfazer com
+     * a exceção que o pular substituiu. O bloco continua na trilha, marcado ([DayTimeline.Block.skipped]).
      */
     fun skip(routineId: Long, date: LocalDate) {
-        viewModelScope.launch {
-            val previous = repository.skipOccurrence(routineId, date.toEpochDay())
-            skippedEvents.send(Skipped(routineId, date, previous))
-        }
+        undoOffers.skipRoutine(routineId, date)
     }
 
     /**
-     * Desfazer da MENSAGEM, logo depois de pular: devolve o dia ao que era antes — tira o pular e
-     * recoloca a exceção anterior ([Skipped.previous], ex.: uma remarcação).
+     * "Desfazer pular" do BLOCO esmaecido, a qualquer momento: só tira o pular (a exceção do dia), e
+     * descarta a oferta pendente desse pular (simetria do A1 da revisão da E4).
      */
-    fun undoSkip(event: Skipped) {
-        viewModelScope.launch {
-            repository.restoreOccurrenceException(event.routineId, event.date.toEpochDay(), event.previous)
-        }
-    }
-
-    /** "Desfazer pular" do BLOCO esmaecido, a qualquer momento: só tira o pular (a exceção do dia). */
     fun unskip(routineId: Long, date: LocalDate) {
+        undoOffers.discardRoutineSkip(routineId, date.toEpochDay())
         viewModelScope.launch { repository.clearOccurrenceException(routineId, date.toEpochDay()) }
     }
 
@@ -379,21 +355,19 @@ class TodayViewModel(
     fun toggleTask(task: Task, done: Boolean) {
         val (now, date) = lastDay ?: return
         if (date.isAfter(now)) return
-        viewModelScope.launch {
-            if (done) {
-                taskLogFor(task.id, date)?.let { taskRepository.undoCompletion(it) }
-            } else {
-                // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
-                // A data e a hora vêm do mesmo relógio do TodayRepository (sem relógio direto aqui).
-                val clock = todayRepository.now()
-                val completedAt = TaskSchedule.completionInstantOn(date, clock)
-                taskCompletedEvents.send(taskRepository.logCompletion(task.id, completedAt, now = clock.toInstant().toEpochMilli()))
-            }
+        if (done) {
+            // Desmarcar direto: descarta a oferta pendente desse registro (E4-B) e desfaz a conclusão.
+            val logId = taskLogFor(task.id, date) ?: return
+            undoOffers.discardTaskCompletion(logId)
+            viewModelScope.launch { taskRepository.undoCompletion(logId) }
+        } else {
+            // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
+            // A data e a hora vêm do mesmo relógio do TodayRepository (sem relógio direto aqui). Faz e
+            // oferece Desfazer pelo [UndoOffers] (15.6); o Desfazer apaga o registro criado ali.
+            val clock = todayRepository.now()
+            val completedAt = TaskSchedule.completionInstantOn(date, clock)
+            undoOffers.completeTask(task, completedAt = completedAt, now = clock.toInstant().toEpochMilli())
         }
-    }
-
-    fun undoTaskCompletion(logId: Long) {
-        viewModelScope.launch { taskRepository.undoCompletion(logId) }
     }
 
     /**
@@ -455,6 +429,7 @@ class TodayViewModel(
                     firstDayOfWeek(),
                     app.shoppingRepository,
                     app.todayRepository,
+                    app.undoOffers,
                 )
             }
         }

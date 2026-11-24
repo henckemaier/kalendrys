@@ -60,9 +60,10 @@ app/src/main/java/com/kalendrys/app/
 │   ├── navigation/          # Bottom bar: Hoje | Tarefas | Calendário | Listas; painel de nova tarefa e Desfazer no topo
 │   ├── today/               # Tela Hoje (inicial): progresso, próximo, linha do tempo, tarefas do dia, Concluídas
 │   ├── tasks/               # Lista em seções, arrastar p/ excluir, desfazer, NewTaskSheet, ReminderPicker
-│   ├── taskdetail/          # Detalhe/edição: título, observações, lembrete, status do dia, histórico
+│   ├── edit/                # Salvar na hora dos editores: buffer de campo de texto e fila de gravações
+│   ├── taskdetail/          # Detalhe/edição que grava na hora: título, observações, lembrete, desfazer conclusão, histórico
 │   ├── routines/            # Todas as rotinas (ativas e pausadas, filtro por categoria); paleta e ícones
-│   ├── routineeditor/       # Criar/editar rotina: ícone, cor, horário, duração, dias, aviso, lista anexada
+│   ├── routineeditor/       # Criar (rascunho + "Criar rotina") e editar rotina (grava na hora), por seção
 │   ├── shopping/            # Aba Listas, tela da lista, cartão-resumo e seletor de lista
 │   ├── calendar/            # Mês com marcadores, agenda do dia (rotinas, lembretes, conclusões)
 │   └── settings/            # Configurações: resumo diário (liga/desliga, horário), notificações, sobre
@@ -103,6 +104,12 @@ em que ela acontece tem a própria conclusão. A lista separa *Atrasadas*, *Hoje
 - **Concluir adiantado**: concluir antes do dia uma tarefa única com data futura a traz para hoje
   e tira o lembrete futuro; o "Desfazer" devolve a data e o lembrete (melhor esforço: se o app
   foi encerrado no meio, desfaz sem restaurar).
+- **Detalhe da tarefa grava na hora** (v1.9.0): o texto é gravado 500 ms depois da última tecla
+  e sempre ao sair ou ao ir para segundo plano; não há "Salvar". Cada edição grava só o campo
+  mudado (`TaskChange`, `TaskRepository.edit`) sobre a linha mais recente, então concluir pela
+  notificação com o detalhe aberto não é desfeito. "Reverter alterações" (menu) devolve os campos
+  mudados enquanto a tela está aberta; com a tarefa concluída, a ação principal é **Desfazer
+  conclusão**.
 - **Rascunho do painel de nova tarefa** (v1.7.1): fechar o painel pelo voltar, tocando fora ou
   arrastando guarda o rascunho; Cancelar descarta e Salvar grava. Um rascunho só, compartilhado
   entre Tarefas e Calendário, em memória (não vai para o banco nem para o backup).
@@ -128,8 +135,13 @@ continua abrindo a Hoje na data):
   mais mostram "Tempo livre · 1h 20min". O bloco em andamento ganha "Agora".
 - **Faixa da semana** no topo (deslize para trocar de semana), com um ponto por bloco: cheio se
   feito, contorno se pendente. Dá para marcar dias passados; dias futuros não.
-- **Editor**: título, ícone (35), cor (8, com tons claro e escuro), início, duração ou
-  "termina às" (pode passar da meia-noite), dias da semana e aviso no início.
+- **Editor**: título; quando (início, duração ou "termina às", que pode passar da meia-noite,
+  dias da semana, a cada N semanas); aviso no início; categoria; lista; exercícios; aparência
+  (ícone entre 35, cor entre 8, com tons claro e escuro); e, em "Mais opções", vigência e
+  observações. Desde a v1.9.0, a rotina existente **grava na hora** (só o campo mudado, por
+  `RoutineChange`; o alarme só é refeito quando muda horário, dias, vigência ou aviso) e o menu
+  tem Pausar, Duplicar, **Reverter alterações** e Excluir. A criação usa rascunho: nada é gravado
+  nem agendado antes de "Criar rotina", e a tela fecha depois dele.
 - **Aviso no início** pelo canal "Rotinas", com os botões **Concluir**, **Pular** e **Adiar**
   (funcionam com o app fechado). Em bloco com lista, **Pular** dá lugar a **Abrir lista** e o
   título mostra o progresso. Um único alarme no `AlarmManager` cobre todas as rotinas: o próximo início. Bloco
@@ -140,9 +152,9 @@ continua abrindo a Hoje na data):
 - **Lista de compras**: qualquer rotina pode anexar uma lista (nova ou existente) pelo cartão do
   editor; os itens se editam na tela da lista. Concluir o bloco de **hoje** zera as marcações
   (pela tela, pelo widget ou pela notificação) e o "Desfazer" as devolve. Marcar um dia passado
-  não mexe na lista. Arquivar a rotina não apaga a lista. O "Descartar" do editor de rotina
-  desfaz só os campos da rotina e o vínculo com a lista; as edições de itens, salvas na hora na
-  tela da lista, não são revertidas.
+  não mexe na lista. Arquivar a rotina não apaga a lista. O "Reverter alterações" do editor de
+  rotina desfaz só os campos da rotina e o vínculo com a lista; as edições de itens, salvas na
+  hora na tela da lista, não são revertidas.
 - Aparecem também no **calendário** (seção "Rotinas" do dia), no **resumo das 8h** e nos
   **widgets**.
 
@@ -276,7 +288,8 @@ Macrobenchmark (mesmo build): 2.583 ms sem compilação → 2.049 ms com o Basel
   atualizar por cima da versão instalada sem perder dados. Para publicar na Play Store, criar
   uma chave de upload própria.
 - **Baseline Profile** (`baselineprofile/`): percorre lista, detalhe, rotinas (criando um
-  bloco pelo editor), listas (criando uma pela aba), calendário e configurações. Regerar após mudanças grandes de UI, com um emulador ou aparelho Android 13+
+  bloco pelo editor), listas (criando uma pela aba), calendário e configurações. O perfil da
+  v1.9.0 não cobre as telas de rotinas (lacuna conhecida, ADR-0002 15.12). Regerar após mudanças grandes de UI, com um emulador ou aparelho Android 13+
   conectado: `./gradlew :app:generateReleaseBaselineProfile`. Medir a abertura:
   `./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest`. Requer benchmark 1.4.1+
   (a 1.3.x não entende o `pm dump-profiles` do Android 16+). Com o plugin 1.5.0 e o AGP 9.5.1

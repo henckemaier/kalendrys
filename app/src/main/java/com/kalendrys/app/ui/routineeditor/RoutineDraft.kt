@@ -5,7 +5,12 @@ import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
 
-/** Cópia editável de uma rotina no editor; só vai para o banco ao salvar. */
+/**
+ * Campos do editor de rotina (v1.9.0, ADR-0002 15.2 e 15.5). Na CRIAÇÃO é o rascunho, que só vai para
+ * o banco no "Criar rotina" ([toNewRoutine]). Na EDIÇÃO é só o retrato do que a tela mostra (a linha
+ * do banco com o texto em digitação) e o retrato da abertura para o "Reverter alterações": nunca é
+ * gravado inteiro; cada mudança vai pelo [com.kalendrys.app.data.repository.RoutineRepository.edit].
+ */
 data class RoutineDraft(
     val title: String = "",
     val notes: String = "",
@@ -25,8 +30,8 @@ data class RoutineDraft(
     val endEpochDay: Long? = null,
     /**
      * Lista de compras anexada ([com.kalendrys.app.data.local.entity.ShoppingList.id]), ou null.
-     * Faz parte do rascunho (ADR-0001, P7): grava com "Salvar", volta com "Descartar". Os itens da
-     * lista NÃO são do rascunho; persistem na hora.
+     * Na criação, uma lista existente escolhida; a lista NOVA fica fora daqui, no ViewModel, e é criada
+     * junto com a rotina. Os itens da lista nunca são do editor; persistem na hora.
      */
     val shoppingListId: Long? = null,
 ) {

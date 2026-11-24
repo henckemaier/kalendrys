@@ -101,6 +101,7 @@ class RoutineDeleteFromEditorTest {
             ShoppingRepository(testDb.db),
             ExerciseRepository(testDb.db.exerciseItemDao()),
             offers,
+            testDb.appScope(),
         ),
     )
 
@@ -154,6 +155,7 @@ class RoutineDeleteFromEditorTest {
                     DayOfWeek.MONDAY,
                     shopping,
                     TodayRepository(tasks, routines, shopping),
+                    offers,
                 )
             },
         )
