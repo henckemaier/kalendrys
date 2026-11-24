@@ -210,15 +210,20 @@ class RoutineRepository(
      * da lista (ADR-0001, P4), de forma reversível pelo [uncomplete]. Mora aqui, e não na tela, para
      * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
      * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
+     *
+     * Devolve se a conclusão foi GRAVADA agora (v1.9.0, E4): falso se já estava feita ou se a rotina não
+     * existe. Quem oferece Desfazer só oferece quando gravou: um segundo toque (widget e Hoje juntos) não
+     * pode gerar um Desfazer que apagaria a conclusão do primeiro. Widget e notificação ignoram o retorno.
      */
-    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Unit = change {
-        val routine = routineDao.byId(routineId) ?: return@change
+    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Boolean = change {
+        val routine = routineDao.byId(routineId) ?: return@change false
         val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
         if (date == today) notifications.cancel(routineId)
         val listId = routine.shoppingListId
         if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
             shoppingItemDao.resetPicked(listId, ShoppingReset.routineKey(routineId, date.toEpochDay()))
         }
+        inserted
     }
 
     /**

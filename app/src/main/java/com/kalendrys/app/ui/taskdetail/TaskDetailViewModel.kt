@@ -259,8 +259,15 @@ class TaskDetailViewModel(
     fun updateTiming(timing: TaskTiming) {
         touch(Field.TIMING)
         pendingTiming.value = timing
+        lastSentTiming = timing
         enqueue(TaskChange.Timing(timing)).invokeOnCompletion { pendingTiming.compareAndSet(timing, null) }
     }
+
+    /**
+     * O último conjunto de data, hora e repetição que ESTE editor enviou (OBS-2, decisão do Esquadro):
+     * o Reverter só devolve o retrato se o banco ainda estiver com ele. Só na thread principal.
+     */
+    private var lastSentTiming: TaskTiming? = null
 
     // --- Lista de compras (ADR-0001): grava na hora; os itens são da tela da lista. ---
 
@@ -327,6 +334,11 @@ class TaskDetailViewModel(
      * Vai pela fila, DEPOIS de esquecer a digitação pendente: nenhuma gravação pedida antes passa por
      * cima. Uma lista criada nesta sessão ("Criar nova") não é apagada: fica avulsa na aba Listas, só
      * sem o vínculo (aceito pelo Esquadro).
+     *
+     * Data, hora e repetição PULAM quando mudaram por fora (OBS-2, decisão do Esquadro): só voltam ao
+     * retrato se a linha mais recente, lida pela fila na hora de gravar, ainda for a do último conjunto
+     * que este editor enviou (reaplicá-lo não mudaria nada). Uma conclusão adiantada feita depois, que
+     * trouxe a data para hoje, fica; desfeita a conclusão, a data volta a ser a enviada e o Reverter vale.
      */
     fun revert() {
         val snap = snapshot.value ?: return
@@ -342,13 +354,21 @@ class TaskDetailViewModel(
                 Field.TITLE -> TaskChange.Title(original.title)
                 Field.NOTES -> TaskChange.Notes(original.notes)
                 Field.LOCATION -> TaskChange.Location(original.location)
-                Field.TIMING -> TaskChange.Timing(snap.timing)
+                Field.TIMING -> null // pela fila, com a guarda abaixo
                 Field.SHOPPING_LIST -> TaskChange.ShoppingList(original.shoppingListId)
             }
         }
+        val sentTiming = lastSentTiming.takeIf { Field.TIMING in fields }
         touched.value = emptySet()
         pendingTiming.value = null
-        changes.forEach(::enqueue)
+        lastSentTiming = null
+        changes.filterNotNull().forEach(::enqueue)
+        if (sentTiming != null) {
+            writes.enqueue { latest ->
+                val stillOurs = sentTiming.applyTo(latest, zone) == latest
+                if (stillOurs) repository.edit(taskId, TaskChange.Timing(snap.timing), zone)
+            }
+        }
     }
 
     /**

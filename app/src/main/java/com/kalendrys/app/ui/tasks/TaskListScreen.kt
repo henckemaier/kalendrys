@@ -299,7 +299,10 @@ private fun LazyListScope.taskSection(
     item(key = "header_$key", contentType = "header") {
         TaskSectionHeader(title = title, count = items.size, modifier = Modifier.animateItem())
     }
-    itemsIndexed(items, key = { _, item -> item.task.id }, contentType = { _, _ -> "task" }) { index, item ->
+    // A chave leva a SEÇÃO (A2 da revisão da E4): com a P5 a mesma tarefa pode estar em duas seções ao
+    // mesmo tempo (Concluídas hoje e Próximas, ou Concluídas hoje e Atrasadas), e chave repetida derruba
+    // a lista.
+    itemsIndexed(items, key = { _, item -> "${key}_${item.task.id}" }, contentType = { _, _ -> "task" }) { index, item ->
         SwipeableTaskRow(
             item = item,
             done = done,

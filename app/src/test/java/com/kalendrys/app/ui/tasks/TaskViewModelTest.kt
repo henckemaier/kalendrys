@@ -1,5 +1,8 @@
 package com.kalendrys.app.ui.tasks
 
+import java.time.ZoneId
+import com.kalendrys.app.domain.TodayOverview
+import com.kalendrys.app.domain.TaskChange
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -217,6 +220,79 @@ class TaskViewModelTest {
             val weekly = state.upcoming.single { it.task.title == "Semanal" }
             assertTrue("data de Próximas depois de hoje: ${weekly.date}", weekly.date!!.isAfter(today))
             assertEquals(listOf("Diária"), state.dueToday.map { it.task.title })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // --- P5 (v1.9.0, E4): "Concluídas hoje" pelo registro do dia, a mesma função da Hoje ----------
+
+    @Test
+    fun `repetida concluida adiantada aparece em Concluidas hoje e em Proximas com a proxima data`() = runTest {
+        val today = LocalDate.now()
+        val weekly = taskRepository.addTask("Semanal", timing = TaskTiming(date = today.plusDays(2), repeat = ReminderRepeat.WEEKLY))
+        taskRepository.logCompletion(weekly.id)
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.doneToday.isNotEmpty() }
+            assertEquals(listOf("Semanal"), state.doneToday.map { it.task.title })
+            val upcoming = state.upcoming.single { it.task.id == weekly.id }
+            assertTrue("próxima data depois de hoje: ${upcoming.date}", upcoming.date!!.isAfter(today))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `unica concluida hoje e reaberta para outra data aparece em Concluidas hoje e na secao da data nova`() = runTest {
+        // Caso da 14.10 pedido pelo Esquadro.
+        val today = LocalDate.now()
+        val task = taskRepository.addTask("Consulta", timing = TaskTiming(date = today))
+        taskRepository.logCompletion(task.id)
+        taskRepository.edit(task.id, TaskChange.Timing(TaskTiming(date = today.plusDays(3))))
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.doneToday.isNotEmpty() && it.upcoming.isNotEmpty() }
+            assertEquals(listOf(task.id), state.doneToday.map { it.task.id })
+            assertEquals(today.plusDays(3), state.upcoming.single { it.task.id == task.id }.date)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `unica concluida hoje so aparece em Concluidas hoje`() = runTest {
+        val task = taskRepository.addTask("Pagar conta", timing = TaskTiming(date = LocalDate.now()))
+        taskRepository.logCompletion(task.id)
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.doneToday.isNotEmpty() }
+            assertEquals(listOf(task.id), state.doneToday.map { it.task.id })
+            assertTrue(state.overdue.isEmpty() && state.dueToday.isEmpty() && state.upcoming.isEmpty() && state.noDate.isEmpty())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `Concluidas hoje bate com o TodayOverview e conclusao retroativa nao conta hoje`() = runTest {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val a = taskRepository.addTask("Hoje")
+        val b = taskRepository.addTask("Diária", timing = TaskTiming(date = today.minusDays(5), repeat = ReminderRepeat.DAILY))
+        val c = taskRepository.addTask("Ontem", timing = TaskTiming(date = today.minusDays(1)))
+        taskRepository.logCompletion(a.id)
+        taskRepository.logCompletion(b.id)
+        // Retroativa: registro gravado ONTEM (a Hoje num dia passado).
+        val yesterday = today.minusDays(1).atTime(10, 0).atZone(zone).toInstant().toEpochMilli()
+        taskRepository.logCompletion(c.id, completedAt = yesterday)
+
+        viewModel().uiState.test {
+            val state = awaitState { it.isLoaded && it.doneToday.size >= 2 }
+            val expected = TodayOverview.doneTodayIds(
+                tasks = db.taskDao().all(),
+                completions = db.completionLogDao().all(),
+                today = today,
+                zone = zone,
+            )
+            assertEquals(expected, state.doneToday.map { it.task.id }.toSet())
+            assertTrue("a retroativa de ontem não conta hoje", c.id !in expected)
             cancelAndIgnoreRemainingEvents()
         }
     }

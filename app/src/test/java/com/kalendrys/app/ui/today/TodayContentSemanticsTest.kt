@@ -1,5 +1,10 @@
 package com.kalendrys.app.ui.today
 
+import com.kalendrys.app.ui.navigation.UndoOfferEffect
+import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.SnackbarHostState
 import android.content.Context
 import android.os.Looper
 import androidx.compose.runtime.snapshots.Snapshot
@@ -59,7 +64,8 @@ class TodayContentSemanticsTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
-        val repos = TodayRepositories(context, testDb.db)
+        // A oferta de Desfazer da Hoje roda no escopo do app de teste (o close espera; v1.9.0, E4).
+        val repos = TodayRepositories(context, testDb.db, testDb.appScope())
         runBlocking {
             repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
             repos.tasks.addTask("Ideias para o fim de semana")
@@ -67,7 +73,12 @@ class TodayContentSemanticsTest {
         }
         viewModel = testDb.track(repos.viewModel(DayOfWeek.SUNDAY))
         compose.setContent {
+            // Como no KalendrysNavHost: a mensagem de Desfazer da Hoje é a da oferta do app (v1.9.0, E4),
+            // mostrada pelo UndoOfferEffect na caixa de mensagens do app.
+            val appSnackbar = remember { SnackbarHostState() }
             KalendrysTheme {
+                CompositionLocalProvider(LocalAppSnackbarHostState provides appSnackbar) {
+                UndoOfferEffect(repos.undoOffers, appSnackbar)
                 TodayScreen(
                     onOpenRoutine = {},
                     onNewRoutine = {},
@@ -77,6 +88,7 @@ class TodayContentSemanticsTest {
                     onOpenException = { _, _ -> },
                     viewModel = viewModel,
                 )
+                }
             }
         }
         compose.mainClock.autoAdvance = false

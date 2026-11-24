@@ -11,10 +11,12 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.currentDate
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskFiltering
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.TaskSchedule.Status
+import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
@@ -69,17 +71,29 @@ class TaskViewModel(
     private val _filters = MutableStateFlow<Set<Filter>>(emptySet())
     val filters: StateFlow<Set<Filter>> = _filters.asStateFlow()
 
-    /** Agrupamento/ordenação (caro): só recalcula quando os dados mudam, não a cada tecla da busca. */
+    /**
+     * Agrupamento/ordenação (caro): só recalcula quando os dados mudam, não a cada tecla da busca.
+     *
+     * "Concluídas hoje" (P5, v1.9.0 E4) é pelo REGISTRO do dia, com a MESMA função da Hoje, do widget e
+     * do resumo ([TodayOverview.doneTodayIds], 14.4): toda tarefa com conclusão hoje, por qualquer
+     * caminho. As outras seções seguem pelo [TaskSchedule.status]; por isso a repetida concluída
+     * adiantada aparece em "Concluídas hoje" E em "Próximas" (com a próxima data), e a única concluída
+     * hoje e reaberta para outra data aparece em "Concluídas hoje" E na seção da data nova (15.6, 14.10).
+     *
+     * A data de hoje vem do [currentDate] (troca sozinha na meia-noite), e o registro é filtrado por ela:
+     * na virada, um registro de ontem que ainda não saiu do fluxo não conta. Limite conhecido: este fluxo
+     * de data e o do repositório são dois relógios; a fonte única de data é da v1.10.0.
+     */
     private val baseState: Flow<UiState> =
         combine(
             repository.tasks,
             repository.completionsToday,
             repository.lastCompletions,
             shoppingRepository.observeProgressByList(),
-        ) { tasks, logsToday, last, progressByList ->
+            currentDate(),
+        ) { tasks, logsToday, last, progressByList, today ->
             val zone = ZoneId.systemDefault()
-            val today = LocalDate.now(zone)
-            val doneTodayIds = logsToday.mapTo(HashSet()) { it.taskId }
+            val doneTodayIds = TodayOverview.doneTodayIds(tasks, logsToday, today, zone)
             val byStatus = tasks.groupBy { task ->
                 TaskSchedule.status(
                     task = task,
@@ -104,7 +118,14 @@ class TaskViewModel(
                 upcoming = items(Status.UPCOMING) { TaskSchedule.nextOccurrence(it, today.plusDays(1)) }
                     .sortedWith(compareBy<Item, LocalDate?>(nullsLast()) { it.date }.thenBy(nullsLast()) { it.reminderTime }),
                 noDate = items(Status.NO_DATE) { null },
-                doneToday = items(Status.DONE_TODAY) { today },
+                doneToday = tasks.filter { it.id in doneTodayIds }.map {
+                    Item(
+                        task = it,
+                        date = today,
+                        reminderTime = TaskSchedule.reminderOn(it, today, zone),
+                        listProgress = progressByList.visibleProgressFor(it.shoppingListId),
+                    )
+                },
                 isLoaded = true,
             )
         }

@@ -576,4 +576,60 @@ class TaskDetailViewModelTest {
     private companion object {
         const val TIMEOUT_MS = 5_000L
     }
+
+    // --- OBS-2 (decisão do Esquadro): o Reverter pula data, hora e repetição mudadas por fora ------
+
+    @Test
+    fun `OBS-2 a - mexer na data, concluir adiantado, Reverter - continua concluida com a data da conclusao`() = runBlocking {
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        val opened = vm.awaitUi { it.timing != null }
+        vm.updateTiming(opened.timing!!.copy(date = LocalDate.now().plusDays(3)))
+        vm.awaitPendingWrites()
+        taskRepository.logCompletion(id) // concluída adiantada por fora: a data vem para hoje
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        assertEquals(LocalDate.now().toEpochDay(), stored(id).dueDate)
+        assertEquals(1, db.completionLogDao().all().count { it.taskId == id })
+        Unit
+    }
+
+    @Test
+    fun `OBS-2 b - mexer na data, concluir, desfazer a conclusao, Reverter - a data volta a da abertura`() = runBlocking {
+        val id = tomorrowTask()
+        val openedDue = stored(id).dueDate
+        val vm = viewModel(id)
+        val opened = vm.awaitUi { it.timing != null }
+        vm.updateTiming(opened.timing!!.copy(date = LocalDate.now().plusDays(3)))
+        vm.awaitPendingWrites()
+        val logId = taskRepository.logCompletion(id)
+        taskRepository.undoCompletion(logId) // a data volta a ser a que o editor enviou
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        awaitStored(id) { it.dueDate == openedDue }
+        Unit
+    }
+
+    @Test
+    fun `OBS-2 c - mexer na data e no titulo, concluir, Reverter - o titulo volta e a data nao`() = runBlocking {
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        val opened = vm.awaitUi { it.timing != null }
+        vm.updateTiming(opened.timing!!.copy(date = LocalDate.now().plusDays(3)))
+        vm.updateTitle("Levar o carro na revisão")
+        vm.flush()
+        vm.awaitPendingWrites()
+        taskRepository.logCompletion(id)
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        val after = awaitStored(id) { it.title == "Levar o carro" }
+        assertEquals(LocalDate.now().toEpochDay(), after.dueDate)
+        Unit
+    }
 }

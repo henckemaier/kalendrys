@@ -46,6 +46,8 @@ internal fun UndoOfferEffect(offers: UndoOffers, hostState: SnackbarHostState) {
     val taskMessage = stringResource(R.string.task_deleted)
     val routineMessage = stringResource(R.string.routine_deleted)
     val completedMessage = stringResource(R.string.task_completed)
+    val routineCompletedMessage = stringResource(R.string.routine_completed)
+    val routineSkippedMessage = stringResource(R.string.today_routine_skipped)
     val undoLabel = stringResource(R.string.undo)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(offers, hostState, lifecycle) {
@@ -67,6 +69,8 @@ internal fun UndoOfferEffect(offers: UndoOffers, hostState: SnackbarHostState) {
                         is UndoTarget.DeletedTask -> taskMessage
                         is UndoTarget.DeletedRoutine -> routineMessage
                         is UndoTarget.CompletedTask -> completedMessage
+                        is UndoTarget.CompletedRoutine -> routineCompletedMessage
+                        is UndoTarget.SkippedRoutine -> routineSkippedMessage
                     }
                     // null = o prazo acabou com a mensagem na tela: o cancelamento a tira e a oferta é limpa.
                     // Sair da composição ou da frente cancela sem chegar aqui, e a oferta fica pendente.
