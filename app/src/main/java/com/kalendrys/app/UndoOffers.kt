@@ -157,6 +157,18 @@ class UndoOffers(
         }
     }
 
+    /**
+     * A conclusão de tarefa do registro [logId] foi desfeita POR FORA da mensagem (o círculo da Hoje, o
+     * "Desfazer conclusão" do detalhe): a oferta pendente dela, se for a pendente, some sem desfazer nada
+     * (E4-B da Coruja: a mensagem "Tarefa concluída / Desfazer" ficava 1-2 s na tela com um Desfazer que
+     * já não agia).
+     */
+    fun discardTaskCompletion(logId: Long) {
+        _pending.value?.let { offer ->
+            if (offer.target == UndoTarget.CompletedTask(logId)) finish(offer)
+        }
+    }
+
     /** Idem para o pular desfeito pelo "Desfazer pular" do bloco esmaecido (simetria do A1). */
     fun discardRoutineSkip(routineId: Long, epochDay: Long) {
         _pending.value?.let { offer ->

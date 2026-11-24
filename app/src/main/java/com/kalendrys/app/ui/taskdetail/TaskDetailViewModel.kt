@@ -322,6 +322,8 @@ class TaskDetailViewModel(
     /** P6: desfaz a conclusão mostrada (a de hoje, numa repetida; a que encerrou, numa única). */
     fun undoCompletion() {
         val logId = uiState.value.doneLogId ?: return
+        // Desfazer direto: a oferta pendente dessa conclusão sai da tela (E4-B).
+        undoOffers.discardTaskCompletion(logId)
         writes.enqueue { repository.undoCompletion(logId) }
     }
 

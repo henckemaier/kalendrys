@@ -452,4 +452,18 @@ class UndoOffersTest {
         offers.undo(offers.pending.value!!).join()
         assertNull(testDb.db.completionLogDao().byId(logId))
     }
+
+    @Test
+    fun `E4-B - desfazer a conclusao direto descarta a oferta do mesmo registro`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Pagar conta")
+        offers.completeTask(task).join()
+        val logId = (offers.pending.value!!.target as UndoTarget.CompletedTask).logId
+
+        offers.discardTaskCompletion(logId + 1) // outro registro: fica
+        assertEquals(UndoTarget.CompletedTask(logId), offers.pending.value?.target)
+
+        offers.discardTaskCompletion(logId)
+        assertNull("sem mensagem na tela", offers.pending.value)
+    }
 }
