@@ -356,7 +356,10 @@ class TodayViewModel(
         val (now, date) = lastDay ?: return
         if (date.isAfter(now)) return
         if (done) {
-            viewModelScope.launch { taskLogFor(task.id, date)?.let { taskRepository.undoCompletion(it) } }
+            // Desmarcar direto: descarta a oferta pendente desse registro (E4-B) e desfaz a conclusão.
+            val logId = taskLogFor(task.id, date) ?: return
+            undoOffers.discardTaskCompletion(logId)
+            viewModelScope.launch { taskRepository.undoCompletion(logId) }
         } else {
             // Conclui NO DIA MOSTRADO (na hora atual do relógio); em hoje é o agora (decisão do Esquadro).
             // A data e a hora vêm do mesmo relógio do TodayRepository (sem relógio direto aqui). Faz e
