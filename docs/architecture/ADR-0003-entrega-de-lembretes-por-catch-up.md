@@ -189,7 +189,7 @@ do backup), porque os três catch-ups rodam em momentos diferentes:
 - **`RoutineAlarmReceiver.ACTION_START`** só chama `catchUp`. O extra do minuto agendado deixa
   de decidir a entrega (continua no intent por compatibilidade com alarmes já agendados).
   `onAlarm` sai. Adiar, Concluir e Pular da notificação não mudam.
-- Blocos sem aviso continuam usando o alarme só para redesenhar widgets; o catch-up os ignora.
+- Blocos sem aviso continuam usando o alarme só para redesenhar widgets; o catch-up os ignora. **Corrigido pela seção 8 (v1.9.1):** o alarme dos widgets passa a ser separado do alarme de aviso.
 
 #### 4.3.2 Resumo diário
 
@@ -332,3 +332,96 @@ aviso de bloco e resumo diário) com a mesma regra.
   emulador com e sem a permissão de alarme exato para os três.
 - Nenhuma migração, nenhuma dependência nova, backup inalterado: as marcas ficam no DataStore,
   fora do backup.
+
+## 8. Emenda de 2026-11-24 — dois alarmes de rotina (v1.9.1)
+
+Versão corretiva, só com este defeito. Aprovada pelo usuário em 2026-11-24. Sem migração (banco
+11, backup na versão 6), sem dependência nova, sem mudança de manifesto.
+
+### 8.1 O defeito
+
+Achado no fechamento da v1.9.0 (ADR-0002, 15.12); existe desde a v1.8.0. Lido no código, não
+reproduzido até a data desta emenda.
+
+Havia **um** alarme para todas as rotinas, no próximo início de qualquer bloco. Quando nesse
+início nenhuma rotina avisava (aviso desligado, ou as que avisam já concluídas no dia), o alarme
+era silencioso: não acorda o aparelho, espera ele acordar. O alarme do bloco seguinte só era
+agendado quando o anterior disparava, porque é o catch-up que agenda o próximo (4.3.1). Com o
+aparelho dormindo, a corrente parava no elo silencioso.
+
+O efeito não é só atraso. O catch-up descarta o aviso de bloco com mais de 60 minutos, sem aviso
+de perdidos (seção 7). Bloco sem aviso às 7:00, bloco com aviso às 7:30, aparelho parado até
+8:45: o aviso das 7:30 nunca aparece.
+
+### 8.2 A regra
+
+O horário do próximo aviso não pode depender de um alarme que não acorda o aparelho. Passam a
+existir dois alarmes, calculados juntos, sob o Mutex do repositório, no mesmo ponto em que hoje
+se agenda um:
+
+- **Alarme de aviso:** no próximo início em que alguma rotina avisa e ainda não foi concluída no
+  dia. É o alarme de despertador de sempre (degrada para inexato que acorda, sem a permissão de
+  alarme exato).
+- **Alarme dos widgets:** no próximo início de qualquer bloco, silencioso, **só quando ele vem
+  antes do alarme de aviso** ou quando não há alarme de aviso. Serve para redesenhar os widgets
+  e não é condição de nenhum aviso.
+
+Consequências do desenho:
+
+- **Uma função só para o próximo aviso.** O cálculo que o diagnóstico de alarmes já fazia
+  (`nextRemindingStart`: pula os inícios em que todas as que avisam já estão concluídas no dia)
+  passa a ser o mesmo que agenda. O diagnóstico mostra exatamente o que está no sistema; deixa
+  de valer a ressalva de que o horário previsto podia ainda não estar agendado.
+- **`RoutineAlarms` não calcula.** Recebe do repositório os dois horários prontos, cada um
+  podendo ser nulo, e agenda ou cancela cada um. O repositório é a única fonte do início
+  calculado (item que estava previsto para a v1.10.0 no ADR-0002, 15.9).
+- **Dois `PendingIntent`.** O do aviso continua sendo o que já existia (`ROUTINE_START`), para
+  quem atualiza por cima da v1.9.0 não ficar com alarme órfão. O dos widgets tem ação própria.
+- **O receiver trata as duas ações do mesmo jeito:** chama o catch-up, que entrega o que estiver
+  vencido e reagenda os dois. Quem chega primeiro entrega; o segundo encontra a janela vazia.
+- **Nada novo a ligar.** Alteração de rotina, conclusão, exceção, restauro, boot, troca de hora,
+  troca de fuso e atualização do app já terminam no mesmo agendamento.
+- **Ordem preservada:** entregar antes de substituir alarme e gravar a marca no fim (seção 3).
+- Se o limite de inícios descartados do cálculo do próximo aviso se esgotar, não há alarme de
+  aviso e o dos widgets segue a corrente, como antes da emenda.
+
+**Efeito visível, aceito pelo usuário:** o ícone de despertador e o próximo alarme da tela de
+bloqueio passam a aparecer sempre que houver uma rotina com aviso pela frente, mesmo com um bloco
+sem aviso antes dela.
+
+### 8.3 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Os dois alarmes disparando quase juntos (o silencioso atrasado chega com o de aviso) | Mutex e marca do catch-up; teste em sequência e em paralelo |
+| Aviso duplicado ou pulado na atualização por cima da v1.9.0 | O alarme de aviso reaproveita o `PendingIntent` antigo; caso próprio no emulador |
+| Prometer mais do que a correção entrega | Sem a permissão de alarme exato o aviso ainda pode atrasar alguns minutos, e fabricante que mata o app em segundo plano continua fora do alcance |
+
+### 8.4 Aceite e testes
+
+1. Com uma rotina sem aviso antes de uma com aviso, o sistema mostra os dois alarmes logo depois
+   de salvar: o de despertador no horário da que avisa e o silencioso no horário da outra.
+2. Com o aparelho em soneca forçada, o aviso da segunda toca no horário. O mesmo roteiro é
+   rodado **antes** na v1.9.0, para reproduzir o defeito e validar o próprio teste.
+3. Concluir a que avisa antes da hora move o alarme de aviso para a próxima que avisa; desmarcar
+   devolve. O mesmo para desligar o aviso, pausar, pular e excluir. Sem rotina que avise, não há
+   alarme de despertador de rotina.
+4. O diagnóstico de alarmes mostra o mesmo horário que está no sistema.
+5. Atualização por cima da v1.9.0 com alarme pendente: alarmes certos depois, nenhum aviso
+   duplicado nem perdido.
+6. Sem regressão: aviso não duplicado nem pulado; widgets redesenham no início do bloco
+   silencioso com a tela ligada; concluir, pular e adiar pela notificação.
+
+Unitários e Robolectric: `RoutineAlarms` com horário nulo de cada lado, tipos de alarme e
+`PendingIntent` distintos; repositório com alarmes falsos nos casos do item 3, mais virada de
+dia, troca de fuso, remarcação de dia e de minuto e limite esgotado; catch-up chamado pelas duas
+ações; diagnóstico e agendamento com o mesmo resultado nos mesmos dados.
+
+Release com R8 instalado e testado. O Baseline Profile não é regerado numa corretiva.
+
+### 8.5 Etapas
+
+| Etapa | Conteúdo |
+|-------|----------|
+| E1 | Função única do próximo aviso, agendamento com os dois horários, `RoutineAlarms`, receiver. Revisão do arquiteto antes dos testes |
+| E2 | Testes, matriz de emulador da 8.4, release, versão 1.9.1 |
