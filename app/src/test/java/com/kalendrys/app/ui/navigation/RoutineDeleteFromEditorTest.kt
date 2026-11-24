@@ -155,6 +155,7 @@ class RoutineDeleteFromEditorTest {
                     DayOfWeek.MONDAY,
                     shopping,
                     TodayRepository(tasks, routines, shopping),
+                    offers,
                 )
             },
         )
