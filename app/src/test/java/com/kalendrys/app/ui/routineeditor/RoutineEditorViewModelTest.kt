@@ -592,6 +592,72 @@ class RoutineEditorViewModelTest {
         assertEquals(listOf("A"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
     }
 
+    // --- E3-A da Coruja: rajada de teclas no título ----------------------------------------------
+
+    private val frase = "Mercado do bairro com a lista completa da semana"
+
+    @Test
+    fun `edicao - rajada no titulo sem esperar o banco - o campo tem cada tecla em ordem e grava o texto inteiro`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateTitle("")
+        frase.forEachIndexed { i, _ ->
+            val digitado = frase.substring(0, i + 1)
+            vm.updateTitle(digitado)
+            // Síncrono: o campo lê o estado de composição, não o uiState.
+            assertEquals("tecla ${i + 1}", digitado, vm.titleInput)
+        }
+
+        vm.flushPending()
+        vm.awaitPendingWrites()
+        eventually { row(routine.id).title == frase }
+        assertEquals(frase, vm.titleInput)
+    }
+
+    @Test
+    fun `edicao - rajada nas observacoes - o campo tem cada tecla em ordem`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        frase.forEachIndexed { i, _ ->
+            vm.updateNotes(frase.substring(0, i + 1))
+            assertEquals(frase.substring(0, i + 1), vm.notesInput)
+        }
+        vm.flushPending()
+        vm.awaitPendingWrites()
+        eventually { row(routine.id).notes == frase }
+    }
+
+    @Test
+    fun `criacao - rajada no titulo - o campo tem cada tecla em ordem e o Criar grava o texto inteiro`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+
+        frase.forEachIndexed { i, _ ->
+            vm.updateTitle(frase.substring(0, i + 1))
+            assertEquals(frase.substring(0, i + 1), vm.titleInput)
+        }
+        vm.create()
+        vm.awaitClosed()
+
+        assertEquals(listOf(frase), db.routineDao().all().map { it.title })
+    }
+
+    @Test
+    fun `criacao - modelo troca tambem o texto do campo`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateTitle("rascunho")
+
+        vm.applyDraft(RoutineDraft(title = "Treino", notes = "aquecer", startMinute = 1080))
+
+        assertEquals("Treino", vm.titleInput)
+        assertEquals("aquecer", vm.notesInput)
+    }
+
     private companion object {
         const val TIMEOUT_MS = 5_000L
     }

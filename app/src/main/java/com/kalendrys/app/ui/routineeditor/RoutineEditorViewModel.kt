@@ -1,6 +1,9 @@
 package com.kalendrys.app.ui.routineeditor
 
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -312,8 +315,21 @@ class RoutineEditorViewModel(
 
     // --- Campos -------------------------------------------------------------------------------------
 
+    /** Criação: o texto dos campos como estado de composição, escrito na própria tecla (E3-A). */
+    private var newTitle by mutableStateOf("")
+    private var newNotes by mutableStateOf("")
+
+    /**
+     * O texto que os CAMPOS mostram, lido direto pela tela: estado de composição escrito na própria tecla
+     * (rascunho na criação, [TextFieldBuffer.fieldText] na edição). Nunca o texto que volta pelo
+     * [uiState]: em rajada ele chegava atrasado e o campo trocava ou perdia letras (E3-A da Coruja).
+     */
+    val titleInput: String get() = if (isNew) newTitle else titleBuffer.fieldText
+    val notesInput: String get() = if (isNew) newNotes else notesBuffer.fieldText
+
     fun updateTitle(title: String) {
         if (isNew) {
+            newTitle = title
             draft.update { it?.copy(title = title) }
         } else {
             touched.update { it + Field.TITLE }
@@ -323,6 +339,7 @@ class RoutineEditorViewModel(
 
     fun updateNotes(notes: String) {
         if (isNew) {
+            newNotes = notes
             draft.update { it?.copy(notes = notes) }
         } else {
             touched.update { it + Field.NOTES }
@@ -482,6 +499,8 @@ class RoutineEditorViewModel(
     /** Criação: aplica um modelo; a lista já escolhida (existente ou nova) é mantida. */
     fun applyDraft(newDraft: RoutineDraft) {
         if (!isNew) return
+        newTitle = newDraft.title
+        newNotes = newDraft.notes
         draft.update { current -> newDraft.copy(shoppingListId = current?.shoppingListId ?: newDraft.shoppingListId) }
     }
 
