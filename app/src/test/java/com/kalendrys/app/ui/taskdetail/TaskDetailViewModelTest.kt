@@ -317,6 +317,48 @@ class TaskDetailViewModelTest {
     }
 
     @Test
+    fun `mudar a data e concluir logo depois - a conclusao vem depois da data e a tarefa fica encerrada`() = runBlocking {
+        // NB-E2-A do Lince: o Concluir passa pela fila, depois do Timing; não reabre a tarefa.
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        val opened = vm.awaitUi { it.timing != null }
+        val newDate = LocalDate.now().plusDays(3)
+
+        vm.updateTiming(opened.timing!!.copy(date = newDate))
+        vm.complete()
+        vm.awaitPendingWrites()
+
+        val logId = (awaitOffer()!!.target as UndoTarget.CompletedTask).logId
+        val log = db.completionLogDao().byId(logId)!!
+        // Concluída adiantada SOBRE a data nova: o registro guarda a data nova para o Desfazer.
+        assertEquals(newDate.toEpochDay(), log.previousDueDate)
+        assertEquals(LocalDate.now().toEpochDay(), stored(id).dueDate)
+
+        undoOffers.undo(undoOffers.pending.value!!).join()
+        awaitStored(id) { it.dueDate == newDate.toEpochDay() }
+        Unit
+    }
+
+    @Test
+    fun `rajada no titulo do detalhe - o campo tem cada tecla em ordem e grava o texto inteiro`() = runBlocking {
+        // E3-A da Coruja: o campo lê o estado de composição do buffer (titleInput), não o uiState.
+        val id = tomorrowTask()
+        val vm = viewModel(id)
+        vm.awaitUi { it.task != null }
+        val frase = "Mercado do bairro com a lista completa da semana"
+
+        frase.forEachIndexed { i, _ ->
+            vm.updateTitle(frase.substring(0, i + 1))
+            assertEquals("tecla ${i + 1}", frase.substring(0, i + 1), vm.titleInput)
+        }
+        passDebounce()
+        vm.awaitPendingWrites()
+
+        awaitStored(id) { it.title == frase }
+        assertEquals(frase, vm.titleInput)
+    }
+
+    @Test
     fun `P6 - repetida concluida hoje desfaz essa conclusao e o historico de outro dia fica`() = runBlocking {
         val today = LocalDate.now()
         val id = taskRepository.addTask(

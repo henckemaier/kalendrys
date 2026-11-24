@@ -1,5 +1,8 @@
 package com.kalendrys.app.ui.edit
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,8 +15,11 @@ import kotlinx.coroutines.launch
  * Buffer local de UM campo de texto do salvar na hora (v1.9.0, ADR-0002 15.3). Peça comum do detalhe
  * da tarefa (E2) e do editor de rotina (E3); não crie outra.
  *
- * - Enquanto a pessoa digita, o campo mostra o que ela digitou ([text]), não o que o banco reemite:
- *   sem isso o cursor pula e teclas se perdem.
+ * - O CAMPO lê [fieldText], estado de composição escrito de forma SÍNCRONA na própria tecla
+ *   ([onType]), e nunca o texto que volta pelo ViewModel (fluxos, combinações e UiState chegam
+ *   atrasados; em rajada o campo montava a tecla seguinte sobre o texto velho e trocava ou perdia
+ *   letras: E3-A da Coruja). O [text] em fluxo segue para o resto do estado (prévia, erro, retrato),
+ *   nunca como fonte do campo.
  * - Grava [debounceMillis] depois da última tecla e SEMPRE em [flush] (o ViewModel chama ao sair da
  *   tela, ao ir para segundo plano e no onCleared). A gravação roda em [writeScope], o escopo do app
  *   ([com.kalendrys.app.KalendrysApp.editScope]), para não morrer com a tela.
@@ -49,8 +55,22 @@ class TextFieldBuffer(
 ) {
     private val _text = MutableStateFlow<String?>(null)
 
-    /** O que o campo mostra; `null` até o primeiro valor do banco ([onStored]). */
+    /** O texto do campo em fluxo, para o resto do estado; `null` até o primeiro valor do banco. NÃO é a fonte do campo. */
     val text: StateFlow<String?> = _text.asStateFlow()
+
+    /**
+     * O que o campo MOSTRA: estado de composição, escrito na hora em que a tecla chega ([onType]), sem
+     * passar por fluxo nem despachante. A tela liga o TextField a ele diretamente. Vazio até o primeiro
+     * valor do banco.
+     */
+    var fieldText: String by mutableStateOf("")
+        private set
+
+    /** Escreve o texto do campo nos dois lados: o estado de composição e o fluxo. */
+    private fun show(value: String) {
+        fieldText = value
+        _text.value = value
+    }
 
     /**
      * Digitação ainda não confirmada no banco (`null` = nenhuma). Enquanto houver, o banco não
@@ -78,12 +98,12 @@ class TextFieldBuffer(
         if (pending.value != null) return
         val current = _text.value
         if (current != null && normalize(current) == value) return
-        _text.value = value
+        show(value)
     }
 
     /** A pessoa digitou: o campo mostra na hora e a gravação espera [debounceMillis] sem tecla. */
     fun onType(value: String) {
-        _text.value = value
+        show(value)
         pending.value = value
         timer?.cancel()
         timer = timerScope.launch {
@@ -118,7 +138,7 @@ class TextFieldBuffer(
         timer?.cancel()
         timer = null
         pending.value = null
-        _text.value = value
+        show(value)
     }
 
     companion object {

@@ -158,4 +158,43 @@ class TextFieldBufferTest {
         assertTrue(b.hasPending)
         assertEquals("um dois", b.text.value)
     }
+
+    /**
+     * E3-A da Coruja: rajada de teclas SEM avançar o despachador. O texto do campo ([fieldText]) já é
+     * o digitado depois de cada tecla, inteiro e em ordem, sem esperar fluxo nenhum; e o que se grava
+     * no fim é esse texto.
+     */
+    @Test
+    fun `rajada sem avancar o despachador - o campo ja tem cada tecla, em ordem, e grava o texto inteiro`() = runTest {
+        val b = buffer()
+        val frase = "Mercado do bairro com a lista completa da semana"
+        b.onType("")
+
+        frase.forEachIndexed { i, _ ->
+            val digitado = frase.substring(0, i + 1)
+            b.onType(digitado)
+            assertEquals("tecla ${i + 1}", digitado, b.fieldText)
+        }
+        assertTrue("nada gravado no meio da rajada", written.isEmpty())
+
+        advanceTimeBy(501)
+        runCurrent()
+
+        assertEquals(listOf(frase), written)
+        assertEquals(frase, b.fieldText)
+    }
+
+    @Test
+    fun `o campo e o fluxo andam juntos e o eco nao troca o campo`() = runTest {
+        val b = buffer()
+        assertEquals("Antes", b.fieldText)
+
+        b.onType("Comprar ")
+        advanceTimeBy(501)
+        runCurrent()
+        b.onStored(stored)
+
+        assertEquals("Comprar ", b.fieldText)
+        assertEquals(b.fieldText, b.text.value)
+    }
 }
