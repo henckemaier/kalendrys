@@ -5,7 +5,6 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.RecurrenceUnit
@@ -62,8 +61,6 @@ interface TaskDao {
     @Insert
     suspend fun insertAll(tasks: List<Task>)
 
-    @Update
-    suspend fun update(task: Task)
 
     // --- Salvar na hora (v1.9.0, ADR-0002 15.2): cada mudança grava SÓ as colunas dela. ---------------
     // Quem chama é o TaskRepository.edit, sob a trava dele; nada aqui regrava a linha inteira, então

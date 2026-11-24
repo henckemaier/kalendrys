@@ -144,6 +144,9 @@ fun TaskDetailScreen(
             timing == null -> Unit
             else -> TaskDetailContent(
                 state = state,
+                title = viewModel.titleInput,
+                notes = viewModel.notesInput,
+                location = viewModel.locationInput,
                 timing = timing,
                 onTitleChange = viewModel::updateTitle,
                 onNotesChange = viewModel::updateNotes,
@@ -201,6 +204,10 @@ fun TaskDetailScreen(
 @Composable
 private fun TaskDetailContent(
     state: TaskDetailViewModel.UiState,
+    /** Texto dos campos: estado de composição do ViewModel, lido direto (E3-A), nunca o do [state]. */
+    title: String,
+    notes: String,
+    location: String,
     timing: TaskTiming,
     onTitleChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
@@ -221,12 +228,12 @@ private fun TaskDetailContent(
     ) {
         item(key = "title") {
             OutlinedTextField(
-                value = state.title,
+                value = title,
                 onValueChange = onTitleChange,
                 label = { Text(stringResource(R.string.task_title_label)) },
                 singleLine = true,
                 // Vazio não grava (o banco fica com o último título válido) e aparece como erro.
-                isError = state.title.isBlank(),
+                isError = title.isBlank(),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -244,7 +251,7 @@ private fun TaskDetailContent(
         }
         item(key = "notes") {
             OutlinedTextField(
-                value = state.notes,
+                value = notes,
                 onValueChange = onNotesChange,
                 label = { Text(stringResource(R.string.task_notes_label)) },
                 minLines = 3,
@@ -257,12 +264,12 @@ private fun TaskDetailContent(
         }
         item(key = "location") {
             LocationField(
-                value = state.location,
+                value = location,
                 onValueChange = onLocationChange,
                 modifier = Modifier.padding(bottom = SectionSpacing),
-                trailing = if (state.location.isNotBlank()) {
+                trailing = if (location.isNotBlank()) {
                     {
-                        IconButton(onClick = { openInMaps(context, state.location) }) {
+                        IconButton(onClick = { openInMaps(context, location) }) {
                             Icon(Icons.Outlined.Map, contentDescription = stringResource(R.string.task_open_map))
                         }
                     }

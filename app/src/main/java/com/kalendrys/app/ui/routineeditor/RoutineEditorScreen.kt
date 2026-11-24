@@ -48,6 +48,8 @@ import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.bottomBarInsets
+import com.kalendrys.app.ui.components.isCompactHeight
+import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
@@ -105,16 +107,31 @@ fun RoutineEditorScreen(
         menu += TopBarAction(stringResource(R.string.routine_delete), onClick = viewModel::delete)
     }
 
+    // Criação em altura COMPACTA (o mesmo corte que recolhe o FAB e o painel, E3-B da Coruja): o
+    // "Criar rotina" sai do rodapé, que com o teclado não sobra, e vai para a barra do topo como ação
+    // em destaque; a lista traz o campo em foco para a área visível. Altura normal: no rodapé.
+    val compact = isCompactHeight(windowHeightDp())
+    val actions = mutableListOf<TopBarAction>()
+    if (state.isNew && fields != null && compact) {
+        actions += TopBarAction(
+            stringResource(R.string.routine_create),
+            enabled = state.canCreate && !state.creating,
+            prominent = true,
+            onClick = viewModel::create,
+        )
+    }
+
     AppScaffold(
         topBar = {
             AppTopBar(
                 title = stringResource(if (state.isNew) R.string.routine_new_title else R.string.routine_edit_title),
                 onBack = { requestBack() },
+                actions = actions,
                 menu = menu,
             )
         },
         bottomBar = {
-            if (state.isNew && fields != null) {
+            if (state.isNew && fields != null && !compact) {
                 Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
                     Button(
                         onClick = viewModel::create,
@@ -214,7 +231,11 @@ private fun EditorContent(
                 }
             }
         }
-        item(key = "title") { TitleSection(title = fields.title, showError = state.titleError, onChange = viewModel::updateTitle) }
+        // O texto dos campos vem do estado de composição do ViewModel, escrito na tecla (E3-A).
+        item(key = "title") {
+            val title = viewModel.titleInput
+            TitleSection(title = title, showError = !state.isNew && title.isBlank(), onChange = viewModel::updateTitle)
+        }
         item(key = "when") {
             WhenSection(
                 fields = fields,
@@ -309,7 +330,7 @@ private fun EditorContent(
                     onClearEnd = { viewModel.updateEndDate(null) },
                 )
             }
-            item(key = "notes") { NotesSection(notes = fields.notes, onChange = viewModel::updateNotes) }
+            item(key = "notes") { NotesSection(notes = viewModel.notesInput, onChange = viewModel::updateNotes) }
         }
     }
 

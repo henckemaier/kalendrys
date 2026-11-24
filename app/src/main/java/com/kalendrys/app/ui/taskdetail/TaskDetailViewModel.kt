@@ -84,7 +84,11 @@ class TaskDetailViewModel(
     data class UiState(
         val notFound: Boolean = false,
         val task: Task? = null,
-        /** O que os campos de texto mostram (o buffer: digitação pendente ou o banco). */
+        /**
+         * O texto dos campos em fluxo (o buffer: digitação pendente ou o banco), para o resto do estado.
+         * NÃO é a fonte do campo: a tela liga os TextFields a [titleInput], [notesInput] e
+         * [locationInput], que são estado de composição (E3-A).
+         */
         val title: String = "",
         val notes: String = "",
         val location: String = "",
@@ -131,6 +135,15 @@ class TaskDetailViewModel(
 
     /** Barreira: espera as gravações já pedidas terminarem (excluir; testes, N7). */
     internal suspend fun awaitPendingWrites() = writes.awaitIdle()
+
+    /**
+     * O texto que os CAMPOS mostram: estado de composição do [TextFieldBuffer], escrito na própria tecla
+     * (E3-A da Coruja: em rajada, o texto que voltava pelo UiState chegava atrasado e o campo trocava
+     * ou perdia letras). A tela liga os TextFields a estes, nunca ao [UiState.title] e companhia.
+     */
+    val titleInput: String get() = titleBuffer.fieldText
+    val notesInput: String get() = notesBuffer.fieldText
+    val locationInput: String get() = locationBuffer.fieldText
 
     private fun writer(change: (String) -> TaskChange): (String) -> Job = { value -> enqueue(change(value)) }
 
@@ -288,9 +301,15 @@ class TaskDetailViewModel(
     }
 
     /** Concluir pela oferta do app (14.2): a mensagem com Desfazer aparece mesmo se a tela fechar. */
+    /**
+     * Concluir pela oferta do app, como AÇÃO DA FILA (NB-E2-A do Lince): roda depois das gravações
+     * pendentes (uma data mudada logo antes não grava por cima da conclusão nem reabre a tarefa), sobre a
+     * linha mais recente.
+     */
     fun complete() {
-        val task = uiState.value.task ?: return
-        undoOffers.completeTask(task)
+        if (uiState.value.task == null) return
+        flush()
+        writes.enqueue { latest -> undoOffers.completeTask(latest).join() }
     }
 
     /** P6: desfaz a conclusão mostrada (a de hoje, numa repetida; a que encerrou, numa única). */
