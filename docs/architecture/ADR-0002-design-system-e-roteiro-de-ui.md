@@ -1585,6 +1585,12 @@ objetos.**
   digitou, não o que o banco reemite; sem isso o cursor pula e teclas se perdem. Grava 500 ms
   depois da última tecla (5.2) e **sempre** ao sair da tela e ao ir para segundo plano, no
   escopo do app, o mesmo já usado pelas ofertas de Desfazer e pelo painel de nova tarefa.
+- **O texto do campo é estado da tela, atualizado na hora da tecla.** O que o campo mostra não
+  pode dar a volta por fluxos do ViewModel antes de voltar para ele: com digitação rápida, o
+  campo recebe de volta um texto atrasado, e letras somem ou trocam de lugar, e o texto errado é
+  gravado. O buffer guarda o texto como estado de composição, escrito de forma síncrona na
+  própria tecla, e a tela lê esse estado direto. O ViewModel recebe a tecla para a espera e a
+  gravação, não para devolver o texto ao campo.
 - Texto que mudou por fora só entra no campo se não houver digitação pendente nele **e** se for
   diferente do que o próprio campo gravaria. A gravação apara espaços e quebras do começo e do
   fim; sem a segunda condição, o banco devolveria o texto aparado e apagaria o espaço ou a quebra
@@ -1641,12 +1647,21 @@ objetos.**
   oferece datas a partir do início.
 - O arquivo da tela é dividido por seção. Em paisagem com teclado, vale a regra do painel
   (14.13): o campo em foco fica visível e a ação de criar fica ao alcance.
+  Em altura compacta o "Criar rotina" sai do rodapé e vai para a barra do topo, como ação em
+  destaque: com o teclado aberto, barra do topo e rodapé juntos não deixavam altura para o campo.
 
 ### 15.6 Hoje e aba Tarefas
 
 - **Desfazer da Hoje pela oferta do app:** pular um bloco e concluir pela Hoje ganham alvos
   próprios na oferta (14.2), e a Hoje perde as mensagens próprias. A mensagem passa a sobreviver
   a girar a tela, como as outras.
+  Fazer e oferecer é uma operação só da oferta, no escopo do app, como excluir e concluir tarefa já
+  eram. Concluir uma rotina só oferece quando a conclusão foi de fato gravada: um segundo toque
+  (widget e Hoje juntos) não gera um Desfazer que apagaria a conclusão do primeiro.
+- **Desfazer direto descarta a oferta do mesmo alvo.** Desmarcar um bloco pela Hoje, ou tirar o
+  pular pelo bloco esmaecido, age na hora e sem oferta; se houver uma oferta pendente para a
+  mesma rotina no mesmo dia, ela é descartada. Sem isso, a mensagem antiga continuaria na tela
+  e o Desfazer dela apagaria uma conclusão feita depois por outro caminho.
 - **"Concluídas hoje" na aba Tarefas (P5):** pela mesma definição de feitas hoje da Hoje (14.4),
   o registro do dia. Consequência aceita: a repetida concluída adiantada aparece em "Concluídas
   hoje" e também em "Próximas", com a data seguinte. As duas linhas estão certas.
