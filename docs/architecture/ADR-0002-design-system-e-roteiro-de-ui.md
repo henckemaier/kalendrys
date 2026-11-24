@@ -1724,6 +1724,18 @@ Uma rodada de Gradle por etapa; não se acumula código sem compilar de mais de 
 - **Só registro:** repetição personalizada gravada sem dia utilizável, se existir em dado antigo,
   continua classificada como na v1.8.0. A tolerância fica só na leitura do editor, onde ela
   aparece como "não repete"; tolerar só em parte da classificação seria pior.
+- **Limite conhecido:** a aba Tarefas lê a data de hoje e os registros do dia de dois relógios
+  diferentes. Na virada da meia-noite com a aba aberta, o filtro pela data da tela impede que um
+  registro de ontem conte hoje, mas o caso não tem teste, por falta de relógio injetável ali.
+  Resolve-se com a fonte única de data, na v1.10.0.
+- **Só registro:** na aba Tarefas não há desmarcar pela seção "Concluídas hoje". Uma conclusão
+  feita por engano se desfaz pela mensagem, pelo detalhe da tarefa ou pela Hoje.
+- **Só registro:** concluir vários itens em seguida na Hoje deixa só o Desfazer do último, porque
+  a oferta é uma por vez; antes as mensagens da Hoje entravam em fila.
+- **Só registro:** o bloco que veio remarcado de outro dia é concluído no dia mostrado, não no dia
+  da ocorrência; pular e remarcar usam o dia da ocorrência. Já era assim na v1.8.0.
+- **Backlog:** pular uma rotina que deixou de existir ainda gera a mensagem com Desfazer, que não
+  faz nada.
 
 ### 15.10 Riscos
 
