@@ -107,8 +107,15 @@ class RoutineRepositoryEditTest {
         assertEquals(120L, after.startEpochDay)
         assertEquals(180L, after.endEpochDay)
         assertFalse(after.remind)
-        // O agendamento já vê a linha nova.
-        assertEquals(700, alarms.calls.last().routines.single().startMinute)
+        // A vigência do teste (dias 120 a 180 de 1970) já passou: nenhum dos dois alarmes.
+        assertEquals(FakeRoutineAlarms.Call(remindAt = null, refreshAt = null), alarms.calls.last())
+        // Sem vigência, o agendamento já vê a linha nova: sem aviso (Remind(false)), só o alarme
+        // silencioso dos widgets, às 11:40.
+        repository.edit(routine.id, RoutineChange.ValidFrom(null))
+        repository.edit(routine.id, RoutineChange.ValidUntil(null))
+        val last = alarms.calls.last()
+        assertNull(last.remindAt)
+        assertEquals(700, last.refreshAt!!.let { it.hour * 60 + it.minute })
     }
 
     @Test

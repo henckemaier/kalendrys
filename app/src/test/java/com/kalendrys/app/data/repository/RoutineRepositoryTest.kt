@@ -141,9 +141,10 @@ class RoutineRepositoryTest {
         assertEquals(listOf(saved.id), notifications.cancelled)
         assertEquals(123L, db.routineDao().byId(saved.id)?.pausedAt)
         assertEquals(1, alarms.calls.size)
-        assertTrue(
-            "a rotina pausada sai das ativas e não entra no próximo alarme",
-            alarms.calls.last().routines.none { it.id == saved.id },
+        assertEquals(
+            "a rotina pausada sai das ativas: os dois alarmes são cancelados",
+            FakeRoutineAlarms.Call(remindAt = null, refreshAt = null),
+            alarms.calls.last(),
         )
     }
 
@@ -157,7 +158,7 @@ class RoutineRepositoryTest {
 
         assertNull(db.routineDao().byId(saved.id)?.pausedAt)
         assertEquals(1, alarms.calls.size)
-        assertTrue(alarms.calls.last().routines.any { it.id == saved.id })
+        assertEquals(10, alarms.calls.last().remindAt?.hour)
     }
 
     @Test
@@ -185,10 +186,10 @@ class RoutineRepositoryTest {
 
     @Test
     fun `adicionar rotina agenda o proximo alarme`() = runTest {
-        val saved = repository.add(routine())
+        repository.add(routine())
 
         assertEquals(1, alarms.calls.size)
-        assertTrue(alarms.calls.last().routines.any { it.id == saved.id })
+        assertEquals(10, alarms.calls.last().remindAt?.hour)
     }
 
     @Test
@@ -210,9 +211,10 @@ class RoutineRepositoryTest {
 
         assertEquals(listOf(saved.id), notifications.cancelled)
         assertEquals(1, alarms.calls.size)
-        assertTrue(
-            "a rotina arquivada sai das ativas e não entra no próximo alarme",
-            alarms.calls.last().routines.none { it.id == saved.id },
+        assertEquals(
+            "a rotina arquivada sai das ativas: os dois alarmes são cancelados",
+            FakeRoutineAlarms.Call(remindAt = null, refreshAt = null),
+            alarms.calls.last(),
         )
     }
 
@@ -336,17 +338,19 @@ class RoutineRepositoryTest {
     }
 
     @Test
-    fun `concluir a rotina passa ao alarme as concluidas do dia do proximo inicio e desfazer tira`() = runTest {
+    fun `concluir a rotina no dia do proximo aviso o adia e deixa o silencioso, desfazer volta`() = runTest {
         val saved = repository.add(routine(startMinute = 600).copy(remind = true))
-        val day = alarms.calls.last().let { call ->
-            com.kalendrys.app.domain.RoutineSchedule.nextStart(call.routines, call.after, java.time.ZoneId.systemDefault(), call.overridesByRoutine)!!.at.toLocalDate()
-        }
+        val next = checkNotNull(alarms.calls.last().remindAt)
+        assertNull("o próximo início já é o do aviso: sem o silencioso", alarms.calls.last().refreshAt)
 
-        repository.complete(saved.id, day)
-        assertEquals(setOf(saved.id), alarms.calls.last().doneOnStartDay)
+        repository.complete(saved.id, next.toLocalDate())
+        // Concluída no dia: o aviso passa ao próximo início, e o desse dia só redesenha os widgets.
+        val done = alarms.calls.last()
+        assertTrue("o aviso vai para depois", done.remindAt!! > next)
+        assertEquals(next, done.refreshAt)
 
-        repository.uncomplete(saved.id, day)
-        assertEquals(emptySet<Long>(), alarms.calls.last().doneOnStartDay)
+        repository.uncomplete(saved.id, next.toLocalDate())
+        assertEquals(FakeRoutineAlarms.Call(remindAt = next, refreshAt = null), alarms.calls.last())
     }
 
     // --- P5 (v1.8.0, E3): pular devolve a exceção anterior; o Desfazer da mensagem a recoloca ---
