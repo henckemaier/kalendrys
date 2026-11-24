@@ -129,6 +129,14 @@ class RoutineEditorViewModelTest {
 
     private suspend fun RoutineEditorViewModel.awaitLoaded() = eventually { uiState.value.fields != null }
 
+    /**
+     * Espera o estado da tela chegar a [predicate] e o devolve. O uiState é uma combinação de fluxos (alguns
+     * do Room, em outra thread): ler o .value logo depois de uma ação pode ver o anterior.
+     */
+    private suspend fun RoutineEditorViewModel.awaitUi(
+        predicate: (RoutineEditorViewModel.UiState) -> Boolean,
+    ): RoutineEditorViewModel.UiState = withContext(Dispatchers.Default) { withTimeout(TIMEOUT_MS) { uiState.first(predicate) } }
+
     private suspend fun RoutineEditorViewModel.awaitClosed() =
         withContext(Dispatchers.Default) { withTimeout(TIMEOUT_MS) { events.first() } }
 
@@ -152,8 +160,8 @@ class RoutineEditorViewModelTest {
         assertTrue(db.routineDao().all().isEmpty())
         assertTrue(db.shoppingListDao().all().isEmpty())
         assertTrue(alarms.calls.isEmpty())
-        assertEquals("Feira", vm.uiState.value.pendingListName)
-        assertTrue(vm.uiState.value.hasDraftChanges)
+        val state = vm.awaitUi { it.pendingListName == "Feira" }
+        assertTrue(state.hasDraftChanges)
     }
 
     @Test
@@ -190,10 +198,12 @@ class RoutineEditorViewModelTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.setDays(0b1) // só segunda
+        vm.awaitUi { it.fields?.daysOfWeek == 0b1 }
 
         vm.toggleDay(DayOfWeek.MONDAY)
+        vm.updateColor(RoutineColor.entries.last()) // marcador: o estado depois do toque
 
-        assertEquals(0b1, vm.uiState.value.fields!!.daysOfWeek)
+        assertEquals(0b1, vm.awaitUi { it.fields?.color == RoutineColor.entries.last() }.fields!!.daysOfWeek)
     }
 
     @Test
@@ -207,8 +217,8 @@ class RoutineEditorViewModelTest {
 
         vm.updateEndDate(150)
         vm.updateStartDate(200)
-        assertEquals(200L, vm.uiState.value.fields!!.startEpochDay)
-        assertNull(vm.uiState.value.fields!!.endEpochDay)
+        val after = vm.awaitUi { it.fields?.startEpochDay == 200L }.fields!!
+        assertNull(after.endEpochDay)
     }
 
     @Test
@@ -234,7 +244,7 @@ class RoutineEditorViewModelTest {
 
         vm.applyDraft(RoutineDraft(title = "Treino", startMinute = 1080))
 
-        assertEquals(listId, vm.uiState.value.fields!!.shoppingListId)
+        assertEquals(listId, vm.awaitUi { it.fields?.shoppingListId == listId }.fields!!.shoppingListId)
     }
 
     // --- Edição -------------------------------------------------------------------------------------
@@ -313,7 +323,7 @@ class RoutineEditorViewModelTest {
         eventually { row(routine.id).color == RoutineColor.entries.last().name }
 
         assertEquals("Treino", row(routine.id).title)
-        assertTrue(vm.uiState.value.titleError)
+        assertTrue(vm.awaitUi { it.titleError }.titleError)
     }
 
     @Test
@@ -340,11 +350,11 @@ class RoutineEditorViewModelTest {
         routines.edit(routine.id, RoutineChange.Notes("de fora"))
 
         // O banco reemitiu "de fora", mas o campo segue com a digitação pendente...
-        assertEquals("digitando", vm.uiState.value.fields!!.notes)
+        assertEquals("digitando", vm.notesInput)
         // ...e, gravada, ela vence (é a última mudança da pessoa).
         vm.flushPending()
         eventually { row(routine.id).notes == "digitando" }
-        assertEquals("digitando", vm.uiState.value.fields!!.notes)
+        assertEquals("digitando", vm.notesInput)
     }
 
     @Test
@@ -359,13 +369,13 @@ class RoutineEditorViewModelTest {
         eventually { row(routine.id).title == "Corrida" }
         // Mudança de FORA num campo que o editor não mexeu.
         routines.edit(routine.id, RoutineChange.Start(900))
-        assertTrue(vm.uiState.value.canRevert)
+        assertTrue(vm.awaitUi { it.canRevert }.canRevert)
 
         vm.revert()
 
         eventually { row(routine.id).color == routine.color && row(routine.id).title == "Treino" }
         assertEquals(900, row(routine.id).startMinute)
-        assertFalse(vm.uiState.value.canRevert)
+        assertFalse(vm.awaitUi { !it.canRevert }.canRevert)
         // O campo chega ao valor revertido; uma emissão atrasada do valor anterior pode passar antes
         // (o banco reemite em ordem, então o último é o revertido).
         eventually { vm.uiState.value.fields?.title == "Treino" }
@@ -510,8 +520,7 @@ class RoutineEditorViewModelTest {
 
         vm.create()
 
-        eventually { !vm.uiState.value.creating }
-        assertTrue(vm.uiState.value.canCreate)
+        assertTrue(vm.awaitUi { !it.creating }.canCreate)
     }
 
     @Test
