@@ -116,6 +116,10 @@ Regras:
     incompleto criaria rotinas fantasmas e alarmes indevidos.
 - Depois de criada, a rotina passa ao modo edição na mesma tela, já salvando na hora.
 
+> **Corrigido pela seção 15 (P3):** depois de "Criar rotina" a tela **fecha**, como antes; a
+> rotina não passa ao modo edição na mesma tela. O desenho do salvar na hora que vale é o da
+> 15.2 e da 15.3, na v1.9.0.
+
 ### 5.2 Quando grava
 
 - Campos discretos (data, hora, dias, chips, alternadores, cor, ícone, categoria, vínculo de
@@ -1521,3 +1525,243 @@ igual. Em aparelho com widgets do app na tela inicial, toda medição futura pre
 
 Sem passada com fala real, por decisão do usuário (14.9). A verificação ficou nos testes de
 semântica e na árvore de acessibilidade conferida no emulador, sem o TalkBack ligado.
+
+## 15. Emenda de 2026-11-21 — escopo e desenho da v1.9.0
+
+MINOR "Editores", sobre a v1.8.0 (229662d). Sem migração de banco, sem dependência nova e sem
+mudança no manifesto. Cumpre a divisão da 14.1: salvar na hora (seção 5), editor de rotina
+reorganizado (D3), detalhe da tarefa (resto de D1) e remoção do `TaskDraft.rebase`. As decisões
+P1 a P7 são do usuário.
+
+### 15.1 Decisões do usuário
+
+| # | Decisão |
+|---|---------|
+| P1 | Tarefa repetida não feita passa a aparecer como atrasada, **na forma curta e fora desta versão**: v1.10.0, com parecer próprio (15.9) |
+| P2 | "Reverter alterações" no menu dos dois editores, valendo enquanto a tela está aberta. É o primeiro item a cortar se o prazo apertar |
+| P3 | Depois de "Criar rotina" a tela **fecha**, como hoje. Corrige a 5.1 |
+| P4 | Ordem do editor de rotina (15.5) |
+| P5 | "Concluídas hoje" da aba Tarefas passa a ser pelo registro do dia, igual à Hoje |
+| P6 | No detalhe da tarefa, um botão desfaz a conclusão que vale agora; o histórico de dias anteriores é só leitura ali |
+| P7 | Abertura a frio no fechamento, no aparelho do usuário, só com liberação explícita dele e backup confirmado |
+
+### 15.2 O problema e a regra
+
+Até a v1.8.0 as duas telas de edição guardam uma cópia da entidade e gravam a linha inteira
+(`TaskRepository.updateTask`, `RoutineRepository.update`). Com o salvar na hora isso sobrescreve
+o que mudou por fora enquanto a tela estava aberta: concluir pela notificação, pausar, excluir a
+lista vinculada. O `TaskDraft.rebase` existia para remendar esse caso no detalhe da tarefa.
+
+**Regra: a tela não guarda cópia da entidade. Ela mostra a linha do banco e envia mudanças, não
+objetos.**
+
+- **Domínio** (puro, testável sem Android): `TaskChange` e `RoutineChange`, tipos fechados com
+  um caso por campo ou grupo de campos. Na tarefa: título, observações, local, vínculo de lista,
+  e o conjunto data, hora e repetição como **um** campo, que nunca é aplicado pela metade. Na
+  rotina: título, observações, horário, duração, dias, intervalo de semanas, vigência, lembrar,
+  categoria, cor, ícone e vínculo de lista. Cada mudança sabe se aplicar sobre uma entidade e
+  dizer se o resultado é válido (regras da 5.3).
+- **Repositório:** `TaskRepository.edit(taskId, change)` e `RoutineRepository.edit(routineId,
+  change)` leem a linha **mais recente** dentro da trava que já existe (14.3), aplicam a mudança
+  e gravam **só as colunas daquela mudança**, nunca a linha inteira. Há gravações que não passam
+  por essas travas (excluir uma lista desvincula tarefas e rotinas por fora), e só a gravação por
+  coluna impede que uma delas seja desfeita. Pela mesma regra, pausar, retomar, arquivar e
+  desarquivar gravam só a própria coluna. Mudança inválida não grava. Entidade que não existe
+  mais: nada acontece.
+- **Alarmes:** só são refeitos quando a mudança mexe em horário, repetição, dias, vigência ou
+  lembrar. Mudança de texto, cor, ícone, categoria ou lista não toca em alarme. A ordem das travas
+  da 14.3 não muda.
+- **As telas deixam de chamar** `updateTask(task)` e `update(routine)`. O `TaskDraft` e o
+  `rebase` são apagados. O `RoutineDraft` fica **só** para a criação de rotina.
+- **Concluir e desfazer a conclusão** passam a alterar só data e lembrete, por atualização
+  parcial no DAO; nunca regravam título, texto ou lista a partir de uma leitura antiga.
+- **Criar lista e vincular é uma transação** no repositório, para tarefa e para rotina já
+  criadas. Não sobra lista avulsa se a operação falhar no meio, e a lógica deixa de existir
+  repetida nos dois ViewModels.
+
+### 15.3 Texto, saída da tela e Reverter
+
+- **Campo de texto tem buffer local.** Enquanto a pessoa digita, o campo mostra o que ela
+  digitou, não o que o banco reemite; sem isso o cursor pula e teclas se perdem. Grava 500 ms
+  depois da última tecla (5.2) e **sempre** ao sair da tela e ao ir para segundo plano, no
+  escopo do app, o mesmo já usado pelas ofertas de Desfazer e pelo painel de nova tarefa.
+- **O texto do campo é estado da tela, atualizado na hora da tecla.** O que o campo mostra não
+  pode dar a volta por fluxos do ViewModel antes de voltar para ele: com digitação rápida, o
+  campo recebe de volta um texto atrasado, e letras somem ou trocam de lugar, e o texto errado é
+  gravado. O buffer guarda o texto como estado de composição, escrito de forma síncrona na
+  própria tecla, e a tela lê esse estado direto. O ViewModel recebe a tecla para a espera e a
+  gravação, não para devolver o texto ao campo.
+- Texto que mudou por fora só entra no campo se não houver digitação pendente nele **e** se for
+  diferente do que o próprio campo gravaria. A gravação apara espaços e quebras do começo e do
+  fim; sem a segunda condição, o banco devolveria o texto aparado e apagaria o espaço ou a quebra
+  de linha que a pessoa acabou de digitar no fim.
+- **Título vazio** não grava; ao sair, o campo volta ao último título válido (5.3).
+- **Uma fila de gravações por editor, na ordem do toque.** O escopo do app roda em várias
+  threads, e duas gravações lançadas soltas não têm ordem garantida: a mais velha pode chegar
+  por último. Todas as gravações de um editor (texto, campos discretos, exercícios, Reverter)
+  passam por uma fila única, consumida no escopo do app, que termina ao esvaziar depois de a
+  tela fechar. Quando a mudança depende do valor atual (marcar e desmarcar um dia), ela é
+  calculada sobre a linha lida na hora de gravar, não sobre o que a tela mostrava. A fila é
+  peça comum dos dois editores, como o buffer de texto.
+- **Reverter alterações (P2):** retrato dos campos do editor tirado na abertura, guardado no
+  ViewModel. Reverter envia de volta **só os campos que a pessoa mudou nesta sessão**, um a um, e
+  não mexe no que não é do editor (conclusão, pausa, arquivamento). Mandar de volta todos os
+  campos do retrato desfaria por tabela o que mudou por fora, como a data reescrita por uma
+  conclusão adiantada. Na rotina inclui os exercícios, com o retrato que já servia ao descartar.
+  Não sobrevive à morte do processo. Aceito.
+  **Reverter pula o campo que mudou por fora depois da edição.** Um campo mexido na sessão só
+  volta ao retrato se o valor que está no banco ainda é o que o editor gravou por último. Caso
+  que motivou a regra: a pessoa mexe na data, conclui a tarefa única adiantada (a conclusão
+  reescreve data e lembrete) e toca em Reverter; devolver a data da abertura reabriria a tarefa,
+  e o Reverter estaria desfazendo o efeito de uma conclusão, que não é campo do editor.
+- **Voltar preditivo** passa a funcionar nos editores de entidade existente, que não têm mais
+  diálogo de descarte.
+
+### 15.4 Detalhe da tarefa
+
+- Campos gravando na hora, pela 15.2 e pela 15.3. Somem "Salvar", `hasChanges`, `canSave` e o
+  "Descartar alterações?".
+- **Concluir** pelo detalhe passa pela oferta do app (14.2), como excluir já passa: a mensagem
+  aparece mesmo se a tela fechar.
+- **Desfazer conclusão (P6):** quando a tarefa está concluída (hoje, numa repetida; encerrada,
+  numa única), a ação principal passa a desfazer essa conclusão. Atende quem chega pelo
+  Calendário (14.10). O histórico de outros dias continua só leitura; corrigir um dia passado é
+  na Hoje, naquele dia (14.4).
+- **Excluir** continua com "Desfazer" pela oferta do app, mas só exclui **depois das gravações
+  pendentes** e com a linha lida do banco naquele momento. A oferta guarda a tarefa inteira para
+  reinserir; partir de uma cópia atrasada faria o Desfazer devolver um texto antigo e perder uma
+  edição já gravada.
+
+### 15.5 Editor de rotina (D3)
+
+- **Modo edição** (rotina já criada): grava na hora. **Modo criação:** rascunho e botão "Criar
+  rotina"; nada é gravado nem agendado antes dele; voltar com campos preenchidos pede
+  confirmação. **Depois de criar, a tela fecha (P3).** A lista escolhida na criação só é criada
+  junto com a rotina, numa transação, como o painel de nova tarefa já faz.
+- **Ordem das seções (P4):** Título; Quando (início, término ou duração, dias, a cada N
+  semanas); Lembrar; Categoria; Lista; Exercícios (só na categoria de exercício); Aparência
+  (ícone e cor); e, recolhidos em "Mais opções", Vigência (início e fim) e Observações. Pausar,
+  Duplicar, Reverter alterações e Excluir ficam no menu.
+  "Mais opções" abre sozinho quando já há vigência definida ou observações, decidido uma vez na
+  abertura da tela; depois disso só o toque da pessoa abre ou fecha. Vigência escondida faria a
+  rotina sumir de um dia sem ninguém ver por quê.
+- **Excluir não desfaz os exercícios da sessão.** Com o salvar na hora não há sessão a descartar:
+  o Desfazer devolve a rotina como está gravada, com os exercícios como estão. Substitui o que a
+  14.4 dizia sobre desfazer as edições de exercício antes de excluir pelo editor.
+- Estados inválidos inalcançáveis, como na 5.3: o último dia não desmarca; o fim da vigência só
+  oferece datas a partir do início.
+- O arquivo da tela é dividido por seção. Em paisagem com teclado, vale a regra do painel
+  (14.13): o campo em foco fica visível e a ação de criar fica ao alcance.
+  Em altura compacta o "Criar rotina" sai do rodapé e vai para a barra do topo, como ação em
+  destaque: com o teclado aberto, barra do topo e rodapé juntos não deixavam altura para o campo.
+
+### 15.6 Hoje e aba Tarefas
+
+- **Desfazer da Hoje pela oferta do app:** pular um bloco e concluir pela Hoje ganham alvos
+  próprios na oferta (14.2), e a Hoje perde as mensagens próprias. A mensagem passa a sobreviver
+  a girar a tela, como as outras.
+  Fazer e oferecer é uma operação só da oferta, no escopo do app, como excluir e concluir tarefa já
+  eram. Concluir uma rotina só oferece quando a conclusão foi de fato gravada: um segundo toque
+  (widget e Hoje juntos) não gera um Desfazer que apagaria a conclusão do primeiro.
+- **Desfazer direto descarta a oferta do mesmo alvo.** Desmarcar um bloco pela Hoje, ou tirar o
+  pular pelo bloco esmaecido, age na hora e sem oferta; se houver uma oferta pendente para a
+  mesma rotina no mesmo dia, ela é descartada. Sem isso, a mensagem antiga continuaria na tela
+  e o Desfazer dela apagaria uma conclusão feita depois por outro caminho.
+  O mesmo vale para a tarefa: desmarcar pela Hoje ou desfazer a conclusão pelo detalhe descarta a
+  oferta daquele registro. Ali o Desfazer atrasado já não fazia nada, mas a mensagem ficava na tela.
+- **"Concluídas hoje" na aba Tarefas (P5):** pela mesma definição de feitas hoje da Hoje (14.4),
+  o registro do dia. Consequência aceita: a repetida concluída adiantada aparece em "Concluídas
+  hoje" e também em "Próximas". As duas linhas estão certas.
+  **Correção de 2026-11-24:** a redação anterior dizia "com a data seguinte", como se a conclusão
+  adiantada consumisse a próxima vez. Não consome, nem consumia na v1.8.0: numa tarefa repetida,
+  concluir num dia que não é dia dela só grava o registro daquele dia; a próxima ocorrência
+  continua onde estava e aparece pendente no dia dela. Se concluir adiantado deve valer pela
+  próxima vez é pergunta de produto e entra no parecer da v1.10.0, junto com a repetida não
+  feita (15.9, P1): as duas dependem da mesma regra, a de qual ocorrência um registro satisfaz.
+
+### 15.7 Dívidas de tela que entram
+
+Os desenhos são os da 14.13: nome do dia da faixa da semana em uma linha (três letras ou uma
+letra para os sete, por medida); horário do bloco em três degraus (faixa inteira, só a duração,
+nada); estado vazio com o preenchimento da tela por dentro da rolagem; foco no Título do painel
+só na primeira abertura; progresso sem "0 de 0" em dia sem itens; arrastar não fecha o painel em
+paisagem com teclado; aviso de lint do painel. Repetição personalizada sem dia válido fica
+inalcançável no editor, e o domínio lê com tolerância o dado que já existir assim.
+
+Hifenização dos títulos de bloco: **ensaiada e cortada.** Com fonte 2.0 em 320dp o resultado ficou
+misto (uma palavra com hífen, outra quebrada sem hífen), o que é pior que a quebra uniforme de
+antes. O título volta ao estilo da v1.8.0 e vale o limite aceito na 14.13.
+
+**Horário escondido e leitor de tela.** No terceiro degrau o horário não é desenhado, e um nó sem
+largura some da árvore de acessibilidade: o bloco era lido sem hora. Regra: a frase inteira do
+horário fica num nó que **sempre tem tamanho** (a linha que contém o horário, o sino e a lista),
+não no texto que pode não ser desenhado. Teste de semântica no terceiro degrau: o bloco continua
+expondo a faixa inteira.
+
+A conferir antes de virar trabalho, porque podem já ter sumido: atalho do app com editor aberto
+perdendo o rascunho; diálogo de descartar no painel de nova tarefa; entrega do catch-up com
+título antigo ou aviso que pisca.
+
+### 15.8 Etapas e critérios de aceite
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Dívidas de tela (15.7), sem tocar em modelo | Testes de medida e de composição por item; capturas em 320 e 360dp com fonte 2.0 e em paisagem |
+| E1 | Repositório do salvar na hora (15.2), sem tela | Cada mudança aplicada sobre linha alterada por fora (concluir, pausar, lista excluída) sem perder nenhum dos dois lados; alarme refeito só quando deve; título vazio nunca gravado; ordem das travas preservada. Revisão do arquiteto linha a linha antes dos testes |
+| E2 | Detalhe da tarefa (15.3, 15.4). Depois da E1 | Concluir pela notificação com o detalhe aberto não perde a digitação nem a conclusão; sair no meio da digitação grava; título vazio volta ao último válido; testes de semântica |
+| E3 | Editor de rotina (15.3, 15.5). Depois da E1, em paralelo com a E2 | Nenhum alarme antes de "Criar rotina"; pausar por fora com o editor aberto não é desfeito por uma edição; estados inválidos inalcançáveis; testes de semântica |
+| E4 | Hoje e aba Tarefas (15.6). Depois da E2 | Mensagens da Hoje sobrevivem a girar; "Concluídas hoje" igual nas duas telas |
+| E5 | Fechamento | Jornadas do Baseline Profile reescritas (as da v1.8.0 tocam em "Salvar" nos editores) e perfil regerado; tamanho do APK; matriz manual; atualização por cima da v1.8.0 com editor aberto; abertura a frio pela P7 |
+
+Uma rodada de Gradle por etapa; não se acumula código sem compilar de mais de uma etapa.
+
+### 15.9 Fora da v1.9.0
+
+- **v1.10.0, com parecer próprio (P1):** tarefa repetida não feita como atrasada, na forma
+  curta: a ocorrência perdida fica atrasada **até o dia da próxima ocorrência** e então some; só
+  uma aberta por tarefa. Uma diária nunca aparece atrasada. Calculável com os registros de
+  conclusão que já existem, sem coluna nova. Muda a regra de estado no domínio e tudo que lê
+  dela: aba Tarefas, Hoje, widgets, resumo diário e a oferta de concluir pela lista. A forma
+  longa (cobrar cada ocorrência perdida) exigiria estado por ocorrência e migração; rejeitada.
+- **v1.10.0:** o repositório passar o início calculado para os alarmes de rotina; fonte única de
+  data para o app; posição do concluir na Hoje; adiamento gravado e no diagnóstico; e o escopo
+  que já era da v1.10.0 (adaptativo, calendário, busca, target 36).
+- **Só registro:** o lembrete de tarefa e o aviso de bloco que já estão na tela não são reemitidos
+  quando o título muda; continuam com o texto de quando tocaram, e o próximo sai com o título
+  novo. É como sempre foi. Também: a duração não reagenda o alarme da rotina, que é só do início.
+- **Só registro:** repetição personalizada gravada sem dia utilizável, se existir em dado antigo,
+  continua classificada como na v1.8.0. A tolerância fica só na leitura do editor, onde ela
+  aparece como "não repete"; tolerar só em parte da classificação seria pior.
+- **Limite conhecido:** a aba Tarefas lê a data de hoje e os registros do dia de dois relógios
+  diferentes. Na virada da meia-noite com a aba aberta, o filtro pela data da tela impede que um
+  registro de ontem conte hoje, mas o caso não tem teste, por falta de relógio injetável ali.
+  Resolve-se com a fonte única de data, na v1.10.0.
+- **Só registro:** na aba Tarefas não há desmarcar pela seção "Concluídas hoje". Uma conclusão
+  feita por engano se desfaz pela mensagem, pelo detalhe da tarefa ou pela Hoje.
+- **Só registro:** concluir vários itens em seguida na Hoje deixa só o Desfazer do último, porque
+  a oferta é uma por vez; antes as mensagens da Hoje entravam em fila.
+- **Só registro:** o bloco que veio remarcado de outro dia é concluído no dia mostrado, não no dia
+  da ocorrência; pular e remarcar usam o dia da ocorrência. Já era assim na v1.8.0.
+- **Backlog:** pular uma rotina que deixou de existir ainda gera a mensagem com Desfazer, que não
+  faz nada.
+
+### 15.10 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Perda de dado por sobrescrita com leitura antiga | É o motivo da E1: mudança aplicada sobre a linha mais recente, dentro da trava |
+| Rajada de cancelar e agendar alarme a cada toque | Alarme só refeito quando o horário muda; texto com espera de 500 ms |
+| Cursor pulando e tecla perdida em campo de texto | Buffer local é regra, não opção (15.3) |
+| Reverter desfazendo o que mudou por fora | Reverter só envia mudanças dos campos do editor |
+| Restaurar backup com editor aberto | Caso de teste próprio; a tela mostra o banco, então acompanha |
+| Coluna nova pedida no meio do caminho | Nenhuma prevista; banco continua 11 e o backup continua na versão 6. Se alguma etapa pedir, para e volta ao arquiteto |
+| Jornadas do perfil quebradas pela saída do "Salvar" | Reescrita prevista na E5 |
+| Memória do host | Etapas pequenas, um Gradle por vez, um dev pleno além do sênior |
+
+### 15.11 Abertura a frio (P7)
+
+A v1.8.0 saiu sem medida (14.14). No fechamento da v1.9.0, com liberação explícita do usuário e
+backup confirmado, mede-se no aparelho dele v1.7.1, v1.8.0 e v1.9.0 numa sessão só, pelo
+protocolo da 11.8.3 com as regras da 13.6 e da 14.14 (instalar antes de limpar os dados; o passo
+de espera do arnês). Sem a liberação, o critério fica registrado de novo como não medido. Não se
+tenta no emulador.
