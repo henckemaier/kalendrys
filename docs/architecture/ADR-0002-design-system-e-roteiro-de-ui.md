@@ -1609,6 +1609,11 @@ objetos.**
   campos do retrato desfaria por tabela o que mudou por fora, como a data reescrita por uma
   conclusão adiantada. Na rotina inclui os exercícios, com o retrato que já servia ao descartar.
   Não sobrevive à morte do processo. Aceito.
+  **Reverter pula o campo que mudou por fora depois da edição.** Um campo mexido na sessão só
+  volta ao retrato se o valor que está no banco ainda é o que o editor gravou por último. Caso
+  que motivou a regra: a pessoa mexe na data, conclui a tarefa única adiantada (a conclusão
+  reescreve data e lembrete) e toca em Reverter; devolver a data da abertura reabriria a tarefa,
+  e o Reverter estaria desfazendo o efeito de uma conclusão, que não é campo do editor.
 - **Voltar preditivo** passa a funcionar nos editores de entidade existente, que não têm mais
   diálogo de descarte.
 
