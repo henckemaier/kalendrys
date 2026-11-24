@@ -21,11 +21,18 @@ private const val MAX_SCROLLS = 40
 /** Abaixo desta fração da altura o item pode estar sob o botão flutuante; rola um pouco mais. */
 private const val SAFE_BOTTOM_FRACTION = 0.7f
 
+/** Mais que a espera de 500 ms do campo de texto (salvar na hora, v1.9.0): a gravação sai antes do Voltar. */
+private const val TEXT_DEBOUNCE_WAIT_MS = 700L
+
 /*
  * Jornadas da v1.8.0 (E7): o app abre na Hoje e a aba Rotinas não existe mais (as rotinas ficam na
  * linha do tempo da Hoje e em "Todas as rotinas"). Cada jornada abre a SUA aba e espera um marcador
  * que só aquela tela tem (o rótulo da aba está sempre na barra e não serve de espera), e só cria o
  * exemplo que não achar rolando a lista: rodar de novo, ou com os dados de quem usa o app, não duplica.
+ *
+ * v1.9.0 (salvar na hora, ADR-0002 15.3 a 15.5): o detalhe da tarefa e o editor de rotina não têm mais
+ * "Salvar"; a jornada edita um campo e volta ([editAndLeave]). Criar rotina é pelo "Criar rotina" do
+ * rodapé, e a tela fecha depois. O painel de nova tarefa e o diálogo de nova lista seguem com "Salvar".
  */
 
 /** Abas e o marcador de cada tela (qualquer um deles basta: com e sem conteúdo). */
@@ -169,21 +176,51 @@ private fun MacrobenchmarkScope.actOnFresh(selector: BySelector, action: (UiObje
     return false
 }
 
+/** O primeiro campo de texto da tela, painel ou diálogo aberto (o título, nos editores). */
+private val FIRST_FIELD: BySelector = By.clazz("android.widget.EditText")
+
 /**
- * Preenche o primeiro campo de texto do painel ou editor aberto e salva. O painel de nova tarefa
- * (v1.8.0, O-6) recompõe o campo enquanto entra e traz o campo à vista: o objeto achado podia ficar
- * obsoleto antes de receber o texto (derrubava a geração no emulador). Por isso espera assentar e
- * busca de novo a cada tentativa.
+ * Preenche o primeiro campo de texto do painel, diálogo ou editor aberto e toca em [confirm] ("Salvar"
+ * no painel de nova tarefa e na nova lista; "Criar rotina" no rodapé da rotina nova). O painel de nova
+ * tarefa (v1.8.0, O-6) recompõe o campo enquanto entra e traz o campo à vista: o objeto achado podia
+ * ficar obsoleto antes de receber o texto (derrubava a geração no emulador). Por isso espera assentar e
+ * busca de novo a cada tentativa. Com o teclado aberto, fecha-o antes, para o botão de rodapé não
+ * ficar atrás dele.
  */
-private fun MacrobenchmarkScope.typeAndSave(text: String) {
-    val field = By.clazz("android.widget.EditText")
-    device.wait(Until.hasObject(field), TIMEOUT_MS)
+private fun MacrobenchmarkScope.typeAndConfirm(text: String, confirm: String = "Salvar") {
+    device.wait(Until.hasObject(FIRST_FIELD), TIMEOUT_MS)
     device.waitForIdle()
-    actOnFresh(field) { it.text = text }
+    actOnFresh(FIRST_FIELD) { it.text = text }
     device.waitForIdle()
-    actOnFresh(By.text("Salvar")) { it.click() }
-    // Espera o painel ou o editor fechar.
-    device.wait(Until.gone(By.text("Salvar")), TIMEOUT_MS)
+    hideKeyboard()
+    device.wait(Until.hasObject(By.text(confirm)), TIMEOUT_MS)
+    actOnFresh(By.text(confirm)) { it.click() }
+    // Espera o painel, o diálogo ou o editor fechar.
+    device.wait(Until.gone(By.text(confirm)), TIMEOUT_MS)
+}
+
+/**
+ * Salvar na hora (v1.9.0): no detalhe ou no editor aberto, regrava o primeiro campo (o título) com o
+ * PRÓPRIO texto de exemplo, espera a gravação sair e volta. O título não muda, então o exemplo segue
+ * achável e nada duplica; o caminho da gravação (campo, fila, repositório) roda do mesmo jeito.
+ */
+private fun MacrobenchmarkScope.editAndLeave(title: String) {
+    device.wait(Until.hasObject(FIRST_FIELD), TIMEOUT_MS)
+    device.waitForIdle()
+    actOnFresh(FIRST_FIELD) { it.text = title }
+    device.waitForIdle()
+    Thread.sleep(TEXT_DEBOUNCE_WAIT_MS)
+    hideKeyboard()
+    device.pressBack()
+    device.waitForIdle()
+}
+
+/** Fecha o teclado, se aberto (o Voltar com ele aberto só o fecha; sem ele, sairia da tela). */
+private fun MacrobenchmarkScope.hideKeyboard() {
+    if (isKeyboardShown()) {
+        device.pressBack()
+        device.waitForIdle()
+    }
 }
 
 /**
@@ -195,7 +232,7 @@ fun MacrobenchmarkScope.ensureSampleTasks() {
     SAMPLE_TASKS.forEach { title ->
         if (findInList(title) != null) return@forEach
         device.findObject(By.desc("Nova tarefa"))?.click() ?: return
-        typeAndSave(title)
+        typeAndConfirm(title)
         openTab(Tab.TASKS)
     }
 }
@@ -219,14 +256,15 @@ fun MacrobenchmarkScope.browseTasks() {
         // Fecha o teclado sem sair da aba: depois do Limpar a dica volta e o foco continua no campo, então
         // a dica não diz nada do teclado (NB-E7-B). Voltar só com o teclado aberto; sem ele, o Voltar
         // sairia da aba.
-        if (isKeyboardShown()) {
-            device.pressBack()
-            device.waitForIdle()
-        }
+        hideKeyboard()
     }
     if (clickInList(SAMPLE_TASKS.first())) {
-        device.wait(Until.hasObject(By.text("Detalhes da tarefa")), TIMEOUT_MS)
-        device.pressBack()
+        // Detalhe sem "Salvar" (v1.9.0): edita o título (com o mesmo texto) e volta; a gravação é na hora.
+        if (device.wait(Until.hasObject(By.text("Detalhes da tarefa")), TIMEOUT_MS)) {
+            editAndLeave(SAMPLE_TASKS.first())
+        } else {
+            device.pressBack()
+        }
     }
     openTab(Tab.TASKS)
 }
@@ -274,8 +312,12 @@ fun MacrobenchmarkScope.browseToday() {
 
 /**
  * "Todas as rotinas", pelo menu da Hoje: garante um bloco (criado pelo editor, para perfilar também o
- * editor e, na Hoje, a linha do tempo com o bloco), abre a rotina no editor e volta. O bloco vale
- * todos os dias, então aparece na linha do tempo da Hoje.
+ * editor e, na Hoje, a linha do tempo com o bloco), abre a rotina no editor, abre e recolhe "Mais
+ * opções", edita o título (com o mesmo texto) e volta. O bloco vale todos os dias, então aparece na
+ * linha do tempo da Hoje.
+ *
+ * v1.9.0: a rotina nova nasce pelo "Criar rotina" do rodapé, e o editor fecha depois (volta a "Todas
+ * as rotinas"). A edição grava na hora, sem "Salvar".
  */
 fun MacrobenchmarkScope.browseRoutines() {
     openTab(Tab.TODAY)
@@ -285,16 +327,37 @@ fun MacrobenchmarkScope.browseRoutines() {
     device.wait(Until.hasObject(By.desc("Nova rotina")), TIMEOUT_MS)
     if (findInList(SAMPLE_ROUTINE) == null) {
         device.findObject(By.desc("Nova rotina"))?.click()
-        typeAndSave(SAMPLE_ROUTINE)
+        // Marcador do editor novo: o "Criar rotina" do rodapé (o FAB da lista também diz "Nova rotina").
+        if (device.wait(Until.hasObject(By.text("Criar rotina")), TIMEOUT_MS)) {
+            typeAndConfirm(SAMPLE_ROUTINE, confirm = "Criar rotina")
+        }
         device.wait(Until.hasObject(By.desc("Nova rotina")), TIMEOUT_MS)
     }
     if (clickInList(SAMPLE_ROUTINE)) {
-        device.wait(Until.hasObject(By.text("Editar rotina")), TIMEOUT_MS)
-        device.pressBack()
+        if (device.wait(Until.hasObject(By.text("Editar rotina")), TIMEOUT_MS)) {
+            toggleMoreOptions()
+            editAndLeave(SAMPLE_ROUTINE)
+        } else {
+            device.pressBack()
+        }
         device.wait(Until.hasObject(By.desc("Nova rotina")), TIMEOUT_MS)
     }
     device.pressBack()
     openTab(Tab.TODAY)
+}
+
+/**
+ * No editor de rotina: "Mais opções" começa recolhido (v1.9.0). Rola até o cabeçalho da seção (o
+ * TEXTO; o menu da barra usa a mesma frase como descrição, então não se confundem), abre e recolhe de
+ * novo, sem deixar estado. Sem achar, não faz nada. Termina com a lista de volta ao topo (o título).
+ */
+private fun MacrobenchmarkScope.toggleMoreOptions() {
+    val header = findInList("Mais opções") ?: return scrollToTop()
+    runCatching { header.click() }
+    device.waitForIdle()
+    actOnFresh(By.text("Mais opções")) { it.click() }
+    device.waitForIdle()
+    scrollToTop()
 }
 
 /**
@@ -306,7 +369,7 @@ fun MacrobenchmarkScope.browseLists() {
     if (!clickInList(SAMPLE_LIST)) {
         // Criar pela aba já abre a lista nova.
         device.findObject(By.desc("Nova lista"))?.click()
-        typeAndSave(SAMPLE_LIST)
+        typeAndConfirm(SAMPLE_LIST)
     }
     // Tela da lista (v1.7.0): o campo de adição rápida no rodapé, com a dica "Adicionar item", no
     // lugar do FAB. Não adiciona nada: a jornada não pode criar itens a cada rodada.
