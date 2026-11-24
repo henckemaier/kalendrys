@@ -3,6 +3,87 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.9.0 — Editores (versionCode 10900)
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 15).
+Sem migração de banco (Room continua na versão 11), sem mudança no backup (formato 6), sem
+dependência nova e sem permissão nova.
+
+### Novidades
+
+- **Detalhe da tarefa e editor de rotina gravam enquanto se digita**: o texto é gravado 500 ms
+  depois da última tecla e sempre ao sair da tela ou ao ir para segundo plano. Somem o "Salvar" e
+  o "Descartar alterações?" do detalhe da tarefa e da edição de rotina. Título vazio não é
+  gravado: ao sair, o campo volta ao último título válido.
+- **Reverter alterações**, no menu dos dois editores: devolve só os campos mudados enquanto a tela
+  está aberta, sem mexer em conclusão, pausa ou exclusão, nem num campo que mudou por fora depois
+  da edição. Vale até fechar a tela.
+- **Desfazer conclusão no detalhe da tarefa**: com a tarefa concluída (hoje, numa repetida;
+  encerrada, numa única), a ação principal desfaz essa conclusão. O histórico de dias anteriores
+  continua só leitura ali; um dia passado se corrige na Hoje, naquele dia.
+- **Editor de rotina reorganizado**: Título; Quando (início, término ou duração, dias, a cada N
+  semanas); Lembrar; Categoria; Lista; Exercícios (na categoria de exercício); Aparência; e, em
+  "Mais opções", Vigência e Observações (aberto sozinho quando a rotina já tem uma delas).
+  Pausar, Duplicar, Reverter alterações e Excluir ficam no menu.
+- **Criar rotina**: nada é gravado nem agendado antes do botão "Criar rotina", e a tela continua
+  fechando depois dele; voltar com campos preenchidos pede confirmação. Em altura compacta
+  (paisagem com teclado) o botão sai do rodapé e vai para a barra do topo.
+
+### Mudanças de comportamento
+
+- **Editar grava só o campo alterado**, sobre a versão mais recente da tarefa ou da rotina:
+  concluir pela notificação, pausar ou excluir a lista vinculada com o editor aberto não é mais
+  desfeito pela edição.
+- **Alarmes só são refeitos quando a mudança mexe em horário, repetição, dias, vigência ou
+  aviso**; mudar título, texto, cor, ícone, categoria ou lista não toca no alarme.
+- **"Concluídas hoje" da aba Tarefas** segue o registro de conclusões do dia, como a Hoje e o
+  widget. A tarefa repetida concluída adiantada aparece em "Concluídas hoje" e também em
+  "Próximas".
+- **Desfazer de concluir e de pular rotina na Hoje** sobrevive a girar a tela e à troca de aba
+  por até 30 s, como nas outras telas. É um Desfazer por vez: concluir vários itens em seguida
+  deixa só o do último.
+- **Desfazer direto descarta a mensagem**: desmarcar pela Hoje, tirar o pular pelo bloco
+  esmaecido ou desfazer a conclusão pelo detalhe da tarefa tira da tela a mensagem pendente do
+  mesmo item.
+- **Concluir pelo detalhe da tarefa** mostra a mensagem com Desfazer mesmo se a tela fechar.
+- **Excluir pelo editor de rotina** devolve, no Desfazer, a rotina como está gravada, com os
+  exercícios como estão.
+- **Voltar preditivo** nos editores de tarefa e de rotina já existentes.
+- Ajustes de tela: o nome do dia na faixa da semana fica sempre numa linha (três letras ou uma);
+  o horário do bloco da linha do tempo encolhe em três degraus (faixa inteira, só a duração,
+  nada), sem reticências; o estado vazio preenche a tela por dentro da rolagem; o progresso do
+  dia não mostra "0 de 0" em dia sem itens; o painel de nova tarefa só põe o foco no Título na
+  primeira abertura e não fecha ao arrastar em paisagem com teclado.
+
+### Nota
+
+- Numa tarefa repetida, concluir adiantado (num dia que não é dia dela) só grava o registro
+  daquele dia: a próxima ocorrência continua onde estava e aparece pendente no dia dela. Era
+  assim também na v1.8.0. Se concluir adiantado deve valer pela próxima vez é decisão da
+  v1.10.0.
+
+### Problemas conhecidos
+
+- **Aviso de rotina pode atrasar com o aparelho dormindo** quando o início anterior de outra
+  rotina não avisa (aviso desligado ou já concluída no dia): o aviso seguinte sai só quando o
+  aparelho acordar. Existe desde a v1.8.0; a correção é o primeiro item da próxima versão.
+- **Título do editor de rotina cortado** em paisagem com fonte grande (2.0) e teclado aberto: o
+  texto aparece pela metade, mas dá para digitar. Com fonte 1.0 não ocorre. Correção no trabalho
+  adaptativo da v1.10.0.
+
+### Interno
+
+- **Abertura a frio**: **não medida** nesta versão; o aparelho de medição não estava disponível.
+- **Baseline Profile** regerado para os editores, o detalhe da tarefa, Hoje, Tarefas, Listas,
+  Calendário, Ajustes e as ofertas de Desfazer. Lacuna conhecida: as telas de rotinas (Todas as
+  rotinas e o editor de rotina) não entram, como na v1.8.0.
+- **APK de release**: 3.372.207 B (+0,54% sobre a v1.8.0).
+- **Acessibilidade**: leitor de tela com fala real não verificado, coberto por testes de
+  semântica. O bloco com o horário escondido continua expondo a faixa inteira ao leitor de tela.
+- `TaskChange` e `RoutineChange` no domínio e `edit` nos repositórios; o `TaskDraft` e o
+  `rebase` foram apagados; o `RoutineDraft` fica só para a criação. Fila única de gravações por
+  editor e buffer de campo de texto (`ui/edit`). Criar lista e vincular numa transação só.
+
 ## v1.8.0 — Hoje e dados (versionCode 10800)
 
 Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 14).
