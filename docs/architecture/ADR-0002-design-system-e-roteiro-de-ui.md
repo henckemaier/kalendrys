@@ -1667,9 +1667,17 @@ objetos.**
   pular pelo bloco esmaecido, age na hora e sem oferta; se houver uma oferta pendente para a
   mesma rotina no mesmo dia, ela é descartada. Sem isso, a mensagem antiga continuaria na tela
   e o Desfazer dela apagaria uma conclusão feita depois por outro caminho.
+  O mesmo vale para a tarefa: desmarcar pela Hoje ou desfazer a conclusão pelo detalhe descarta a
+  oferta daquele registro. Ali o Desfazer atrasado já não fazia nada, mas a mensagem ficava na tela.
 - **"Concluídas hoje" na aba Tarefas (P5):** pela mesma definição de feitas hoje da Hoje (14.4),
   o registro do dia. Consequência aceita: a repetida concluída adiantada aparece em "Concluídas
-  hoje" e também em "Próximas", com a data seguinte. As duas linhas estão certas.
+  hoje" e também em "Próximas". As duas linhas estão certas.
+  **Correção de 2026-11-24:** a redação anterior dizia "com a data seguinte", como se a conclusão
+  adiantada consumisse a próxima vez. Não consome, nem consumia na v1.8.0: numa tarefa repetida,
+  concluir num dia que não é dia dela só grava o registro daquele dia; a próxima ocorrência
+  continua onde estava e aparece pendente no dia dela. Se concluir adiantado deve valer pela
+  próxima vez é pergunta de produto e entra no parecer da v1.10.0, junto com a repetida não
+  feita (15.9, P1): as duas dependem da mesma regra, a de qual ocorrência um registro satisfaz.
 
 ### 15.7 Dívidas de tela que entram
 
