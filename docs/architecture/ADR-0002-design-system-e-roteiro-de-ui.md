@@ -1765,3 +1765,65 @@ backup confirmado, mede-se no aparelho dele v1.7.1, v1.8.0 e v1.9.0 numa sessão
 protocolo da 11.8.3 com as regras da 13.6 e da 14.14 (instalar antes de limpar os dados; o passo
 de espera do arnês). Sem a liberação, o critério fica registrado de novo como não medido. Não se
 tenta no emulador.
+
+### 15.12 Fechamento da v1.9.0 (2026-11-24)
+
+Commit final `774fba6` (versionCode 10900). CI verde nesse commit: 1088 testes, 0 falhas.
+
+**Baseline Profile.** Regerado em `e0aaacd`, 33780 linhas. Cobre `ui/edit`, o detalhe da tarefa,
+Hoje, Tarefas, Listas, Calendário, Ajustes e as ofertas de desfazer. **Lacuna aceita:**
+`ui/routines` e `ui/routineeditor` não entram, porque a jornada que percorre as rotinas sai cedo,
+em silêncio, sem criar a rotina de exemplo, e o teste passa mesmo assim. A v1.8.0 já tinha a
+mesma lacuna; não é regressão, mas o editor de rotina, entrega central desta versão, abre sem
+perfil. Vai para a v1.10.0: corrigir a jornada, e **toda jornada passa a falhar quando não acha
+o caminho**, em vez de sair cedo. O aceite de um perfil gerado é pela presença dos pacotes no
+arquivo, não pelo teste verde.
+
+Tentou-se uma segunda geração com a jornada corrigida, e ela **falhou**: caiu em 1m33s, na
+primeira iteração, porque a jornada das tarefas saiu do app. O passo de voltar aceitou o widget
+da tela inicial, que tem a mesma descrição "Nova tarefa", por procurar o elemento sem restringir
+ao pacote do app; a jornada das rotinas nem chegou a rodar. Pela regra de uma tentativa só,
+ficou o perfil de `e0aaacd`, que não foi tocado. As jornadas corrigidas estão em `02e3c97`
+(dev/forja), fora da v1.9.0. Regra que sai daqui: todo seletor de jornada restringe ao pacote do
+app.
+
+**APK de release com R8.** 3.372.207 B, contra 3.354.191 B da v1.8.0 (+18.016 B, +0,54%).
+Verificação do R8 sem erro. O perfil está no APK.
+
+**Abertura a frio: NÃO MEDIDA.** O aparelho do usuário não foi liberado (P7), e no emulador não
+se tenta (15.11, 14.14). O critério fica em aberto pela segunda versão seguida; a medida de
+v1.7.1, v1.8.0 e v1.9.0 numa sessão só continua pendente da liberação.
+
+**Matriz manual no release final: aprovada, nada bloqueante.** Sem falha fatal nem ANR em toda a
+sessão; dados do emulador restaurados e conferidos no fim.
+
+- Atualização por cima da v1.8.0 com o editor de rotina e com o detalhe da tarefa abertos e texto
+  não salvo: o app abre, o que estava gravado fica intacto, o alarme da rotina continua; o texto
+  não salvo da v1.8.0 se perde, como esperado. Banco 11 nas duas versões.
+- Editores no release: digitação em rajada correta nos dois; matar o app um segundo depois de
+  digitar não perde nada; Reverter; título vazio volta ao último válido; o Desfazer de rotina
+  concluída sobrevive a girar e a trocar de aba.
+- Cinco telas em seis combinações de largura, fonte e orientação: nada cortado sem rolagem e
+  botões ao alcance, com a exceção registrada abaixo.
+- Alarmes: mudar o início refaz o alarme na hora e o aviso toca; mudar só o título ou a duração
+  não mexe no alarme; pausar, retomar e ligar ou desligar o aviso refletem no alarme; o lembrete
+  de tarefa mudado no detalhe toca; concluir pela notificação com o detalhe aberto mantém a nota
+  digitada.
+- Backup: exportação na versão 6 com banco 11; restaurar com gravação pendente num editor aberto
+  termina com os dados restaurados e os alarmes refeitos.
+
+**Achados do fechamento, fora da v1.9.0:**
+
+- **Título do editor de rotina cortado em paisagem com fonte 2.0 e teclado aberto.** Entre a
+  barra do topo e o teclado sobra menos altura do que o campo ocupa, e o texto aparece pela
+  metade. Dá para digitar, e com fonte 1.0 não ocorre. A causa é a barra do topo fixa em altura
+  compacta; a correção (a barra rolar junto ou encolher nessa altura, em todas as telas de
+  edição) é do trabalho adaptativo da v1.10.0.
+- **Aviso de rotina pode atrasar com o aparelho dormindo.** Defeito que já existia na v1.8.0. Há
+  um único alarme para todas as rotinas, no próximo início de qualquer bloco. Quando esse início
+  não avisa (aviso desligado, ou já concluído no dia), o alarme é silencioso e não acorda o
+  aparelho; o alarme do bloco seguinte, que avisa, só é agendado quando o silencioso dispara. Com
+  o aparelho dormindo, o aviso seguinte sai só quando ele acordar. Não foi reproduzido, só lido no
+  código. A correção exige separar o alarme que avisa (exato, no próximo início que avisa e ainda
+  não foi concluído) do alarme que só redesenha os widgets, com parecer próprio. Não entra numa
+  versão já fechada e testada; é o **primeiro item da próxima versão**, antes do escopo novo.
