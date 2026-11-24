@@ -8,7 +8,6 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -494,12 +493,7 @@ class RoutineEditorViewModelTest {
     private fun repositoryScheduling(onSchedule: () -> Unit): RoutineRepository {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val alarms = object : RoutineAlarms(context) {
-            override fun scheduleNext(
-                routines: List<Routine>,
-                after: LocalDateTime,
-                overridesByRoutine: Map<Long, List<RoutineOverride>>,
-                doneOnStartDay: Set<Long>,
-            ) = onSchedule()
+            override fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) = onSchedule()
         }
         return RoutineRepository(
             db.routineDao(),

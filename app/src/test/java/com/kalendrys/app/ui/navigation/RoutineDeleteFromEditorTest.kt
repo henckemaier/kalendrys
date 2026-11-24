@@ -44,6 +44,7 @@ import java.time.DayOfWeek
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -141,7 +142,8 @@ class RoutineDeleteFromEditorTest {
         compose.onNode(hasText("Desfazer") and hasClickAction()).performClick()
         waitFor { archivedAt() == null && alarms.calls.isNotEmpty() }
         assertNull(offers.pending.value)
-        assertTrue("o alarme volta a contar a rotina", alarms.calls.last().routines.any { it.id == routineId })
+        // A única rotina (às 23:00, avisa) volta: o aviso é agendado de novo.
+        assertEquals("o alarme volta a contar a rotina", 23, alarms.calls.last().remindAt?.hour)
     }
 
     @Test

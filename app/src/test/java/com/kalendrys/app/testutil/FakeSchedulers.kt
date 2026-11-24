@@ -52,23 +52,17 @@ open class FakeReminderScheduler(context: Context) : ReminderScheduler(context) 
     }
 }
 
+/**
+ * Registra cada agendamento dos dois alarmes das rotinas (v1.9.1, E5-B): o horário do AVISO e o do
+ * alarme silencioso dos WIDGETS, como o repositório os calculou (nulo = cancelado).
+ */
 class FakeRoutineAlarms(context: Context) : RoutineAlarms(context) {
-    data class Call(
-        val routines: List<Routine>,
-        val after: LocalDateTime,
-        val overridesByRoutine: Map<Long, List<RoutineOverride>>,
-        val doneOnStartDay: Set<Long> = emptySet(),
-    )
+    data class Call(val remindAt: LocalDateTime?, val refreshAt: LocalDateTime?)
 
     val calls = mutableListOf<Call>()
 
-    override fun scheduleNext(
-        routines: List<Routine>,
-        after: LocalDateTime,
-        overridesByRoutine: Map<Long, List<RoutineOverride>>,
-        doneOnStartDay: Set<Long>,
-    ) {
-        calls += Call(routines, after, overridesByRoutine, doneOnStartDay)
+    override fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) {
+        calls += Call(remindAt, refreshAt)
     }
 
     fun reset() {

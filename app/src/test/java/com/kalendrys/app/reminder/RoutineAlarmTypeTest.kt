@@ -4,21 +4,30 @@ import android.app.AlarmManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.data.local.entity.Routine
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlarmManager
 
 /**
- * E1 (v1.8.0, ADR-0002 14.3): o alarme do próximo início de rotina NÃO é pulado (ele redesenha os
- * widgets); só muda de tipo. Exato (despertador) se alguma rotina que avisa ainda não foi concluída
- * no dia; silencioso (RTC, sem acordar) se todas as que avisam já foram.
+ * v1.9.1 (E5-B): os dois alarmes das rotinas, cada um com o seu PendingIntent e o seu tipo. O
+ * [RoutineAlarms] não calcula nada (os horários vêm do repositório); aqui só o tipo, a ação, o
+ * horário e o cancelamento de cada um.
+ * - AVISO ([RoutineAlarmReceiver.ACTION_START], o mesmo da v1.9.0): despertador (exato, acorda).
+ * - WIDGETS ([RoutineAlarmReceiver.ACTION_REFRESH]): silencioso (RTC, não acorda).
+ *
+ * Até a v1.9.0 era um alarme só, que virava RTC num início sem aviso (E1 da v1.8.0, ADR-0002 14.3);
+ * com o aparelho dormindo, o aviso seguinte podia nunca ser agendado.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -27,44 +36,83 @@ class RoutineAlarmTypeTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
     private val alarms = RoutineAlarms(context)
-    private val after = LocalDate.now().atStartOfDay().minusMinutes(1)
+    private val zone = ZoneId.systemDefault()
+    private val day = LocalDate.now().plusDays(1)
 
-    @org.junit.Before
+    @Before
     fun grantExact() {
         // No Robolectric a permissão "Alarmes e lembretes" vem negada; aqui exercita o caminho exato.
-        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        ShadowAlarmManager.setCanScheduleExactAlarms(true)
     }
 
-    private fun routine(id: Long, remind: Boolean) = Routine(id = id, title = "R$id", startMinute = 480, remind = remind)
+    @After
+    fun restore() {
+        ShadowAlarmManager.setCanScheduleExactAlarms(true)
+    }
 
-    private fun marked() = shadowOf(alarmManager).scheduledAlarms.single()
+    private fun alarmFor(action: String): ShadowAlarmManager.ScheduledAlarm? =
+        shadowOf(alarmManager).scheduledAlarms.singleOrNull { alarm ->
+            alarm.operation?.let { shadowOf(it).savedIntent.action } == action
+        }
+
+    private fun remindAlarm() = alarmFor(RoutineAlarmReceiver.ACTION_START)
+
+    private fun refreshAlarm() = alarmFor(RoutineAlarmReceiver.ACTION_REFRESH)
+
+    private fun millis(at: LocalDateTime) = at.atZone(zone).toInstant().toEpochMilli()
 
     @Test
-    fun `rotina que avisa e nao foi concluida marca alarme exato`() {
-        alarms.scheduleNext(listOf(routine(1, remind = true)), after, emptyMap(), doneOnStartDay = emptySet())
-        assertNotNull(marked().alarmClockInfo)
+    fun `aviso e despertador no horario do aviso`() {
+        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = null)
+
+        val alarm = checkNotNull(remindAlarm())
+        assertNotNull("despertador: acorda o aparelho", alarm.alarmClockInfo)
+        assertEquals(millis(day.atTime(9, 0)), alarm.triggerAtTime)
+        assertNull(refreshAlarm())
     }
 
     @Test
-    fun `todas as que avisam concluidas no dia marca alarme silencioso no mesmo horario`() {
-        alarms.scheduleNext(listOf(routine(1, remind = true)), after, emptyMap(), doneOnStartDay = setOf(1L))
-        val alarm = marked()
+    fun `widgets e silencioso no horario do bloco sem aviso`() {
+        alarms.schedule(remindAt = null, refreshAt = day.atTime(8, 0))
+
+        val alarm = checkNotNull(refreshAlarm())
         assertNull(alarm.alarmClockInfo)
         assertEquals(AlarmManager.RTC, alarm.type)
-        val expected = LocalDate.now().atTime(8, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-        assertEquals(expected, alarm.triggerAtTime)
+        assertEquals(millis(day.atTime(8, 0)), alarm.triggerAtTime)
+        assertNull(remindAlarm())
     }
 
     @Test
-    fun `uma que avisa pendente no mesmo inicio mantem o alarme exato`() {
-        val routines = listOf(routine(1, remind = true), routine(2, remind = true))
-        alarms.scheduleNext(routines, after, emptyMap(), doneOnStartDay = setOf(1L))
-        assertNotNull(marked().alarmClockInfo)
+    fun `os dois convivem - o silencioso antes nao apaga nem atrasa o aviso`() {
+        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 0))
+
+        assertEquals(2, shadowOf(alarmManager).scheduledAlarms.size)
+        assertNotNull(remindAlarm()!!.alarmClockInfo)
+        assertEquals(millis(day.atTime(9, 0)), remindAlarm()!!.triggerAtTime)
+        assertEquals(AlarmManager.RTC, refreshAlarm()!!.type)
+        assertEquals(millis(day.atTime(8, 0)), refreshAlarm()!!.triggerAtTime)
     }
 
     @Test
-    fun `sem aviso continua silenciosa`() {
-        alarms.scheduleNext(listOf(routine(1, remind = false)), after, emptyMap(), doneOnStartDay = emptySet())
-        assertEquals(AlarmManager.RTC, marked().type)
+    fun `reagendar substitui cada um no seu lugar e o nulo cancela`() {
+        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 0))
+
+        alarms.schedule(remindAt = day.atTime(10, 0), refreshAt = null)
+
+        assertEquals(1, shadowOf(alarmManager).scheduledAlarms.size)
+        assertEquals(millis(day.atTime(10, 0)), remindAlarm()!!.triggerAtTime)
+        assertNull("sem horário, o dos widgets é cancelado", refreshAlarm())
+
+        alarms.schedule(remindAt = null, refreshAt = null)
+        assertTrue(shadowOf(alarmManager).scheduledAlarms.isEmpty())
+    }
+
+    @Test
+    fun `sem alarme exato o aviso segue agendado - caminho inexato`() {
+        ShadowAlarmManager.setCanScheduleExactAlarms(false)
+
+        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = null)
+
+        assertEquals(millis(day.atTime(9, 0)), remindAlarm()?.triggerAtTime)
     }
 }
