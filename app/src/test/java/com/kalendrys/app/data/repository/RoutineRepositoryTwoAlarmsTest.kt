@@ -344,6 +344,46 @@ class RoutineRepositoryTwoAlarmsTest {
         assertDiagnosticMatchesSchedule(instant)
     }
 
+    // --- Horário de verão: o instante sai no fuso do repositório (v1.10.0, OBS-1) -------------------
+
+    @Test
+    fun `inicio do horario de verao - bloco na hora que nao existe toca na hora seguinte e avisa uma vez`() = runTest {
+        zone = NEW_YORK
+        val springForward = LocalDate.of(2030, 3, 10) // 2:00 vira 3:00: 2:30 não existe
+        clock = { at(1, 0, springForward) }
+        val madrugada = reminding(2, 30)
+
+        // java.time leva 2:30 inexistente para 3:30 (horário de verão): o mesmo instante no alarme e na entrega.
+        val expected = springForward.atTime(2, 30).atZone(NEW_YORK).toInstant().toEpochMilli()
+        assertEquals(springForward.atTime(3, 30).atZone(NEW_YORK).toInstant().toEpochMilli(), expected)
+        assertEquals(expected, alarms.millis.last().first)
+        assertEquals(expected, repository.nextRemindingStart(at(1, 0, springForward)))
+
+        repository.catchUp(nowOverride = expected)
+        repository.catchUp(nowOverride = expected + 60_000L)
+        assertEquals(listOf(springForward to madrugada.id), delivered)
+        assertEquals(at(2, 30, springForward.plusDays(1)), alarms.millis.last().first)
+    }
+
+    @Test
+    fun `fim do horario de verao - bloco na hora repetida avisa so na primeira passagem`() = runTest {
+        zone = NEW_YORK
+        val fallBack = LocalDate.of(2030, 11, 3) // 2:00 volta para 1:00: 1:30 acontece duas vezes
+        clock = { at(0, 30, fallBack) }
+        val madrugada = reminding(1, 30)
+        val first = fallBack.atTime(1, 30).atZone(NEW_YORK).withEarlierOffsetAtOverlap().toInstant().toEpochMilli()
+        val second = fallBack.atTime(1, 30).atZone(NEW_YORK).withLaterOffsetAtOverlap().toInstant().toEpochMilli()
+        assertEquals(60 * 60_000L, second - first)
+        assertEquals("o alarme fica na primeira 1:30", first, alarms.millis.last().first)
+
+        repository.catchUp(nowOverride = first)
+        // Uma hora depois o relógio marca 1:30 de novo: nada a avisar, e o próximo é o de amanhã.
+        repository.catchUp(nowOverride = second)
+
+        assertEquals(listOf(fallBack to madrugada.id), delivered)
+        assertEquals(at(1, 30, fallBack.plusDays(1)), alarms.millis.last().first)
+    }
+
     // --- Limite de 64 inícios descartados -------------------------------------------------------
 
     @Test
@@ -435,5 +475,6 @@ class RoutineRepositoryTwoAlarmsTest {
     private companion object {
         val SAO_PAULO: ZoneId = ZoneId.of("America/Sao_Paulo")
         val LISBON: ZoneId = ZoneId.of("Europe/Lisbon")
+        val NEW_YORK: ZoneId = ZoneId.of("America/New_York")
     }
 }
