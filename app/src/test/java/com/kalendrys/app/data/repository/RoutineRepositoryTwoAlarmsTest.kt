@@ -72,7 +72,7 @@ class RoutineRepositoryTwoAlarmsTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        alarms = FakeRoutineAlarms(context)
+        alarms = FakeRoutineAlarms(context, zone = { zone })
         mark = RecordingMark()
         clock = { at(8, 0) }
         repository = RoutineRepository(
@@ -115,7 +115,8 @@ class RoutineRepositoryTwoAlarmsTest {
     /** O diagnóstico, nos mesmos dados e no mesmo "agora", mostra o horário do alarme de aviso agendado. */
     private suspend fun assertDiagnosticMatchesSchedule(now: Long) {
         repository.catchUp(nowOverride = now)
-        val scheduled = last().remindAt?.atZone(zone)?.toInstant()?.toEpochMilli()
+        // O instante que o repositório entregou ao RoutineAlarms, sem conversão no meio (OBS-1).
+        val scheduled = alarms.millis.last().first
         assertEquals("diagnóstico = agendamento", scheduled, repository.nextRemindingStart(now))
     }
 
@@ -318,6 +319,8 @@ class RoutineRepositoryTwoAlarmsTest {
         assertTrue(delivered.isEmpty())
         // Em Lisboa já são 11:00: os dois de hoje passaram, ficam os de amanhã no relógio local.
         assertEquals(call(remindAt = t(9, date = day.plusDays(1)), refreshAt = t(8, 30, day.plusDays(1))), last())
+        // OBS-1 (v1.10.0): o instante sai convertido no fuso do repositório, não no do sistema.
+        assertEquals(at(9, date = day.plusDays(1)) to at(8, 30, day.plusDays(1)), alarms.millis.last())
         assertDiagnosticMatchesSchedule(instant)
     }
 

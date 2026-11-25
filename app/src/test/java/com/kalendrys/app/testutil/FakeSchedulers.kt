@@ -9,8 +9,10 @@ import com.kalendrys.app.reminder.ReminderAlarm
 import com.kalendrys.app.reminder.ReminderScheduler
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
  * Fakes dos colaboradores de alarme/notificação: só registram as chamadas, sem tocar no
@@ -56,17 +58,31 @@ open class FakeReminderScheduler(context: Context) : ReminderScheduler(context) 
  * Registra cada agendamento dos dois alarmes das rotinas (v1.9.1, E5-B): o horário do AVISO e o do
  * alarme silencioso dos WIDGETS, como o repositório os calculou (nulo = cancelado).
  */
-class FakeRoutineAlarms(context: Context) : RoutineAlarms(context) {
+/**
+ * Registra os dois instantes recebidos ([millis]) e, para leitura nos testes, os mesmos em hora local
+ * do [zone] ([calls]); passe o fuso do repositório quando ele não for o do sistema.
+ */
+class FakeRoutineAlarms(
+    context: Context,
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+) : RoutineAlarms(context) {
     data class Call(val remindAt: LocalDateTime?, val refreshAt: LocalDateTime?)
 
     val calls = mutableListOf<Call>()
 
-    override fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) {
-        calls += Call(remindAt, refreshAt)
+    /** (aviso, widgets) em milissegundos, como chegaram. */
+    val millis = mutableListOf<Pair<Long?, Long?>>()
+
+    override fun schedule(remindAtMillis: Long?, refreshAtMillis: Long?) {
+        millis += remindAtMillis to refreshAtMillis
+        calls += Call(remindAtMillis?.local(), refreshAtMillis?.local())
     }
+
+    private fun Long.local(): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(this), zone())
 
     fun reset() {
         calls.clear()
+        millis.clear()
     }
 }
 

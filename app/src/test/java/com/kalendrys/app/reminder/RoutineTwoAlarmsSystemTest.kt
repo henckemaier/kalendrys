@@ -99,8 +99,10 @@ class RoutineTwoAlarmsSystemTest {
 
     private fun refresh(): ShadowAlarmManager.ScheduledAlarm? = withAction(RoutineAlarmReceiver.ACTION_REFRESH).singleOrNull()
 
+    /** Minuto local do horário do alarme, no fuso do sistema (desde a v1.10.0 o alarme não leva extras). */
     private fun minuteExtra(alarm: ShadowAlarmManager.ScheduledAlarm): Int =
-        shadowOf(checkNotNull(alarm.operation)).savedIntent.getIntExtra(RoutineAlarmReceiver.EXTRA_MINUTE, -1)
+        LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(alarm.triggerAtTime), ZoneId.systemDefault())
+            .let { it.hour * 60 + it.minute }
 
     private suspend fun silentThenReminding() {
         repository.add(Routine(title = "Leitura", startMinute = 8 * 60 + 30, remind = false, createdAt = 0L))
@@ -114,8 +116,9 @@ class RoutineTwoAlarmsSystemTest {
             0,
             Intent(context, RoutineAlarmReceiver::class.java)
                 .setAction(RoutineAlarmReceiver.ACTION_START)
-                .putExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, at.toLocalDate().toEpochDay())
-                .putExtra(RoutineAlarmReceiver.EXTRA_MINUTE, at.hour * 60 + at.minute),
+                // Os extras da v1.9.x, com as chaves de então.
+                .putExtra("extra_epoch_day", at.toLocalDate().toEpochDay())
+                .putExtra("extra_minute", at.hour * 60 + at.minute),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         alarmManager.set(AlarmManager.RTC, millis(at), operation)
@@ -126,13 +129,13 @@ class RoutineTwoAlarmsSystemTest {
     @Test
     fun `os dois PendingIntents sao distintos e reagendar varias vezes nao duplica`() {
         val alarms = RoutineAlarms(context)
-        repeat(3) { alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30)) }
+        repeat(3) { alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 30))) }
 
         assertEquals("um de cada, sem duplicar", 2, scheduled().size)
         assertNotEquals(remind()!!.operation, refresh()!!.operation)
 
         // Horários trocados: cada um no seu lugar, ainda dois.
-        alarms.schedule(remindAt = day.atTime(10, 0), refreshAt = day.atTime(9, 30))
+        alarms.schedule(remindAtMillis = millis(day.atTime(10, 0)), refreshAtMillis = millis(day.atTime(9, 30)))
         assertEquals(2, scheduled().size)
         assertEquals(millis(day.atTime(10, 0)), remind()!!.triggerAtTime)
         assertEquals(10 * 60, minuteExtra(remind()!!))
@@ -143,9 +146,9 @@ class RoutineTwoAlarmsSystemTest {
     @Test
     fun `aviso nulo cancela so o aviso e mantem o dos widgets`() {
         val alarms = RoutineAlarms(context)
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30))
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 30)))
 
-        alarms.schedule(remindAt = null, refreshAt = day.atTime(8, 30))
+        alarms.schedule(remindAtMillis = null, refreshAtMillis = millis(day.atTime(8, 30)))
 
         assertNull(remind())
         assertEquals(millis(day.atTime(8, 30)), refresh()!!.triggerAtTime)
@@ -155,9 +158,9 @@ class RoutineTwoAlarmsSystemTest {
     @Test
     fun `widgets nulo cancela so o dos widgets e mantem o aviso`() {
         val alarms = RoutineAlarms(context)
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30))
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 30)))
 
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = null)
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = null)
 
         assertNull(refresh())
         assertNotNull(remind()!!.alarmClockInfo)

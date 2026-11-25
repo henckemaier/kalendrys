@@ -12,7 +12,6 @@ import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
-import java.time.LocalDateTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import com.kalendrys.app.data.repository.ExerciseRepository
@@ -493,7 +492,7 @@ class RoutineEditorViewModelTest {
     private fun repositoryScheduling(onSchedule: () -> Unit): RoutineRepository {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val alarms = object : RoutineAlarms(context) {
-            override fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) = onSchedule()
+            override fun schedule(remindAtMillis: Long?, refreshAtMillis: Long?) = onSchedule()
         }
         return RoutineRepository(
             db.routineDao(),

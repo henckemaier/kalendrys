@@ -246,6 +246,7 @@ class ProcessStartAlarmReplacementTest {
         routineRepository.add(Routine(title = "Aviso 9h", startMinute = 9 * 60, createdAt = 0L))
     }
 
+    /** Dia e minuto locais tirados do próprio horário do alarme (desde a v1.10.0 ele não leva extras). */
     private data class RoutineAlarm(val triggerAtMs: Long, val epochDay: Long, val minute: Int)
 
     private fun routineAlarms(): List<ShadowAlarmManager.ScheduledAlarm> =
@@ -256,11 +257,11 @@ class ProcessStartAlarmReplacementTest {
 
     private fun pendingRoutineAlarm(): RoutineAlarm {
         val alarm = routineAlarms().single()
-        val intent = savedIntent(checkNotNull(alarm.operation))
+        val local = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(alarm.triggerAtMs), zone)
         return RoutineAlarm(
             triggerAtMs = alarm.triggerAtMs,
-            epochDay = intent.getLongExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, -1L),
-            minute = intent.getIntExtra(RoutineAlarmReceiver.EXTRA_MINUTE, -1),
+            epochDay = local.toLocalDate().toEpochDay(),
+            minute = local.hour * 60 + local.minute,
         )
     }
 

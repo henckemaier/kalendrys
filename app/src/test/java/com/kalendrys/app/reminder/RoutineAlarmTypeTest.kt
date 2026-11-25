@@ -21,8 +21,8 @@ import org.robolectric.shadows.ShadowAlarmManager
 
 /**
  * v1.9.1 (E5-B): os dois alarmes das rotinas, cada um com o seu PendingIntent e o seu tipo. O
- * [RoutineAlarms] não calcula nada (os horários vêm do repositório); aqui só o tipo, a ação, o
- * horário e o cancelamento de cada um.
+ * [RoutineAlarms] não calcula nada (os instantes vêm prontos do repositório, v1.10.0); aqui só o
+ * tipo, a ação, o horário e o cancelamento de cada um.
  * - AVISO ([RoutineAlarmReceiver.ACTION_START], o mesmo da v1.9.0): despertador (exato, acorda).
  * - WIDGETS ([RoutineAlarmReceiver.ACTION_REFRESH]): silencioso (RTC, não acorda).
  *
@@ -63,7 +63,7 @@ class RoutineAlarmTypeTest {
 
     @Test
     fun `aviso e despertador no horario do aviso`() {
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = null)
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = null)
 
         val alarm = checkNotNull(remindAlarm())
         assertNotNull("despertador: acorda o aparelho", alarm.alarmClockInfo)
@@ -73,7 +73,7 @@ class RoutineAlarmTypeTest {
 
     @Test
     fun `widgets e silencioso no horario do bloco sem aviso`() {
-        alarms.schedule(remindAt = null, refreshAt = day.atTime(8, 0))
+        alarms.schedule(remindAtMillis = null, refreshAtMillis = millis(day.atTime(8, 0)))
 
         val alarm = checkNotNull(refreshAlarm())
         assertNull(alarm.alarmClockInfo)
@@ -84,7 +84,7 @@ class RoutineAlarmTypeTest {
 
     @Test
     fun `os dois convivem - o silencioso antes nao apaga nem atrasa o aviso`() {
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 0))
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 0)))
 
         assertEquals(2, shadowOf(alarmManager).scheduledAlarms.size)
         assertNotNull(remindAlarm()!!.alarmClockInfo)
@@ -95,23 +95,32 @@ class RoutineAlarmTypeTest {
 
     @Test
     fun `reagendar substitui cada um no seu lugar e o nulo cancela`() {
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 0))
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 0)))
 
-        alarms.schedule(remindAt = day.atTime(10, 0), refreshAt = null)
+        alarms.schedule(remindAtMillis = millis(day.atTime(10, 0)), refreshAtMillis = null)
 
         assertEquals(1, shadowOf(alarmManager).scheduledAlarms.size)
         assertEquals(millis(day.atTime(10, 0)), remindAlarm()!!.triggerAtTime)
         assertNull("sem horário, o dos widgets é cancelado", refreshAlarm())
 
-        alarms.schedule(remindAt = null, refreshAt = null)
+        alarms.schedule(remindAtMillis = null, refreshAtMillis = null)
         assertTrue(shadowOf(alarmManager).scheduledAlarms.isEmpty())
+    }
+
+    @Test
+    fun `os alarmes nao levam extras - quem dispara so roda o catch-up`() {
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = millis(day.atTime(8, 0)))
+
+        for (alarm in shadowOf(alarmManager).scheduledAlarms) {
+            assertNull(shadowOf(checkNotNull(alarm.operation)).savedIntent.extras)
+        }
     }
 
     @Test
     fun `sem alarme exato o aviso segue agendado - caminho inexato`() {
         ShadowAlarmManager.setCanScheduleExactAlarms(false)
 
-        alarms.schedule(remindAt = day.atTime(9, 0), refreshAt = null)
+        alarms.schedule(remindAtMillis = millis(day.atTime(9, 0)), refreshAtMillis = null)
 
         assertEquals(millis(day.atTime(9, 0)), remindAlarm()?.triggerAtTime)
     }

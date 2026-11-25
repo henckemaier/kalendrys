@@ -100,7 +100,6 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
         const val ACTION_SNOOZE = "com.kalendrys.app.action.ROUTINE_SNOOZE"
         const val ACTION_SNOOZE_FIRE = "com.kalendrys.app.action.ROUTINE_SNOOZE_FIRE"
         const val EXTRA_EPOCH_DAY = "extra_epoch_day"
-        const val EXTRA_MINUTE = "extra_minute"
         const val EXTRA_ROUTINE_ID = "extra_routine_id"
     }
 }

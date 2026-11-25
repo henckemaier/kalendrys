@@ -407,16 +407,17 @@ class RoutineRepository(
      *   próximo início já é o do aviso, ele não existe: o aviso também redesenha os widgets.
      * Com o limite de [MAX_DISCARDED_STARTS] esgotado não há aviso, e o dos widgets segue a corrente
      * (cada um agenda o seguinte), como até a v1.9.0.
+     * Os dois saem como INSTANTE, convertidos no mesmo fuso em que foram calculados (v1.10.0, OBS-1).
      */
     private suspend fun scheduleLocked(now: Long) {
         val zone = zone()
         val routines = routineDao.active()
         val overrides = overridesByRoutine()
-        val after = startingPoint(now)
+        val after = startingPoint(now, zone)
         val remindAt = nextReminding(routines, overrides, after, zone)
         val refreshAt = RoutineSchedule.nextStart(routines, after, zone, overrides)?.at
             ?.takeIf { remindAt == null || it < remindAt }
-        alarms.schedule(remindAt = remindAt, refreshAt = refreshAt)
+        alarms.schedule(remindAtMillis = remindAt?.toMillis(zone), refreshAtMillis = refreshAt?.toMillis(zone))
     }
 
     /**
@@ -431,8 +432,7 @@ class RoutineRepository(
      */
     suspend fun nextRemindingStart(now: Long = clock()): Long? {
         val zone = zone()
-        return nextReminding(routineDao.active(), overridesByRoutine(), startingPoint(now), zone)
-            ?.atZone(zone)?.toInstant()?.toEpochMilli()
+        return nextReminding(routineDao.active(), overridesByRoutine(), startingPoint(now, zone), zone)?.toMillis(zone)
     }
 
     /**
@@ -458,7 +458,9 @@ class RoutineRepository(
     }
 
     /** Ponto de partida do próximo início: o mesmo para o agendamento e para o diagnóstico. */
-    private fun startingPoint(now: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone())
+    private fun startingPoint(now: Long, zone: ZoneId): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone)
+
+    private fun LocalDateTime.toMillis(zone: ZoneId): Long = atZone(zone).toInstant().toEpochMilli()
 
     /** Exceções agrupadas por rotina, para o [RoutineSchedule] honrar skip/remarcação. */
     private suspend fun overridesByRoutine(): Map<Long, List<RoutineOverride>> =
