@@ -1,16 +1,10 @@
 package com.kalendrys.app.ui.routines
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,7 +16,6 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,14 +42,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.CollapsingFab
-import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
 import com.kalendrys.app.ui.components.GroupedCard
 import com.kalendrys.app.ui.components.ListRow
@@ -69,8 +60,8 @@ import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.theme.Spacing
 
 /**
- * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): ativas e pausadas, com o filtro por categoria
- * (P3) e o FAB "Nova rotina" (P4). Tocar na linha edita; pausar, retomar e excluir ficam no menu de
+ * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): ativas e pausadas e o FAB "Nova rotina" (P4).
+ * Sem filtro nem nome de categoria desde a v1.10.0 (16.10.5). Tocar na linha edita; pausar, retomar e excluir ficam no menu de
  * três pontos e, para o leitor de tela, como ações da própria linha (um nó por linha, 14.9).
  * "Excluir rotina" (P8, decisão do usuário; por baixo é o arquivar) vai pelo mesmo caminho do editor
  * (NB-E3-C): a mensagem "Rotina excluída" com Desfazer é a do app, que o AppScaffold desta tela desenha.
@@ -107,15 +98,6 @@ fun AllRoutinesScreen(
                 state = listState,
                 contentPadding = padding.plus(horizontal = Spacing.s, top = Spacing.xs),
             ) {
-                if (state.categories.isNotEmpty()) {
-                    item(key = "filter") {
-                        CategoryFilterRow(
-                            categories = state.categories,
-                            selectedId = state.selectedCategoryId,
-                            onSelect = viewModel::selectCategory,
-                        )
-                    }
-                }
                 val actions = RowActions(
                     onEdit = onOpenRoutine,
                     onPause = viewModel::pause,
@@ -124,16 +106,6 @@ fun AllRoutinesScreen(
                 )
                 section(key = "active", titleRes = R.string.all_routines_section_active, rows = state.active, actions = actions)
                 section(key = "paused", titleRes = R.string.all_routines_section_paused, rows = state.paused, actions = actions)
-                if (state.active.isEmpty() && state.paused.isEmpty()) {
-                    item(key = "empty_filter") {
-                        Text(
-                            text = stringResource(R.string.all_routines_empty_filter),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = Spacing.l, vertical = Spacing.l),
-                        )
-                    }
-                }
             }
         }
     }
@@ -160,7 +132,7 @@ private fun LazyListScope.section(key: String, titleRes: Int, rows: List<AllRout
 }
 
 /**
- * Uma rotina: ícone na cor dela, título, horário, dias e categoria; "Pausada" quando pausada.
+ * Uma rotina: ícone na cor dela, título, horário e dias; "Pausada" quando pausada.
  * Um nó só para o leitor de tela: o toque edita, o estado vai em `stateDescription` e pausar,
  * retomar e arquivar são ações da linha. O menu de três pontos é o mesmo conjunto de ações para
  * quem enxerga, por isso fica fora da árvore de acessibilidade (não vira um segundo nó).
@@ -173,7 +145,7 @@ internal fun AllRoutineRow(row: AllRoutinesViewModel.Row, actions: RowActions) {
     val resumeLabel = stringResource(R.string.all_routines_resume)
     val archiveLabel = stringResource(R.string.routine_delete)
     val tone = routineTone(RoutineColor.fromKey(routine.color))
-    val supporting = listOfNotNull(routineTimeRange(routine), routineDaysLabel(routine), row.category?.name)
+    val supporting = listOfNotNull(routineTimeRange(routine), routineDaysLabel(routine))
         .joinToString(SEPARATOR)
     ListRow(
         title = routine.title,
@@ -288,41 +260,6 @@ private fun routineDaysLabel(routine: Routine): String {
     }
     if (routine.weekInterval <= 1) return days
     return days + SEPARATOR + stringResource(R.string.routine_week_interval_every, routine.weekInterval)
-}
-
-/** O filtro por categoria (P3), vindo da aba Rotinas: "Todas" e um chip por categoria. */
-@Composable
-private fun CategoryFilterRow(
-    categories: List<RoutineCategory>,
-    selectedId: Long?,
-    onSelect: (Long?) -> Unit,
-) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp),
-    ) {
-        item(key = "category_all") {
-            FilterChip(
-                selected = selectedId == null,
-                onClick = { onSelect(null) },
-                label = { Text(stringResource(R.string.routine_category_filter_all), maxLines = 1, softWrap = false) },
-            )
-        }
-        items(categories, key = { it.id }) { category ->
-            FilterChip(
-                selected = selectedId == category.id,
-                onClick = { onSelect(category.id) },
-                // Uma linha só: o chip cresce na largura e a LazyRow rola (nada corta com fonte grande).
-                label = { Text(category.name, maxLines = 1, softWrap = false) },
-                leadingIcon = {
-                    Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
-                },
-            )
-        }
-    }
 }
 
 private const val SEPARATOR = " · "

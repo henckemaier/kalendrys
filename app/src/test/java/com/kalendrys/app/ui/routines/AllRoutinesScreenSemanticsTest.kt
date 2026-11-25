@@ -13,6 +13,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -20,7 +21,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -61,7 +62,6 @@ class AllRoutinesScreenSemanticsTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var repository: RoutineRepository
-    private lateinit var categories: RoutineCategoryRepository
     private lateinit var offers: UndoOffers
     private val opened = mutableListOf<Long>()
     private var newRoutines = 0
@@ -83,16 +83,16 @@ class AllRoutinesScreenSemanticsTest {
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
-        categories = RoutineCategoryRepository(db)
         runBlocking {
-            val academia = categories.create("Academia", "GREEN")
+            // Categoria de antes da v1.10.0: fica no banco, mas a linha não a mostra (16.10.5).
+            val academia = db.routineCategoryDao().insert(RoutineCategory(name = "Academia", color = "GREEN"))
             treino = repository.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 60, createdAt = 0L, categoryId = academia)).id
             val v = repository.add(Routine(title = "Violão", startMinute = 19 * 60, createdAt = 0L))
             repository.pause(v)
             violao = v.id
         }
         offers = testUndoOffers(testDb, repository)
-        val viewModel = testDb.track(AllRoutinesViewModel(repository, categories, offers))
+        val viewModel = testDb.track(AllRoutinesViewModel(repository, offers))
         compose.setContent {
             KalendrysTheme {
                 // Como o KalendrysNavHost: a mensagem do app (NB-E3-C), com o coletor único fora da tela.
@@ -138,9 +138,10 @@ class AllRoutinesScreenSemanticsTest {
 
         assertEquals(Role.Button, node.config[SemanticsProperties.Role])
         assertEquals("Editar Treino", node.config[SemanticsActions.OnClick].label)
-        // Título, horário, dias e categoria lidos juntos, no mesmo nó.
+        // Título, horário e dias lidos juntos, no mesmo nó; sem o nome da categoria (v1.10.0).
         val text = node.config[SemanticsProperties.Text].joinToString(" ") { it.text }
-        assertEquals(true, text.contains("Treino") && text.contains("07:00") && text.contains("Todo dia") && text.contains("Academia"))
+        assertEquals(true, text.contains("Treino") && text.contains("07:00") && text.contains("Todo dia"))
+        assertEquals(false, text.contains("Academia"))
         // O menu de três pontos não vira um segundo nó focável.
         assertEquals(0, compose.onAllNodes(hasClickAction() and hasAnyAncestor(hasTestTag(rowTag(treino)))).fetchSemanticsNodes().size)
         assertEquals(0, compose.onAllNodes(hasContentDescription("Mais opções para Treino")).fetchSemanticsNodes().size)
@@ -209,11 +210,10 @@ class AllRoutinesScreenSemanticsTest {
     }
 
     @Test
-    fun `filtro por categoria mostra so as rotinas dela`() {
-        compose.onNode(hasText("Academia") and hasClickAction() and !hasTestTag(rowTag(treino))).performClick()
-
-        compose.waitUntil(TIMEOUT_MS) { compose.onAllNodes(hasTestTag(rowTag(violao))).fetchSemanticsNodes().isEmpty() }
+    fun `sem filtro por categoria - nenhum chip com o nome dela`() {
         waitForRow(treino)
+        waitForRow(violao)
+        assertEquals(0, compose.onAllNodesWithText("Academia").fetchSemanticsNodes().size)
     }
 
     private companion object {

@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
@@ -241,20 +242,31 @@ class RoutineRepositoryEditTest {
     }
 
     @Test
-    fun `criar rotina com lista nova grava as duas juntas`() = runTest {
-        val routine = repository.add(Routine(title = "Feira", startMinute = 480, createdAt = TEST_CREATED_AT), newListName = " Hortifruti ")
+    fun `criar rotina com exercicios grava os dois juntos, na ordem e sem os sem nome`() = runTest {
+        // v1.10.0 (ADR-0002 16.10.5): exercícios já na criação, numa transação com a rotina.
+        val routine = repository.add(
+            Routine(title = "Força", startMinute = 480, createdAt = TEST_CREATED_AT),
+            exercises = listOf(
+                ExerciseFields(" Supino ", sets = 3, reps = 8, load = "40kg", restSeconds = 90),
+                ExerciseFields("  ", sets = 1, reps = 1),
+                ExerciseFields("Remada", sets = 0, reps = 12),
+            ),
+        )
 
-        val list = db.shoppingListDao().all().single()
-        assertEquals("Hortifruti", list.name)
-        assertEquals(list.id, routine.shoppingListId)
+        val items = db.exerciseItemDao().byRoutine(routine.id)
+        assertEquals(listOf("Supino", "Remada"), items.map { it.name })
+        assertEquals(listOf(0, 1), items.map { it.position })
+        assertEquals(1, items[1].sets)
         assertNotNull(db.routineDao().byId(routine.id))
+        assertNull("rotina não tem lista", routine.shoppingListId)
+        assertTrue(db.shoppingListDao().all().isEmpty())
     }
 
     @Test
-    fun `criar rotina com nome de lista em branco nao cria lista`() = runTest {
-        val routine = repository.add(Routine(title = "Feira", startMinute = 480, createdAt = TEST_CREATED_AT), newListName = "  ")
+    fun `criar rotina sem exercicios nao grava exercicio`() = runTest {
+        val routine = repository.add(Routine(title = "Leitura", startMinute = 1200, createdAt = TEST_CREATED_AT))
 
-        assertTrue(db.shoppingListDao().all().isEmpty())
-        assertNull(routine.shoppingListId)
+        assertNotNull(db.routineDao().byId(routine.id))
+        assertTrue(db.exerciseItemDao().all().isEmpty())
     }
 }

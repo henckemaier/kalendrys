@@ -107,7 +107,6 @@
     <string name="all_routines_section_active">Ativas</string>
     <string name="all_routines_section_paused">Pausadas</string>
     <string name="all_routines_paused_state">Pausada</string>
-    <string name="all_routines_empty_filter">Nenhuma rotina nesta categoria.</string>
     <string name="all_routines_edit">Editar %1$s</string>
     <string name="all_routines_more">Mais opções para %1$s</string>
     <string name="all_routines_pause">Pausar</string>
@@ -129,26 +128,6 @@
     <!-- Categorias de rotina -->
     <string name="routine_category">Categoria</string>
     <string name="routine_category_none">Sem categoria</string>
-    <string name="routine_category_filter_all">Todas</string>
-    <string name="routine_categories_title">Categorias</string>
-    <string name="routine_categories_empty_title">Nenhuma categoria</string>
-    <string name="routine_categories_empty_message">Crie categorias para agrupar e filtrar suas rotinas.</string>
-    <string name="routine_category_add">Nova categoria</string>
-    <string name="routine_category_edit_title">Editar categoria</string>
-    <string name="routine_category_name_label">Nome</string>
-    <string name="routine_category_edit">Editar %1$s</string>
-    <string name="routine_category_more">Mais opções para %1$s</string>
-    <string name="routine_category_delete_title">Excluir categoria?</string>
-    <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
-    <string name="routine_category_kind_label">Tipo</string>
-    <string name="routine_category_kind_simple">Simples</string>
-    <string name="routine_category_kind_shopping">Compras</string>
-    <string name="routine_category_kind_exercise">Exercício</string>
-
-    <!-- Configurações: rotinas -->
-    <string name="settings_section_routines">Rotinas</string>
-    <string name="settings_routine_categories">Categorias de rotina</string>
-    <string name="settings_routine_categories_description">Crie e organize categorias para agrupar suas rotinas.</string>
 
     <!-- Editor de rotina -->
     <string name="routine_new_title">Nova rotina</string>
@@ -205,9 +184,6 @@
     <string name="routine_when">Quando</string>
     <string name="routine_appearance">Aparência</string>
     <string name="routine_title_required">Dê um título à rotina.</string>
-    <string name="routine_list_pending">Lista nova: %1$s</string>
-    <string name="routine_list_pending_hint">Ela é criada junto com a rotina.</string>
-    <string name="routine_list_pending_remove">Não criar a lista</string>
     <string name="routine_more_options_expanded">Aberto</string>
     <string name="routine_more_options_collapsed">Recolhido</string>
     <!-- Editores (tarefa e rotina), v1.9.0: desfaz as alterações da sessão (ADR-0002 15.3) -->
@@ -237,7 +213,6 @@
     <!-- Editor de rotina: lista de exercícios (categorias do tipo EXERCICIO) -->
     <string name="exercise_section_title">Lista de exercícios</string>
     <string name="exercise_empty">Nenhum exercício ainda. Toque em \"Adicionar exercício\".</string>
-    <string name="exercise_new_routine_hint">Salve a rotina para montar a lista de exercícios.</string>
     <string name="exercise_add_item">Adicionar exercício</string>
     <string name="exercise_add_title">Novo exercício</string>
     <string name="exercise_edit_title">Editar exercício</string>

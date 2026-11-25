@@ -76,8 +76,6 @@ import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.repository.ShoppingListOwner
-import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ExerciseFormat
@@ -99,8 +97,6 @@ import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
-import com.kalendrys.app.ui.shopping.ShoppingListCard
-import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.theme.Spacing
 import java.time.DayOfWeek
 import java.time.LocalDate
