@@ -456,3 +456,31 @@ dados do emulador restaurados e conferidos no fim.
   esperado do alarme de aviso, e quem testar soneca precisa pôr o aviso a mais de uma hora.
 
 Abertura a frio: continua não medida (ADR-0002, 15.12); esta versão não muda isso.
+
+## 9. Emenda de 2026-11-25 — ocorrência de tarefa repetida já concluída adiantada (v1.10.0)
+
+Decisão do usuário (ADR-0002, 16.1, P3): concluir adiantado uma tarefa que se repete vale pela
+próxima ocorrência, e o lembrete daquele dia não toca. Qual ocorrência um registro de conclusão
+satisfaz é regra do domínio (ADR-0002, 16.4); esta seção diz o que ela muda na entrega.
+
+- **Uma pergunta só, feita ao domínio:** "esta ocorrência já está satisfeita?". Agendador e
+  catch-up não recalculam a janela de registros por conta própria.
+- **Agendador:** o próximo toque de uma tarefa repetida pula a ocorrência satisfeita e vai para a
+  seguinte. Só uma ocorrência pode estar consumida, então o pulo é de no máximo uma.
+- **Catch-up:** uma ocorrência satisfeita dentro da janela é descartada como já tratada. Não
+  entra no aviso agregado de perdidos.
+- **Concluir e desfazer reagendam.** Concluir adiantado e desfazer essa conclusão passam pelo
+  mesmo caminho de mudança de lembrete das tarefas: fecha a janela com a situação antiga, grava,
+  agenda com a nova. Desfazer devolve o lembrete da ocorrência, se o horário ainda não passou.
+- **Tarefa sem repetição não muda:** a conclusão adiantada dela já reescreve a data (ADR-0002,
+  14.2).
+- **Sem lembrete, nada muda aqui:** a regra só afeta tarefa repetida com horário.
+
+Aceite: tarefa semanal com lembrete, concluída na véspera, não toca no dia; desfeita antes do
+horário, toca; concluída no próprio dia, comportamento de sempre; atualização por cima da v1.9.1
+com lembrete pendente não duplica nem perde aviso. Testes do plano e do agendador com ocorrência
+consumida, e um caso de emulador com o aparelho em soneca.
+
+O desenho de código (onde o agendador e o catch-up fazem a pergunta) é fechado na revisão da E1 e
+da E2 e acrescentado aqui. É o primeiro corte da versão: se sair, esta seção fica registrada como
+não implementada.

@@ -1827,3 +1827,133 @@ sessão; dados do emulador restaurados e conferidos no fim.
   código. A correção exige separar o alarme que avisa (exato, no próximo início que avisa e ainda
   não foi concluído) do alarme que só redesenha os widgets, com parecer próprio. Não entra numa
   versão já fechada e testada; é o **primeiro item da próxima versão**, antes do escopo novo.
+
+## 16. Emenda de 2026-11-25 — escopo e desenho da v1.10.0
+
+Base: `main` em d67327d (v1.9.1 publicada). As decisões P1 a P12 são do usuário.
+
+### 16.1 Decisões do usuário
+
+| # | Decisão |
+|---|---------|
+| P1 | O escopo que a 14.1 chamava de v1.10.0 fica **dividido em duas versões** (16.2) |
+| P2 | No dia da atualização, as repetidas já perdidas aparecem atrasadas de uma vez, sem tratamento especial; somem sozinhas na próxima ocorrência de cada uma |
+| P3 | Concluir adiantado uma tarefa repetida **vale pela próxima ocorrência**, limitado a uma ocorrência à frente: ela aparece concluída no dia dela e o lembrete daquele dia não toca. Primeiro corte se o prazo apertar |
+| P4 | Trilho lateral em tela larga **e** no celular em paisagem (v1.11.0) |
+| P5 | Busca global por uma lupa na barra do topo das quatro abas; inclui tarefas concluídas e rotinas pausadas, marcadas como tal; não inclui o excluído; a busca da aba Tarefas continua como filtro da aba (v1.11.0) |
+| P6 | Calendário abre em mês, recolhe para semana por um puxador e ao rolar a lista do dia, e lembra a escolha só enquanto o app está aberto (v1.11.0) |
+| P7 | Excluir pelo detalhe da tarefa deixa de pedir confirmação; fica só o Desfazer, como na rotina |
+| P8 | A posição do concluir na Hoje não muda nesta versão |
+| P9 | Material 3 Expressive fica fora |
+| P10 | Aparelho do usuário **não liberado**: a abertura a frio continua não medida (16.9) |
+| P11 | Target 36, não 37; o 37 pede parecer próprio (v1.11.0) |
+| P12 | No editor de rotina, a seção "Lista de compras" só aparece quando a rotina tem lista; sem lista, o "Adicionar lista de compras" fica dentro de "Mais opções". A mesma regra vale para o detalhe da tarefa. Entra na v1.10.0 (16.6) |
+
+### 16.2 Divisão (P1)
+
+| Versão | Nome | Conteúdo |
+|--------|------|----------|
+| **v1.10.0** | Tarefas repetidas | Base técnica (16.3), regra das repetidas (16.4, 16.5), conteúdo da rotina no editor (16.6), P7 |
+| **v1.11.0** | Adaptativo, calendário e busca | Barra ou trilho (B5), título cortado em altura compacta, calendário recolhível (D4), busca global (B4), target 36 (F6) |
+
+Motivo, o mesmo da 14.1: juntas, a matriz manual teria de cobrir uma mudança de regra lida por
+cinco superfícies mais o lembrete de tarefa, a troca da casca de todas as telas, duas telas novas
+e o target. O target 36 não tem prazo externo, porque a distribuição é pelo GitHub, e vem depois
+do adaptativo porque o Android 16 deixa de respeitar restrição de janela em tela larga.
+
+Onde a 15.9 e a 15.12 dizem "v1.10.0" para o adaptativo, o calendário, a busca, o target 36 e o
+título cortado do editor em paisagem, leia-se **v1.11.0**.
+
+### 16.3 Base técnica, sem mudar comportamento
+
+- **Relógio único do app.** A data de hoje era lida direto do relógio em onze arquivos de
+  produção. Passa a existir uma peça só, criada no `KalendrysApp`, que dá agora, fuso e a data de
+  hoje como fluxo; repositórios e ViewModels a recebem por parâmetro. É pré-requisito da 16.4,
+  que depende de "hoje" e precisa de teste de virada de dia, e fecha o limite da meia-noite da
+  aba Tarefas (15.9).
+- **Instante pronto para os alarmes de rotina.** O repositório passa ao `RoutineAlarms` o
+  instante já convertido, em vez de data e hora locais convertidas lá com o fuso do sistema
+  (ADR-0003, 8.6). Os extras de dia e minuto do alarme, que ninguém lê, saem.
+- **Jornadas do Baseline Profile** corrigidas (15.12), com duas regras: todo seletor restrito ao
+  pacote do app, e toda jornada falha quando não acha o caminho.
+- Miúdos: a mensagem de pular uma rotina que não existe mais; o botão flutuante cobrindo a última
+  linha da aba Tarefas em 320dp com fonte 2.0.
+
+### 16.4 Tarefa repetida: qual ocorrência um registro satisfaz
+
+Até a v1.9.1 a tarefa que se repete nunca ficava atrasada: o estado era só "hoje" ou "próxima".
+E concluir num dia que não é dia dela só gravava o registro daquele dia (15.6).
+
+Uma regra só responde às duas coisas, sem coluna nova, contando os registros de conclusão numa
+janela. **Janela:** da ocorrência anterior a hoje (inclusive) até a próxima (exclusive).
+
+| Registros na janela | Significado |
+|---------------------|-------------|
+| Nenhum, e hoje não é dia dela | A ocorrência anterior está **atrasada**, até o dia da próxima |
+| Um | A ocorrência anterior está feita |
+| Dois ou mais | A próxima está feita **adiantada** (P3), e só ela |
+
+- Forma curta (15.9, P1 da v1.9.0): só uma ocorrência aberta por tarefa. Uma diária nunca atrasa.
+  Tarefa sem repetição não muda.
+- Concluir uma repetida atrasada grava o registro de hoje e ela sai de "Atrasadas".
+- Lógica pura em `domain/`, numa função só. O domínio ganha a ocorrência **anterior** a uma data,
+  para cada tipo de repetição, inclusive a personalizada.
+- Os registros são lidos por tarefa a partir de uma data, numa consulta para a lista inteira.
+- Banco continua 11 e o backup na versão 6.
+
+A tabela é a regra de produto; os casos de borda (registro no próprio dia da ocorrência, primeira
+ocorrência sem anterior, tarefa que deixou de repetir) são fechados na revisão da E1.
+
+### 16.5 Quem lê a regra
+
+Aba Tarefas, Hoje, widgets, resumo diário e a oferta de concluir pela lista leem da mesma função;
+os números têm de ser os mesmos nas superfícies para os mesmos dados.
+
+Ocorrência consumida por conclusão adiantada (P3): no dia dela a tarefa aparece concluída, o
+lembrete daquele dia não é agendado nem entregue pelo catch-up, e desfazer a conclusão devolve a
+ocorrência e o lembrete. A regra do lembrete está no ADR-0003, seção 9. É a parte de maior risco
+da versão e fica em commit próprio.
+
+### 16.6 Conteúdo da rotina no editor
+
+**Em aberto na data desta emenda.** A P12 decidiu a lista de compras. Depois dela o usuário pediu
+para unificar lista de compras e exercícios e tirar as categorias das rotinas; o desenho proposto
+e as perguntas P13 a P18 aguardam resposta, e esta subseção é reescrita quando chegarem. Nenhum
+código desta parte antes disso.
+
+O que já vale: a seção de lista só existe quando a rotina tem lista; sem lista não há título,
+frase nem cartão, e o único lugar para anexar é "Mais opções"; anexar faz a seção aparecer na
+hora e a tela rola até ela; desvincular faz sumir; Reverter e a criação seguem as regras da 15.5.
+
+### 16.7 Etapas da v1.10.0
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Base técnica (16.3) | Suíte verde sem teste apagado; nenhuma leitura direta do relógio em `ui` e `data` fora da peça única; teste de virada de dia na aba Tarefas |
+| E1 | Regra das repetidas no domínio (16.4), sem tela | Teste por tipo de repetição, virada de dia e fuso. Revisão do arquiteto linha a linha antes dos testes |
+| E2 | Leitores da regra e lembrete (16.5). Depois da E1 | Mesmos números em Hoje, aba Tarefas, widget e resumo; ocorrência consumida não toca; atualização por cima da v1.9.1 sem aviso duplicado |
+| EX | Conteúdo da rotina no editor (16.6) e P7. Em paralelo, depois das respostas | Os da 16.6 |
+| E3 | Fechamento | Perfil regerado e aceito por linhas por pacote, inclusive rotinas; tamanho do APK; matriz manual; atualização por cima da v1.9.1 |
+
+Ordem de corte: primeiro a P3 (a regra do atraso fica); depois nada mais da E0 à E2.
+
+### 16.8 Fora da v1.10.0
+
+- **v1.11.0:** o que a 16.2 lista.
+- **Sem versão marcada:** lista e detalhe lado a lado; adiamento que sobrevive a reinício e
+  aparece no diagnóstico; alarme próprio do widget Resumo; Material 3 Expressive.
+- **Com parecer próprio no ADR-0003, quando pedido:** reaviso de bloco em troca de fuso para
+  oeste e marca do catch-up que anda para trás quando o relógio atrasa (ADR-0003, 8.6).
+
+### 16.9 Riscos e abertura a frio
+
+| Risco | Mitigação |
+|-------|-----------|
+| Regra lida por cinco lugares divergindo | Uma função só e teste de números iguais |
+| Muitas repetidas atrasadas de uma vez no dia da atualização | Aceito (P2); somem na próxima ocorrência |
+| P3 mexe no lembrete de tarefa: aviso perdido ou duplicado | Commit próprio, ADR-0003 seção 9, primeiro corte |
+| Relógio único toca muitos arquivos | E0 sozinha, sem mudança de comportamento, antes de tudo |
+| Coluna nova pedida no meio do caminho | Nenhuma prevista; se alguma etapa pedir, para e volta ao arquiteto |
+
+Abertura a frio: **não medida** desde a v1.8.0 (14.14, 15.12). O aparelho do usuário não foi
+liberado (P10) e no emulador não se tenta. Fica registrado de novo como não medido.
