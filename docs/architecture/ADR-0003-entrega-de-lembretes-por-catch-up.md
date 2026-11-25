@@ -425,3 +425,34 @@ Release com R8 instalado e testado. O Baseline Profile não é regerado numa cor
 |-------|----------|
 | E1 | Função única do próximo aviso, agendamento com os dois horários, `RoutineAlarms`, receiver. Revisão do arquiteto antes dos testes |
 | E2 | Testes, matriz de emulador da 8.4, release, versão 1.9.1 |
+
+### 8.6 Fechamento (2026-11-25)
+
+Branch `fix/aviso-rotina-v1.9.1`, último commit de código e testes `d64810c`, CI verde nesse
+commit: 1123 testes, 0 falhas, 31 deles novos para esta emenda. Depois dele o PR só acrescenta
+documentação e o bump para 1.9.1. O código de produção é o de `fdfd9f4` (três arquivos),
+revisado pelo arquiteto antes dos testes; o emulador foi testado em `b69592c`, em debug e em
+release com R8.
+
+**Defeito reproduzido antes da correção.** Na v1.9.0, com soneca forçada, o aviso do bloco que
+vinha depois de um bloco sem aviso só saiu quando o aparelho deixou a soneca, 5 min 44 s depois
+do horário. Até aqui ele só tinha sido lido no código (8.1).
+
+**Correção confirmada no emulador.** Os itens 1 e 3 a 6 da 8.4 aprovados. O item 2 em dois
+cenários: tela apagada fora da tomada, e soneca profunda forçada, em que o bloco sem aviso não
+tocou e o bloco com aviso notificou uma vez, no segundo do horário. Sem falha fatal nem ANR;
+dados do emulador restaurados e conferidos no fim.
+
+**Observações que ficam, nenhuma criada por esta emenda:**
+
+- O horário dos alarmes é calculado no fuso do repositório e convertido em instante no
+  `RoutineAlarms` com o fuso do sistema. Em produção são o mesmo. O repositório passar o instante
+  pronto fica para a v1.10.0.
+- Troca de fuso para oeste pode reavisar um bloco já avisado. Já existia.
+- Se o relógio do aparelho atrasar, a marca do catch-up anda para trás. Já existia.
+- O alarme dos widgets é inexato: o redesenho sai de 1 a 4 minutos depois do início do bloco
+  silencioso, como na v1.9.0.
+- O sistema recusa forçar a soneca quando há um despertador a menos de uma hora. É o efeito
+  esperado do alarme de aviso, e quem testar soneca precisa pôr o aviso a mais de uma hora.
+
+Abertura a frio: continua não medida (ADR-0002, 15.12); esta versão não muda isso.
