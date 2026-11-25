@@ -3,6 +3,42 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.9.1 — Aviso de rotina (versionCode 10901)
+
+Versão corretiva, só com este defeito. Decisão de arquitetura:
+`docs/architecture/ADR-0003-entrega-de-lembretes-por-catch-up.md` (seção 8). Sem migração de
+banco (Room continua na versão 11), sem mudança no backup (formato 6), sem dependência nova e sem
+permissão nova.
+
+### Correções
+
+- **Aviso de início de rotina com o aparelho dormindo**: quando o bloco anterior era de uma rotina
+  sem aviso (aviso desligado ou já concluída no dia), o aviso do bloco seguinte podia atrasar até
+  o aparelho acordar, ou se perder, se passasse de 60 minutos. Existia desde a v1.8.0. Agora o
+  aviso tem alarme próprio, que acorda o aparelho no horário.
+
+### Mudanças de comportamento
+
+- O **ícone de despertador** na barra de status e o **próximo alarme** na tela de bloqueio
+  aparecem sempre que houver uma rotina com aviso pela frente, mesmo com um bloco sem aviso antes
+  dela.
+- O **diagnóstico de alarmes** mostra o mesmo horário de aviso de rotina que está agendado no
+  sistema.
+
+### Limitação conhecida
+
+- Sem a permissão de alarme exato, o aviso ainda pode atrasar alguns minutos; fabricante que
+  encerra o app em segundo plano continua fora do alcance da correção.
+
+### Interno
+
+- Dois alarmes de rotina, calculados juntos pelo repositório: o de aviso, no próximo início que
+  avisa e ainda não foi concluído no dia (o `PendingIntent` de antes, para quem atualiza por cima
+  da v1.9.0), e o silencioso dos widgets, só quando vem antes dele. Os dois chamam o mesmo
+  catch-up.
+- **Baseline Profile**: não regerado; é o da v1.9.0.
+- **Abertura a frio**: não medida.
+
 ## v1.9.0 — Editores (versionCode 10900)
 
 Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seção 15).
