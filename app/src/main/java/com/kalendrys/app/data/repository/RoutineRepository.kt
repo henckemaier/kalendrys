@@ -269,17 +269,24 @@ class RoutineRepository(
     suspend fun occurrenceOverride(routineId: Long, epochDay: Long): RoutineOverride? =
         overrideDao.all().firstOrNull { it.routineId == routineId && it.epochDay == epochDay }
 
+    /** O que o [skipOccurrence] fez: [previous] é a exceção do dia que o `SKIP` substituiu (`null` = nenhuma). */
+    data class SkippedOccurrence(val previous: RoutineOverride?)
+
     /**
      * Pular a ocorrência daquele dia: a rotina não acontece ali, mas continua ativa. Uma exceção por
      * dia (índice único): o `SKIP` substitui a que houver. Devolve a exceção ANTERIOR do dia (ex.: uma
      * remarcação; `null` se não havia), lida no mesmo [change], para o Desfazer da mensagem recolocá-la
      * ([restoreOccurrenceException]). Mesmo caminho para a tela de exceção, a notificação e a Hoje.
+     *
+     * Rotina que não existe mais (excluída de vez, notificação ou tela antiga): nada é gravado e devolve
+     * `null`, como o [complete]; quem oferece Desfazer não oferece (v1.10.0, E0; N2 da E4 da v1.9.0).
      */
-    suspend fun skipOccurrence(routineId: Long, epochDay: Long): RoutineOverride? = change {
+    suspend fun skipOccurrence(routineId: Long, epochDay: Long): SkippedOccurrence? = change {
+        routineDao.byId(routineId) ?: return@change null
         val previous = occurrenceOverride(routineId, epochDay)
         overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP, createdAt = clock.nowMillis()))
         if (epochDay == clock.today().toEpochDay()) notifications.cancel(routineId)
-        previous?.takeUnless { it.type == RoutineOverrideType.SKIP }
+        SkippedOccurrence(previous?.takeUnless { it.type == RoutineOverrideType.SKIP })
     }
 
     /**

@@ -431,6 +431,28 @@ class UndoOffersTest {
     }
 
     @Test
+    fun `pular rotina que nao existe mais nao oferece Desfazer`() = runTest {
+        // N2 da E4 da v1.9.0 (v1.10.0, E0): a oferta cujo Desfazer não faria nada não aparece.
+        val offers = offers(this)
+
+        offers.skipRoutine(999, LocalDate.now()).join()
+
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `pular rotina que nao existe mais nao derruba a oferta pendente`() = runTest {
+        val offers = offers(this)
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
+        offers.skipRoutine(routine.id, LocalDate.now()).join()
+        val pending = offers.pending.value
+
+        offers.skipRoutine(999, LocalDate.now()).join()
+
+        assertEquals(pending, offers.pending.value)
+    }
+
+    @Test
     fun `desfazer pular do bloco descarta a oferta do pular`() = runTest {
         val offers = offers(this)
         val today = LocalDate.now()

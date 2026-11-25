@@ -363,7 +363,7 @@ class RoutineRepositoryTest {
         val epochDay = LocalDate.now().toEpochDay()
         repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 930, newEpochDay = null)
 
-        val previous = repository.skipOccurrence(saved.id, epochDay)
+        val previous = checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous
         assertEquals(RoutineOverrideType.SKIP, repository.occurrenceOverride(saved.id, epochDay)?.type)
         assertEquals(RoutineOverrideType.RESCHEDULE, previous?.type)
 
@@ -380,15 +380,25 @@ class RoutineRepositoryTest {
         val saved = repository.add(routine())
         val epochDay = LocalDate.now().toEpochDay()
 
-        assertNull(repository.skipOccurrence(saved.id, epochDay))
-        assertNull(repository.skipOccurrence(saved.id, epochDay))
+        assertNull(checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous)
+        assertNull(checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous)
+    }
+
+    @Test
+    fun `pular rotina que nao existe mais nao grava nada e devolve null`() = runTest {
+        val epochDay = LocalDate.now().toEpochDay()
+
+        assertNull(repository.skipOccurrence(999, epochDay))
+
+        assertNull(repository.occurrenceOverride(999, epochDay))
+        assertTrue(db.routineOverrideDao().all().isEmpty())
     }
 
     @Test
     fun `restaurar so age se o dia ainda esta pulado`() = runTest {
         val saved = repository.add(routine())
         val epochDay = LocalDate.now().toEpochDay()
-        val previous = repository.skipOccurrence(saved.id, epochDay)
+        val previous = checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous
         // Outra alteração no meio (ex.: remarcou pela tela de exceção): ela vence.
         repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 1_000, newEpochDay = null)
 

@@ -143,8 +143,9 @@ class UndoOffers(
 
     /** PULAR E OFERECER a ocorrência de [routineId] em [date] (v1.9.0, E4: a Hoje só pede). */
     fun skipRoutine(routineId: Long, date: LocalDate): Job = scope.launch {
-        val previous = routines.skipOccurrence(routineId, date.toEpochDay())
-        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), previous))
+        // Rotina que não existe mais: nada foi pulado, então não há o que desfazer (v1.10.0, E0).
+        val skipped = routines.skipOccurrence(routineId, date.toEpochDay()) ?: return@launch
+        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), skipped.previous))
     }
 
     /**
