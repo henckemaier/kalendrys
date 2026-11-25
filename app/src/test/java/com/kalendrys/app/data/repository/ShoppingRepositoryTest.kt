@@ -8,6 +8,7 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -34,7 +35,7 @@ class ShoppingRepositoryTest {
     fun setup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
-        repository = ShoppingRepository(db)
+        repository = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
@@ -82,9 +83,9 @@ class ShoppingRepositoryTest {
         repository.add(listId, "Arroz", quantity = 2, priceCents = 500)
         repository.add(listId, "Sal", quantity = 1, priceCents = null)
         repository.setPicked(items(listId).first(), true)
-        db.routineDao().insert(Routine(id = 1, title = "Feira", startMinute = 600, shoppingListId = listId))
-        db.routineDao().insert(Routine(id = 2, title = "Arquivada", startMinute = 600, shoppingListId = listId, archivedAt = 1))
-        db.taskDao().insert(Task(id = 3, title = "Comprar", shoppingListId = listId))
+        db.routineDao().insert(Routine(id = 1, title = "Feira", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
+        db.routineDao().insert(Routine(id = 2, title = "Arquivada", startMinute = 600, shoppingListId = listId, archivedAt = 1, createdAt = TEST_CREATED_AT))
+        db.taskDao().insert(Task(id = 3, title = "Comprar", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val summaries = repository.observeSummaries().first()
         val main = summaries.first { it.id == listId }
@@ -109,8 +110,8 @@ class ShoppingRepositoryTest {
         val other = repository.createList("Outra")
         repository.add(listId, "Arroz", 1, null)
         repository.add(other, "Pão", 1, null)
-        db.routineDao().insert(Routine(id = 1, title = "R", startMinute = 600, shoppingListId = listId, archivedAt = 1))
-        db.taskDao().insert(Task(id = 2, title = "T", shoppingListId = listId))
+        db.routineDao().insert(Routine(id = 1, title = "R", startMinute = 600, shoppingListId = listId, archivedAt = 1, createdAt = TEST_CREATED_AT))
+        db.taskDao().insert(Task(id = 2, title = "T", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         repository.deleteList(listId)
 

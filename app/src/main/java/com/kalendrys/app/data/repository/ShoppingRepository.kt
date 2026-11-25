@@ -36,7 +36,11 @@ data class ShoppingListSummary(
  * leitura, nunca guardado. Os vínculos (`shoppingListId`) moram nos donos; aqui só se desfazem ao
  * excluir a lista.
  */
-class ShoppingRepository(private val database: AppDatabase) {
+class ShoppingRepository(
+    private val database: AppDatabase,
+    /** O relógio do app (v1.10.0, 16.3): o carimbo de criação de listas e itens. */
+    private val clock: AppClock,
+) {
 
     private val listDao = database.shoppingListDao()
     private val itemDao = database.shoppingItemDao()
@@ -52,7 +56,7 @@ class ShoppingRepository(private val database: AppDatabase) {
     suspend fun list(listId: Long): ShoppingList? = listDao.byId(listId)
 
     /** Cria uma lista avulsa e devolve o id. Nome vazio não é aceito (a UI valida antes). */
-    suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name))
+    suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name, clock.nowMillis()))
 
     suspend fun renameList(listId: Long, name: String) {
         if (name.isBlank()) return
@@ -142,6 +146,7 @@ class ShoppingRepository(private val database: AppDatabase) {
                 quantity = quantity.coerceAtLeast(1),
                 priceCents = priceCents,
                 position = nextPosition,
+                createdAt = clock.nowMillis(),
             ),
         )
     }

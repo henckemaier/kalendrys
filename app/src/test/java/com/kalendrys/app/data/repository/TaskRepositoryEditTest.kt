@@ -57,7 +57,7 @@ class TaskRepositoryEditTest {
             beforeReminderChange = { windowsClosed++ },
             clock = SystemAppClock,
         )
-        shopping = ShoppingRepository(db)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After

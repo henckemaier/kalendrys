@@ -35,7 +35,7 @@ class TodayRepositories(
         clock = SystemAppClock,
     )
     val tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
-    val shopping = ShoppingRepository(db)
+    val shopping = ShoppingRepository(db, clock = SystemAppClock)
 
     /** O mesmo retrato do widget Resumo (fonte única das pendências da Hoje). */
     val today = TodayRepository(tasks, routines, shopping, clock = SystemAppClock)

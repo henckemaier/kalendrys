@@ -194,7 +194,7 @@ class TaskRepositoryTest {
     // --- Lista de compras na tarefa (ADR-0001, v1.6.0) ---
 
     private suspend fun listWithPickedItems(): Long {
-        val shopping = ShoppingRepository(db)
+        val shopping = ShoppingRepository(db, clock = SystemAppClock)
         val listId = shopping.createList("Mercado")
         shopping.add(listId, "Arroz", 1, null)
         shopping.add(listId, "Feijão", 1, null)

@@ -29,6 +29,7 @@ import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
@@ -73,12 +74,12 @@ class ShoppingProgressTagFitTest {
         testDb = ViewModelTestDatabase(context)
         runBlocking {
             val db = testDb.db
-            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado"))
+            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado", createdAt = TEST_CREATED_AT))
             db.shoppingItemDao().insertAll(
                 listOf(
-                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0),
-                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1),
-                    ShoppingItem(listId = listId, name = "Café", position = 2),
+                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Café", position = 2, createdAt = TEST_CREATED_AT),
                 ),
             )
             db.routineDao().insert(
@@ -96,6 +97,7 @@ class ShoppingProgressTagFitTest {
                     title = "Passar no mercado e conferir a lista inteira de compras",
                     location = "Supermercado do bairro, perto da praça",
                     shoppingListId = listId,
+                    createdAt = TEST_CREATED_AT,
                 ),
             )
         }
@@ -112,7 +114,7 @@ class ShoppingProgressTagFitTest {
         testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), testUndoOffers(testDb), clock = SystemAppClock))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb), clock = SystemAppClock))
 
     private var fontScale by mutableFloatStateOf(1f)
 

@@ -12,6 +12,7 @@ import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -56,7 +57,7 @@ class RoutineRepositoryEditTest {
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
-        shopping = ShoppingRepository(db)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
@@ -65,7 +66,7 @@ class RoutineRepositoryEditTest {
     private suspend fun row(id: Long) = db.routineDao().byId(id)!!
 
     private suspend fun saved(title: String = "Treino") =
-        repository.add(Routine(title = title, startMinute = 600, durationMinutes = 30, startEpochDay = 100, endEpochDay = 200))
+        repository.add(Routine(title = title, startMinute = 600, durationMinutes = 30, startEpochDay = 100, endEpochDay = 200, createdAt = TEST_CREATED_AT))
 
     @Test
     fun `mudancas que nao sao de agenda nao reagendam`() = runTest {
@@ -218,7 +219,7 @@ class RoutineRepositoryEditTest {
     @Test
     fun `lista excluida por fora - editar nao devolve o vinculo e vincular a ela nao grava`() = runTest {
         val listId = shopping.createList("Mercado")
-        val routine = repository.add(Routine(title = "Feira", startMinute = 480, shoppingListId = listId))
+        val routine = repository.add(Routine(title = "Feira", startMinute = 480, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         shopping.deleteList(listId)
 
         repository.edit(routine.id, RoutineChange.Title("Feira nova"))
@@ -241,7 +242,7 @@ class RoutineRepositoryEditTest {
 
     @Test
     fun `criar rotina com lista nova grava as duas juntas`() = runTest {
-        val routine = repository.add(Routine(title = "Feira", startMinute = 480), newListName = " Hortifruti ")
+        val routine = repository.add(Routine(title = "Feira", startMinute = 480, createdAt = TEST_CREATED_AT), newListName = " Hortifruti ")
 
         val list = db.shoppingListDao().all().single()
         assertEquals("Hortifruti", list.name)
@@ -251,7 +252,7 @@ class RoutineRepositoryEditTest {
 
     @Test
     fun `criar rotina com nome de lista em branco nao cria lista`() = runTest {
-        val routine = repository.add(Routine(title = "Feira", startMinute = 480), newListName = "  ")
+        val routine = repository.add(Routine(title = "Feira", startMinute = 480, createdAt = TEST_CREATED_AT), newListName = "  ")
 
         assertTrue(db.shoppingListDao().all().isEmpty())
         assertNull(routine.shoppingListId)

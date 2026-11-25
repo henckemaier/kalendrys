@@ -32,6 +32,7 @@ import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testUndoOffers
@@ -88,8 +89,8 @@ class RoutineEditorShellTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 routines,
                 RoutineCategoryRepository(db),
-                ShoppingRepository(db),
-                ExerciseRepository(db.exerciseItemDao()),
+                ShoppingRepository(db, clock = SystemAppClock),
+                ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 offers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -99,7 +100,7 @@ class RoutineEditorShellTest {
         compose.setContent { KalendrysTheme { RoutineEditorScreen(onBack = { closed++ }, viewModel = vm) } }
     }
 
-    private fun showSaved(routine: Routine = Routine(title = "Treino", startMinute = 420)): Long {
+    private fun showSaved(routine: Routine = Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT)): Long {
         val saved = runBlocking { routines.add(routine) }
         show(saved.id)
         compose.waitUntil(TIMEOUT_MS) { compose.onAllNodesWithText(saved.title).fetchSemanticsNodes().isNotEmpty() }
@@ -157,7 +158,7 @@ class RoutineEditorShellTest {
 
     @Test
     fun `edicao - rotina com vigencia abre Mais opcoes ja aberto`() {
-        showSaved(Routine(title = "Temporada", startMinute = 420, endEpochDay = 20_500))
+        showSaved(Routine(title = "Temporada", startMinute = 420, endEpochDay = 20_500, createdAt = TEST_CREATED_AT))
 
         compose.onNodeWithText("Vigência").assertIsDisplayed()
     }

@@ -77,8 +77,8 @@ class TodayRepositoryRefreshTest {
         // ([AppClock.dates]: lê ao começar e espera a meia-noite), então um relógio trocado no meio só
         // chega com o refresh, que recomeça a fonte (v1.10.0: a mesma fonte para data e agora).
         val clock = clockOf(zone = { zone }) { now.atZone(zone).toInstant().toEpochMilli() }
-        today = TodayRepository(tasks, routines, ShoppingRepository(db), clock)
-        clockDated = TodayRepository(tasks, routines, ShoppingRepository(db), clock)
+        today = TodayRepository(tasks, routines, ShoppingRepository(db, clock = SystemAppClock), clock)
+        clockDated = TodayRepository(tasks, routines, ShoppingRepository(db, clock = SystemAppClock), clock)
     }
 
     @After

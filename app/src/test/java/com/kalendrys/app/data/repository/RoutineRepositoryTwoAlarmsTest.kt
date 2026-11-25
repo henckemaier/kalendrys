@@ -11,6 +11,7 @@ import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineAlarms.Call
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -350,13 +351,13 @@ class RoutineRepositoryTwoAlarmsTest {
         silent(8, 30)
         val treino = reminding(9)
         val dao = db.routineCompletionDao()
-        repeat(63) { offset -> dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(offset.toLong()).toEpochDay())) }
+        repeat(63) { offset -> dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(offset.toLong()).toEpochDay(), completedAt = TEST_CREATED_AT)) }
 
         repository.catchUp(nowOverride = at(8, 0))
         assertEquals(call(remindAt = t(9, date = day.plusDays(63)), refreshAt = t(8, 30)), last())
         assertEquals(at(9, 0, day.plusDays(63)), repository.nextRemindingStart(at(8, 0)))
 
-        dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(63).toEpochDay()))
+        dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(63).toEpochDay(), completedAt = TEST_CREATED_AT))
         repository.catchUp(nowOverride = at(8, 0))
         assertEquals("limite esgotado: sem aviso, a corrente dos widgets", call(remindAt = null, refreshAt = t(8, 30)), last())
         assertNull(repository.nextRemindingStart(at(8, 0)))
@@ -366,7 +367,7 @@ class RoutineRepositoryTwoAlarmsTest {
     fun `limite esgotado sem silenciosa - o dos widgets fica no proximo inicio descartado`() = runTest {
         val treino = reminding(9)
         val dao = db.routineCompletionDao()
-        repeat(64) { offset -> dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(offset.toLong()).toEpochDay())) }
+        repeat(64) { offset -> dao.insert(RoutineCompletion(routineId = treino.id, epochDay = day.plusDays(offset.toLong()).toEpochDay(), completedAt = TEST_CREATED_AT)) }
 
         repository.catchUp(nowOverride = at(8, 0))
 

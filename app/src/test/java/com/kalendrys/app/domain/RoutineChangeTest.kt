@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -20,6 +21,7 @@ class RoutineChangeTest {
         startEpochDay = 100,
         endEpochDay = 200,
         shoppingListId = 2,
+        createdAt = TEST_CREATED_AT,
     )
 
     @Test

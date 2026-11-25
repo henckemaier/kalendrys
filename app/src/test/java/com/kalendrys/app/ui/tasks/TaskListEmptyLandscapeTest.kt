@@ -63,7 +63,7 @@ class TaskListEmptyLandscapeTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = testDb.db
         val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
-        val viewModel = testDb.track(TaskViewModel(repository, ShoppingRepository(db), testUndoOffers(testDb, tasks = repository), clock = SystemAppClock))
+        val viewModel = testDb.track(TaskViewModel(repository, ShoppingRepository(db, clock = SystemAppClock), testUndoOffers(testDb, tasks = repository), clock = SystemAppClock))
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {

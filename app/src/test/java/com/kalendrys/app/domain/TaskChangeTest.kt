@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -21,6 +22,7 @@ class TaskChangeTest {
         location = "casa",
         shoppingListId = 3,
         dueDate = LocalDate.of(2026, 11, 25).toEpochDay(),
+        createdAt = TEST_CREATED_AT,
     )
 
     @Test

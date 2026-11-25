@@ -8,6 +8,7 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -89,9 +90,9 @@ class RoutineCategoryRepositoryTest {
         val categoryId = repository.create("Academia", RoutineColor.GREEN.name)
         val otherId = repository.create("Estudo", RoutineColor.BLUE.name)
         val routineDao = db.routineDao()
-        val r1 = routineDao.insert(Routine(title = "Treino", startMinute = 420, categoryId = categoryId))
-        val r2 = routineDao.insert(Routine(title = "Corrida", startMinute = 480, categoryId = categoryId))
-        val r3 = routineDao.insert(Routine(title = "Leitura", startMinute = 1200, categoryId = otherId))
+        val r1 = routineDao.insert(Routine(title = "Treino", startMinute = 420, categoryId = categoryId, createdAt = TEST_CREATED_AT))
+        val r2 = routineDao.insert(Routine(title = "Corrida", startMinute = 480, categoryId = categoryId, createdAt = TEST_CREATED_AT))
+        val r3 = routineDao.insert(Routine(title = "Leitura", startMinute = 1200, categoryId = otherId, createdAt = TEST_CREATED_AT))
 
         val category = repository.categories.first().first { it.id == categoryId }
         repository.delete(category)

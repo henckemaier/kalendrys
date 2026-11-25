@@ -116,12 +116,12 @@ class KalendrysApp : Application() {
 
     /** Listas de compras independentes (ADR-0001): aba Listas, rotinas e tarefas. */
     val shoppingRepository: ShoppingRepository by lazy {
-        ShoppingRepository(database)
+        ShoppingRepository(database, clock)
     }
 
     /** Lista de exercícios das rotinas do tipo EXERCICIO (módulo T33/T34). */
     val exerciseRepository: ExerciseRepository by lazy {
-        ExerciseRepository(database.exerciseItemDao())
+        ExerciseRepository(database.exerciseItemDao(), clock)
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */

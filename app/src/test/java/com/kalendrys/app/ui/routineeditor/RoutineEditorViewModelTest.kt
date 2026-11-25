@@ -13,6 +13,7 @@ import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import com.kalendrys.app.data.repository.ExerciseRepository
@@ -84,8 +85,8 @@ class RoutineEditorViewModelTest {
         db = testDb.db
         alarms = FakeRoutineAlarms(context)
         routines = testRoutineRepository(db, alarms)
-        shopping = ShoppingRepository(db)
-        exercises = ExerciseRepository(db.exerciseItemDao())
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
+        exercises = ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, routines)
     }
 
@@ -141,7 +142,7 @@ class RoutineEditorViewModelTest {
         withContext(Dispatchers.Default) { withTimeout(TIMEOUT_MS) { events.first() } }
 
     private suspend fun saved(days: Int = RoutineDays.ALL) =
-        routines.add(Routine(title = "Treino", startMinute = 600, durationMinutes = 30, daysOfWeek = days))
+        routines.add(Routine(title = "Treino", startMinute = 600, durationMinutes = 30, daysOfWeek = days, createdAt = TEST_CREATED_AT))
 
     // --- Criação ------------------------------------------------------------------------------------
 
@@ -401,7 +402,7 @@ class RoutineEditorViewModelTest {
 
     @Test
     fun `edicao - vinculo orfao equivale a sem lista`() = runTest {
-        val routine = routines.add(Routine(title = "Feira", startMinute = 480, shoppingListId = 999))
+        val routine = routines.add(Routine(title = "Feira", startMinute = 480, shoppingListId = 999, createdAt = TEST_CREATED_AT))
         val vm = viewModel(routine.id)
         vm.awaitLoaded()
 
@@ -428,7 +429,7 @@ class RoutineEditorViewModelTest {
     @Test
     fun `edicao - duplicar copia a linha gravada, sem lista nem pausa, e fecha`() = runTest {
         val listId = shopping.createList("Mercado")
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600, shoppingListId = listId))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         routines.pause(routine, now = 1L)
         val vm = viewModel(routine.id)
         vm.awaitLoaded()
@@ -571,7 +572,7 @@ class RoutineEditorViewModelTest {
     @Test
     fun `edicao - exercicios na ordem do toque e Reverter devolve a lista da abertura`() = runTest {
         val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routines.add(Routine(title = "Força", startMinute = 600, categoryId = categoryId))
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, categoryId = categoryId, createdAt = TEST_CREATED_AT))
         exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
         val vm = viewModel(routine.id)
         vm.awaitLoaded()

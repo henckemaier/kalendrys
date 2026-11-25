@@ -50,7 +50,7 @@ class TaskListTwoSectionsTest {
             tasks.logCompletion(weekly.id) // concluída adiantada: registro de hoje
         }
         val viewModel = testDb.track(
-            TaskViewModel(tasks, ShoppingRepository(testDb.db), testUndoOffers(testDb, tasks = tasks), clock = SystemAppClock),
+            TaskViewModel(tasks, ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb, tasks = tasks), clock = SystemAppClock),
         )
         compose.setContent {
             KalendrysTheme { TaskListScreen(onOpenTask = {}, onOpenSettings = {}, viewModel = viewModel) }

@@ -97,7 +97,7 @@ class RoutineRepository(
      * [Routine.shoppingListId] de [routine] é ignorado.
      */
     suspend fun add(routine: Routine, newListName: String? = null): Routine = change {
-        val newList = newListName?.takeIf { it.isNotBlank() }?.let(ShoppingList::named)
+        val newList = newListName?.takeIf { it.isNotBlank() }?.let { ShoppingList.named(it, clock.nowMillis()) }
         if (newList == null) {
             routine.copy(id = routineDao.insert(routine))
         } else {
@@ -134,7 +134,7 @@ class RoutineRepository(
         val updated = change.applyTo(current) ?: return false
         when (change) {
             is RoutineChange.NewShoppingList -> {
-                routineDao.linkNewList(routineId, ShoppingList.named(change.name))
+                routineDao.linkNewList(routineId, ShoppingList.named(change.name, clock.nowMillis()))
                 return true
             }
             is RoutineChange.ShoppingList -> {
@@ -217,7 +217,7 @@ class RoutineRepository(
      */
     suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = clock.today()): Boolean = change {
         val routine = routineDao.byId(routineId) ?: return@change false
-        val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
+        val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay(), completedAt = clock.nowMillis())) != -1L
         if (date == today) notifications.cancel(routineId)
         val listId = routine.shoppingListId
         if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
@@ -277,7 +277,7 @@ class RoutineRepository(
      */
     suspend fun skipOccurrence(routineId: Long, epochDay: Long): RoutineOverride? = change {
         val previous = occurrenceOverride(routineId, epochDay)
-        overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP))
+        overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP, createdAt = clock.nowMillis()))
         if (epochDay == clock.today().toEpochDay()) notifications.cancel(routineId)
         previous?.takeUnless { it.type == RoutineOverrideType.SKIP }
     }
@@ -308,6 +308,7 @@ class RoutineRepository(
                 type = RoutineOverrideType.RESCHEDULE,
                 newStartMinute = newStartMinute,
                 newEpochDay = newEpochDay,
+                createdAt = clock.nowMillis(),
             ),
         )
     }

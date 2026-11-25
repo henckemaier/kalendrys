@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.NewTaskDraftStore
 import com.kalendrys.app.NewTaskPanel
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testTaskRepository
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -57,7 +58,7 @@ class NewTaskHostTest {
     @Before
     fun setup() {
         testDb = ViewModelTestDatabase(ApplicationProvider.getApplicationContext<Context>())
-        panel = NewTaskPanel(testTaskRepository(testDb.db), ShoppingRepository(testDb.db), testDb.appScope(), NewTaskDraftStore())
+        panel = NewTaskPanel(testTaskRepository(testDb.db), ShoppingRepository(testDb.db, clock = SystemAppClock), testDb.appScope(), NewTaskDraftStore())
     }
 
     @After

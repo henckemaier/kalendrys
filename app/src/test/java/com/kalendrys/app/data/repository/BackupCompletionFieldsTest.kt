@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalTime
 import java.io.File
@@ -67,8 +68,8 @@ class BackupCompletionFieldsTest {
 
     @Test
     fun `ida e volta preserva os campos da conclusao adiantada e so os escreve quando preenchidos`() = runTest {
-        sourceDb.taskDao().insert(Task(id = 1, title = "Adiantada", dueDate = 20_400))
-        sourceDb.taskDao().insert(Task(id = 2, title = "Comum"))
+        sourceDb.taskDao().insert(Task(id = 1, title = "Adiantada", dueDate = 20_400, createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 2, title = "Comum", createdAt = TEST_CREATED_AT))
         sourceDb.completionLogDao().insertAll(listOf(early, plain))
 
         val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src"), clock = SystemAppClock).serialize()
@@ -115,9 +116,9 @@ class BackupCompletionFieldsTest {
     @Test
     fun `registro sem os campos no meio de outros com os campos`() = runTest {
         val third = early.copy(id = 3, taskId = 3, previousReminderAt = null)
-        sourceDb.taskDao().insert(Task(id = 1, title = "A"))
-        sourceDb.taskDao().insert(Task(id = 2, title = "B"))
-        sourceDb.taskDao().insert(Task(id = 3, title = "C"))
+        sourceDb.taskDao().insert(Task(id = 1, title = "A", createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 2, title = "B", createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 3, title = "C", createdAt = TEST_CREATED_AT))
         sourceDb.completionLogDao().insertAll(listOf(early, plain, third))
 
         val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("mix-src"), clock = SystemAppClock).serialize()

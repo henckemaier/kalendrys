@@ -20,6 +20,7 @@ import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
@@ -70,15 +71,15 @@ class BackupManagerTest {
 
         // Banco de origem com ids explícitos e relações tarefa↔log e rotina↔conclusão.
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Comprar pão", notes = "integral", dueDate = 20_000, reminderAt = 123_456_789, repeat = ReminderRepeat.DAILY, location = "Padaria"),
+            Task(id = 1, title = "Comprar pão", notes = "integral", dueDate = 20_000, reminderAt = 123_456_789, repeat = ReminderRepeat.DAILY, location = "Padaria", createdAt = TEST_CREATED_AT),
         )
-        sourceDb.taskDao().insert(Task(id = 2, title = "Sem data"))
+        sourceDb.taskDao().insert(Task(id = 2, title = "Sem data", createdAt = TEST_CREATED_AT))
         // Recorrência custom: os campos novos (intervalEvery/intervalUnit/byWeekdays) têm que sobreviver ao round-trip.
         sourceDb.taskDao().insert(
-            Task(id = 3, title = "A cada 3 dias", dueDate = 20_000, reminderAt = 555, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+            Task(id = 3, title = "A cada 3 dias", dueDate = 20_000, reminderAt = 555, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS, createdAt = TEST_CREATED_AT),
         )
         sourceDb.taskDao().insert(
-            Task(id = 4, title = "Seg/qua/sex", dueDate = 20_000, reminderAt = 666, repeat = ReminderRepeat.CUSTOM, byWeekdays = 0b0010101),
+            Task(id = 4, title = "Seg/qua/sex", dueDate = 20_000, reminderAt = 666, repeat = ReminderRepeat.CUSTOM, byWeekdays = 0b0010101, createdAt = TEST_CREATED_AT),
         )
         sourceDb.completionLogDao().insert(CompletionLog(id = 1, taskId = 1, completedAt = 111))
         sourceDb.completionLogDao().insert(CompletionLog(id = 2, taskId = 1, completedAt = 222))
@@ -94,13 +95,14 @@ class BackupManagerTest {
             Routine(
                 id = 5, title = "Treino", startMinute = 1040, durationMinutes = 15, remind = true, archivedAt = 999,
                 categoryId = 10, pausedAt = 4242, weekInterval = 2, startEpochDay = 19_000, endEpochDay = 21_000,
+                createdAt = TEST_CREATED_AT,
             ),
         )
         sourceDb.routineCompletionDao().insert(RoutineCompletion(id = 7, routineId = 5, epochDay = 20_000, completedAt = 333))
         // Exceções de rotina (v7): um SKIP e um RESCHEDULE com os campos opcionais.
         sourceDb.routineOverrideDao().insertAll(
             listOf(
-                RoutineOverride(id = 20, routineId = 5, epochDay = 20_010, type = "SKIP"),
+                RoutineOverride(id = 20, routineId = 5, epochDay = 20_010, type = "SKIP", createdAt = TEST_CREATED_AT),
                 RoutineOverride(
                     id = 21, routineId = 5, epochDay = 20_011, type = "RESCHEDULE",
                     newStartMinute = 600, newEpochDay = 20_012, createdAt = 444,
@@ -119,16 +121,16 @@ class BackupManagerTest {
         // Itens de compras: preço nullable, picked, position e pickedBeforeReset têm que sobreviver.
         sourceDb.shoppingItemDao().insertAll(
             listOf(
-                ShoppingItem(id = 30, listId = 50, name = "Leite", quantity = 2, priceCents = 499, position = 0, pickedBeforeReset = true),
+                ShoppingItem(id = 30, listId = 50, name = "Leite", quantity = 2, priceCents = 499, position = 0, pickedBeforeReset = true, createdAt = TEST_CREATED_AT),
                 ShoppingItem(id = 31, listId = 50, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
-                ShoppingItem(id = 32, listId = 51, name = "Dipirona", position = 0),
+                ShoppingItem(id = 32, listId = 51, name = "Dipirona", position = 0, createdAt = TEST_CREATED_AT),
             ),
         )
         // Exercícios (v9/schema v5): carga em texto livre (nullable) e descanso em segundos (nullable)
         // têm que sobreviver — inclusive quando ausentes (um exercício sem carga/descanso).
         sourceDb.exerciseItemDao().insertAll(
             listOf(
-                ExerciseItem(id = 40, routineId = 5, name = "Agachamento", sets = 3, reps = 12, load = "20kg", restSeconds = 90, position = 0),
+                ExerciseItem(id = 40, routineId = 5, name = "Agachamento", sets = 3, reps = 12, load = "20kg", restSeconds = 90, position = 0, createdAt = TEST_CREATED_AT),
                 ExerciseItem(id = 41, routineId = 5, name = "Flexão", sets = 4, reps = 15, load = null, restSeconds = null, position = 1, createdAt = 888),
             ),
         )
@@ -145,7 +147,7 @@ class BackupManagerTest {
 
         // Destino com dado "sujo" que o restauro deve apagar antes de reinserir.
         val dest = settingsRepo("dest")
-        destDb.taskDao().insert(Task(id = 99, title = "Lixo a ser apagado"))
+        destDb.taskDao().insert(Task(id = 99, title = "Lixo a ser apagado", createdAt = TEST_CREATED_AT))
         val restoredStats = BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(json)
 
         assertEquals(stats, restoredStats)
@@ -171,7 +173,7 @@ class BackupManagerTest {
         val source = settingsRepo("source-v1")
         // v1 só tinha repetições simples (sem CUSTOM); DAILY é o caso realista de um backup antigo.
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY),
+            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY, createdAt = TEST_CREATED_AT),
         )
         val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
@@ -201,7 +203,7 @@ class BackupManagerTest {
     fun `restaura CUSTOM sem config utilizavel normalizando para NONE`() = runTest {
         val source = settingsRepo("source-inert")
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS, createdAt = TEST_CREATED_AT),
         )
         val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
@@ -223,7 +225,7 @@ class BackupManagerTest {
     fun `restaura backup v2 sem os campos e tabelas de rotina caindo nos defaults e vazio`() = runTest {
         val source = settingsRepo("source-v2")
         sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Antiga", startMinute = 600, durationMinutes = 30, remind = true),
+            Routine(id = 1, title = "Antiga", startMinute = 600, durationMinutes = 30, remind = true, createdAt = TEST_CREATED_AT),
         )
         val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
@@ -443,10 +445,10 @@ class BackupManagerTest {
     fun `restaura exercicio sem sets reps caindo em 1 e nao 0`() = runTest {
         val source = settingsRepo("source-ex-defaults")
         sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true),
+            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true, createdAt = TEST_CREATED_AT),
         )
         sourceDb.exerciseItemDao().insert(
-            ExerciseItem(id = 40, routineId = 1, name = "Agachamento", sets = 3, reps = 12, position = 0),
+            ExerciseItem(id = 40, routineId = 1, name = "Agachamento", sets = 3, reps = 12, position = 0, createdAt = TEST_CREATED_AT),
         )
         val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 

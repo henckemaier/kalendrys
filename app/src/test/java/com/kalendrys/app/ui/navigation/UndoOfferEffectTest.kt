@@ -31,6 +31,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.clockOf
 import com.kalendrys.app.ui.components.AppScaffold
@@ -371,7 +372,7 @@ class UndoOfferEffectTest {
     // --- P8: a oferta tem dois tipos; o texto sai do tipo, quem restaura é o objeto ---
 
     private fun deletedRoutine(title: String): Long = runBlocking {
-        val routine = routines.add(Routine(title = title, startMinute = 420))
+        val routine = routines.add(Routine(title = title, startMinute = 420, createdAt = TEST_CREATED_AT))
         routines.archive(routine)
         routine.id
     }

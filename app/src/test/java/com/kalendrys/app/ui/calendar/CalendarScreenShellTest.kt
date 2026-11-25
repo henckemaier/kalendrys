@@ -69,7 +69,7 @@ class CalendarScreenShellTest {
                     InMemoryRoutineCatchUpMark(),
                     clock = SystemAppClock,
                 ),
-                ShoppingRepository(db),
+                ShoppingRepository(db, clock = SystemAppClock),
                 clock = SystemAppClock,
             ),
         )

@@ -13,6 +13,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.io.File
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.local.entity.Routine
@@ -58,7 +59,7 @@ class ShoppingListViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        repository = ShoppingRepository(db)
+        repository = ShoppingRepository(db, clock = SystemAppClock)
         scheduler = FakeReminderScheduler(context)
         settings = SettingsRepository(
             PreferenceDataStoreFactory.create { File(context.cacheDir, "lista-${System.nanoTime()}.preferences_pb") },
@@ -317,7 +318,7 @@ class ShoppingListViewModelTest {
     @Test
     fun `marcar o ultimo item oferece concluir a unica tarefa pendente vinculada`() = runTest {
         val listId = listMissingOne("Arroz", "Feijão")
-        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = viewModel(listId)
         vm.events.test {
@@ -329,8 +330,8 @@ class ShoppingListViewModelTest {
     @Test
     fun `tarefa de origem tem prioridade quando ha mais de uma pendente`() = runTest {
         val listId = listMissingOne("Arroz", "Feijão")
-        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId))
-        val origin = db.taskDao().insert(Task(title = "Mercado do mês", shoppingListId = listId))
+        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId, createdAt = TEST_CREATED_AT))
+        val origin = db.taskDao().insert(Task(title = "Mercado do mês", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = viewModel(listId, taskId = origin)
         vm.events.test {
@@ -343,15 +344,15 @@ class ShoppingListViewModelTest {
     fun `sem oferta com duas pendentes e sem origem, sem tarefa ou com lista incompleta`() = runTest {
         // Duas pendentes, sem origem: ambígua.
         val twoTasks = listMissingOne("Arroz", "Feijão")
-        db.taskDao().insert(Task(title = "Feira", shoppingListId = twoTasks))
-        db.taskDao().insert(Task(title = "Mercado", shoppingListId = twoTasks))
+        db.taskDao().insert(Task(title = "Feira", shoppingListId = twoTasks, createdAt = TEST_CREATED_AT))
+        db.taskDao().insert(Task(title = "Mercado", shoppingListId = twoTasks, createdAt = TEST_CREATED_AT))
         // Só rotina vinculada: rotinas não recebem oferta.
         val routineOnly = listMissingOne("Leite")
-        db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = routineOnly))
+        db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = routineOnly, createdAt = TEST_CREATED_AT))
         // Lista que continua incompleta depois da marcação (2 de 3 desmarcados; marca 1).
         val incomplete = repository.createList("Padaria")
         listOf("Café", "Açúcar", "Sal").forEach { repository.add(incomplete, it, quantity = 1, priceCents = null) }
-        db.taskDao().insert(Task(title = "Padaria", shoppingListId = incomplete))
+        db.taskDao().insert(Task(title = "Padaria", shoppingListId = incomplete, createdAt = TEST_CREATED_AT))
         val firstUnpicked = repository.observeItems(incomplete).first().first { !it.picked }
 
         val vms = listOf(viewModel(twoTasks), viewModel(routineOnly), viewModel(incomplete))
@@ -366,7 +367,7 @@ class ShoppingListViewModelTest {
     @Test
     fun `desmarcar nunca oferece`() = runTest {
         val listId = listMissingOne("Arroz")
-        db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
         repository.setPicked(lastUnpicked(listId), true)
         val picked = repository.observeItems(listId).first().single()
 
@@ -380,7 +381,7 @@ class ShoppingListViewModelTest {
     @Test
     fun `aceitar a oferta conclui a tarefa e desfazer remove a conclusao`() = runTest {
         val listId = listMissingOne("Arroz")
-        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = viewModel(listId)
         vm.events.test {
@@ -403,7 +404,7 @@ class ShoppingListViewModelTest {
     @Test
     fun `abrir a lista pela tarefa nao dispensa o lembrete`() = runTest {
         val listId = listMissingOne("Arroz")
-        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = viewModel(listId, taskId)
         vm.uiState.first { it.items.isNotEmpty() }
@@ -413,7 +414,7 @@ class ShoppingListViewModelTest {
     @Test
     fun `tarefa ja concluida nao recebe oferta`() = runTest {
         val listId = listMissingOne("Arroz")
-        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
         taskRepository.logCompletion(taskId)
 
         val vm = viewModel(listId)

@@ -64,7 +64,7 @@ class TaskListRepeatingRowTest {
             todayId = tasks.addTask("Remédio", timing = TaskTiming(date = today, repeat = ReminderRepeat.DAILY)).id
         }
         val viewModel = testDb.track(
-            TaskViewModel(tasks, ShoppingRepository(testDb.db), testUndoOffers(testDb, tasks = tasks), clock = SystemAppClock),
+            TaskViewModel(tasks, ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb, tasks = tasks), clock = SystemAppClock),
         )
         compose.setContent {
             KalendrysTheme { TaskListScreen(onOpenTask = { opened += it }, onOpenSettings = {}, viewModel = viewModel) }

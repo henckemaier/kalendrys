@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -8,7 +9,7 @@ import org.junit.Test
 class TaskFilteringTest {
 
     private fun task(title: String = "", notes: String = "", location: String = "") =
-        Task(id = 1, title = title, notes = notes, location = location)
+        Task(id = 1, title = title, notes = notes, location = location, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `consulta vazia ou em branco casa qualquer tarefa`() {

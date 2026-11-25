@@ -12,6 +12,7 @@ import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -64,7 +65,7 @@ class RoutineRepositoryTest {
     }
 
     private fun routine(title: String = "Treino", startMinute: Int = 600) =
-        Routine(title = title, startMinute = startMinute)
+        Routine(title = title, startMinute = startMinute, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `routineForNotification devolve o bloco ativo que ocorre hoje e nao foi concluido`() = runTest {
@@ -254,13 +255,13 @@ class RoutineRepositoryTest {
     // --- Reinício da lista ao concluir o bloco (ADR-0001, P4) ---
 
     private suspend fun routineWithList(title: String = "Mercado", listId: Long? = null): Pair<Routine, Long> {
-        val shopping = ShoppingRepository(db)
+        val shopping = ShoppingRepository(db, clock = SystemAppClock)
         val id = listId ?: shopping.createList(title).also { lid ->
             shopping.add(lid, "Arroz", 1, null)
             shopping.add(lid, "Feijão", 1, null)
             db.shoppingItemDao().byList(lid).forEach { shopping.setPicked(it, true) }
         }
-        return repository.add(Routine(title = title, startMinute = 600, shoppingListId = id)) to id
+        return repository.add(Routine(title = title, startMinute = 600, shoppingListId = id, createdAt = TEST_CREATED_AT)) to id
     }
 
     private suspend fun picked(listId: Long) = db.shoppingItemDao().byList(listId).map { it.picked }
@@ -302,8 +303,8 @@ class RoutineRepositoryTest {
     @Test
     fun `rotina sem lista ou com vinculo orfao conclui sem falhar`() = runTest {
         val today = LocalDate.now()
-        val plain = repository.add(Routine(title = "Sem lista", startMinute = 600))
-        val orphan = repository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999))
+        val plain = repository.add(Routine(title = "Sem lista", startMinute = 600, createdAt = TEST_CREATED_AT))
+        val orphan = repository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999, createdAt = TEST_CREATED_AT))
 
         repository.complete(plain.id, today, today)
         repository.complete(orphan.id, today, today)

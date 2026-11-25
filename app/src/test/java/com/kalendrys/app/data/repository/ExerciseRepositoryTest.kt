@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -30,7 +31,7 @@ class ExerciseRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = ExerciseRepository(db.exerciseItemDao())
+        repository = ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock)
     }
 
     @After
@@ -108,9 +109,9 @@ class ExerciseRepositoryTest {
         // Esquadro: com posições iguais, a troca antiga trocava dois valores iguais e o item ficava preso.
         db.exerciseItemDao().insertAll(
             listOf(
-                com.kalendrys.app.data.local.entity.ExerciseItem(id = 1, routineId = 1, name = "A", sets = 1, reps = 1, position = 0),
-                com.kalendrys.app.data.local.entity.ExerciseItem(id = 2, routineId = 1, name = "B", sets = 1, reps = 1, position = 3),
-                com.kalendrys.app.data.local.entity.ExerciseItem(id = 3, routineId = 1, name = "C", sets = 1, reps = 1, position = 3),
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 1, routineId = 1, name = "A", sets = 1, reps = 1, position = 0, createdAt = TEST_CREATED_AT),
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 2, routineId = 1, name = "B", sets = 1, reps = 1, position = 3, createdAt = TEST_CREATED_AT),
+                com.kalendrys.app.data.local.entity.ExerciseItem(id = 3, routineId = 1, name = "C", sets = 1, reps = 1, position = 3, createdAt = TEST_CREATED_AT),
             ),
         )
         val c = repository.observeItems(1).first().single { it.name == "C" }

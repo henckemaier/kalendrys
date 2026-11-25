@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.today
 
 import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import com.kalendrys.app.testutil.testUndoOffers
@@ -81,7 +82,7 @@ class TodayViewModelTest {
             clock = SystemAppClock,
         )
         taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
-        shoppingRepository = ShoppingRepository(db)
+        shoppingRepository = ShoppingRepository(db, clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, routineRepository, tasks = taskRepository)
     }
 
@@ -127,7 +128,7 @@ class TodayViewModelTest {
         val listId = shoppingRepository.createList("Feira")
         shoppingRepository.add(listId, "Arroz", quantity = 1, priceCents = null)
         shoppingRepository.add(listId, "Feijão", quantity = 1, priceCents = null)
-        routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = listId))
+        routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         viewModel().uiState.test {
             var state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
@@ -144,9 +145,9 @@ class TodayViewModelTest {
     @Test
     fun `bloco sem lista, com lista vazia ou vinculo orfao nao mostra progresso`() = runTest {
         val empty = shoppingRepository.createList("Vazia")
-        routineRepository.add(Routine(title = "Sem lista", startMinute = 480))
-        routineRepository.add(Routine(title = "Lista vazia", startMinute = 540, shoppingListId = empty))
-        routineRepository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999))
+        routineRepository.add(Routine(title = "Sem lista", startMinute = 480, createdAt = TEST_CREATED_AT))
+        routineRepository.add(Routine(title = "Lista vazia", startMinute = 540, shoppingListId = empty, createdAt = TEST_CREATED_AT))
+        routineRepository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999, createdAt = TEST_CREATED_AT))
 
         viewModel().uiState.test {
             val state = awaitState { it.isLoaded && it.timeline.filterIsInstance<DayTimeline.Block>().size == 3 }
@@ -227,7 +228,7 @@ class TodayViewModelTest {
     @Test
     fun `pular mantem o bloco na trilha marcado, avisa para Desfazer e desfazer o devolve`() = runTest {
         val today = LocalDate.now()
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         val vm = viewModel()
 
         vm.uiState.test {
@@ -250,7 +251,7 @@ class TodayViewModelTest {
     fun `dia remarcado, pular e Desfazer na mensagem - a remarcacao volta`() = runTest {
         val today = LocalDate.now()
         val epochDay = today.toEpochDay()
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
         val vm = viewModel()
 
@@ -276,7 +277,7 @@ class TodayViewModelTest {
     fun `Desfazer pular do bloco em dia remarcado e pulado so tira o pular`() = runTest {
         val today = LocalDate.now()
         val epochDay = today.toEpochDay()
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         routineRepository.rescheduleOccurrence(treino.id, epochDay, newStartMinute = 930, newEpochDay = null)
         routineRepository.skipOccurrence(treino.id, epochDay)
         val vm = viewModel()
@@ -295,7 +296,7 @@ class TodayViewModelTest {
     @Test
     fun `pular sem excecao no dia - o evento nao leva anterior e Desfazer na mensagem so tira o pular`() = runTest {
         val today = LocalDate.now()
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         val vm = viewModel()
 
         vm.uiState.test {
@@ -315,7 +316,7 @@ class TodayViewModelTest {
     @Test
     fun `bloco pulado nao se conclui pelo circulo`() = runTest {
         val today = LocalDate.now()
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         routineRepository.skipOccurrence(treino.id, today.toEpochDay())
         val vm = viewModel()
 
@@ -323,7 +324,7 @@ class TodayViewModelTest {
             val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
             vm.toggle(state.block("Treino"))
             // As alterações do repositório passam uma por vez: depois desta, um concluir pedido acima já teria gravado.
-            routineRepository.add(Routine(title = "Depois", startMinute = 700))
+            routineRepository.add(Routine(title = "Depois", startMinute = 700, createdAt = TEST_CREATED_AT))
             // O toggle ignora o pulado: nenhuma conclusão gravada.
             assertEquals(false, treino.id in db.routineCompletionDao().doneOn(today.toEpochDay()))
             cancelAndIgnoreRemainingEvents()
@@ -368,7 +369,7 @@ class TodayViewModelTest {
 
     @Test
     fun `bloco do proprio dia segue com o dia mostrado`() = runTest {
-        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600))
+        val treino = routineRepository.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         val vm = viewModel()
 
         vm.uiState.test {

@@ -83,13 +83,14 @@ class TaskRepository(
         newListName: String? = null,
     ): Task {
         closeReminderWindow()
-        val newList = newListName?.takeIf { it.isNotBlank() }?.let(ShoppingList::named)
+        val newList = newListName?.takeIf { it.isNotBlank() }?.let { ShoppingList.named(it, clock.nowMillis()) }
         val task = timing.applyTo(
             Task(
                 title = title.trim(),
                 notes = notes.trim(),
                 location = location.trim(),
                 shoppingListId = if (newList != null) null else shoppingListId,
+                createdAt = clock.nowMillis(),
             ),
             clock.zone(),
         )
@@ -170,7 +171,7 @@ class TaskRepository(
             val updated = change.applyTo(current, zone) ?: return@withLock false
             when (change) {
                 is TaskChange.NewShoppingList -> {
-                    taskDao.linkNewList(taskId, ShoppingList.named(change.name))
+                    taskDao.linkNewList(taskId, ShoppingList.named(change.name, clock.nowMillis()))
                     return@withLock true
                 }
                 is TaskChange.ShoppingList -> {

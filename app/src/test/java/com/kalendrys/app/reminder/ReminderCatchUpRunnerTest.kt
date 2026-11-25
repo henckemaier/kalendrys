@@ -14,6 +14,7 @@ import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.clockOf
 import java.io.File
 import java.time.LocalDate
@@ -142,7 +143,7 @@ class ReminderCatchUpRunnerTest {
         title: String = "Tarefa",
         date: LocalDate = day,
     ): Task {
-        val task = Task(title = title, dueDate = date.toEpochDay(), reminderAt = at(hour, minute, date), repeat = repeat)
+        val task = Task(title = title, dueDate = date.toEpochDay(), reminderAt = at(hour, minute, date), repeat = repeat, createdAt = TEST_CREATED_AT)
         return task.copy(id = db.taskDao().insert(task))
     }
 

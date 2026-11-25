@@ -15,7 +15,7 @@ data class Task(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
     /** Dia da tarefa (LocalDate.toEpochDay); null = sem data. Numa tarefa que se repete, é o primeiro dia. */
     @ColumnInfo(defaultValue = "NULL")
     val dueDate: Long? = null,

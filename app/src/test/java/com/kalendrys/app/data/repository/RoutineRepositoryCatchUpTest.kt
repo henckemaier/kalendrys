@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -319,7 +320,7 @@ class RoutineRepositoryCatchUpTest {
     @Test
     fun `bloco concluido antes do horario nao e avisado`() = runTest {
         val saved = addAt(block("Treino", 10), 8, 0)
-        db.routineCompletionDao().insert(RoutineCompletion(routineId = saved.id, epochDay = day.toEpochDay()))
+        db.routineCompletionDao().insert(RoutineCompletion(routineId = saved.id, epochDay = day.toEpochDay(), completedAt = TEST_CREATED_AT))
 
         repository.catchUp(nowOverride = at(10, 30))
 

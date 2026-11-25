@@ -1,5 +1,6 @@
 package com.kalendrys.app.ui.today
 
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.navigation.UndoOfferEffect
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import androidx.compose.runtime.remember
@@ -67,7 +68,7 @@ class TodayContentSemanticsTest {
         // A oferta de Desfazer da Hoje roda no escopo do app de teste (o close espera; v1.9.0, E4).
         val repos = TodayRepositories(context, testDb.db, testDb.appScope())
         runBlocking {
-            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
+            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT))
             repos.tasks.addTask("Ideias para o fim de semana")
             repos.tasks.addTask("Comprar pão", timing = TaskTiming(date = LocalDate.now()))
         }

@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -29,6 +30,7 @@ class TodayOverviewTest {
             dueDate = reminder?.toLocalDate()?.toEpochDay(),
             reminderAt = reminder?.let(::millis),
             repeat = repeat,
+            createdAt = TEST_CREATED_AT,
         )
 
     private fun done(taskId: Long, at: LocalDateTime) = CompletionLog(taskId = taskId, completedAt = millis(at))
@@ -57,8 +59,8 @@ class TodayOverviewTest {
     @Test
     fun `atrasada entra nas pendentes e a futura nao`() {
         val tasks = listOf(
-            Task(id = 1, title = "Ontem", dueDate = now.toLocalDate().minusDays(1).toEpochDay()),
-            Task(id = 2, title = "Amanhã", dueDate = now.toLocalDate().plusDays(1).toEpochDay()),
+            Task(id = 1, title = "Ontem", dueDate = now.toLocalDate().minusDays(1).toEpochDay(), createdAt = TEST_CREATED_AT),
+            Task(id = 2, title = "Amanhã", dueDate = now.toLocalDate().plusDays(1).toEpochDay(), createdAt = TEST_CREATED_AT),
         )
 
         val overview = TodayOverview.build(tasks, emptyList(), now, zone)
@@ -136,7 +138,7 @@ class TodayOverviewTest {
             // Dias úteis não ocorrem no sábado.
             routine(3, "Ponto", LocalTime.of(9, 0), days = RoutineDays.WEEKDAYS),
         )
-        val doneToday = listOf(RoutineCompletion(routineId = 2, epochDay = now.toLocalDate().toEpochDay()))
+        val doneToday = listOf(RoutineCompletion(routineId = 2, epochDay = now.toLocalDate().toEpochDay(), completedAt = TEST_CREATED_AT))
 
         val overview = TodayOverview.build(emptyList(), emptyList(), now, zone, routines, doneToday)
 
@@ -154,13 +156,14 @@ class TodayOverviewTest {
             routine(2, "Almoço", LocalTime.of(12, 0)),
         )
         val overrides = mapOf(
-            1L to listOf(RoutineOverride(routineId = 1, epochDay = today.toEpochDay(), type = RoutineOverrideType.SKIP)),
+            1L to listOf(RoutineOverride(routineId = 1, epochDay = today.toEpochDay(), type = RoutineOverrideType.SKIP, createdAt = TEST_CREATED_AT)),
             2L to listOf(
                 RoutineOverride(
                     routineId = 2,
                     epochDay = today.toEpochDay(),
                     type = RoutineOverrideType.RESCHEDULE,
                     newStartMinute = 15 * 60,
+                    createdAt = TEST_CREATED_AT,
                 ),
             ),
         )
@@ -185,7 +188,7 @@ class TodayOverviewTest {
     @Test
     fun `rotina ja feita hoje passa para a proxima ocorrencia no a seguir`() {
         val routines = listOf(routine(1, "Almoço", LocalTime.of(12, 0)))
-        val doneToday = listOf(RoutineCompletion(routineId = 1, epochDay = now.toLocalDate().toEpochDay()))
+        val doneToday = listOf(RoutineCompletion(routineId = 1, epochDay = now.toLocalDate().toEpochDay(), completedAt = TEST_CREATED_AT))
 
         val overview = TodayOverview.build(emptyList(), emptyList(), now, zone, routines, doneToday)
 
@@ -240,7 +243,7 @@ class TodayOverviewTest {
     @Test
     fun `unica reaberta para outra data depois de concluida hoje conta 1`() {
         // Concluída hoje e depois com a data mudada para daqui a 3 dias (reabre: não está encerrada).
-        val reopened = Task(id = 1, title = "Levar o carro", dueDate = now.toLocalDate().plusDays(3).toEpochDay())
+        val reopened = Task(id = 1, title = "Levar o carro", dueDate = now.toLocalDate().plusDays(3).toEpochDay(), createdAt = TEST_CREATED_AT)
 
         assertEquals(1, doneCount(listOf(reopened), listOf(done(1, now.minusHours(1)))))
     }

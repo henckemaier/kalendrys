@@ -67,7 +67,7 @@ class ShoppingListScreenShellTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        repository = ShoppingRepository(db)
+        repository = ShoppingRepository(db, clock = SystemAppClock)
         listId = runBlocking {
             repository.createList("Mercado").also { repository.add(it, "Leite", quantity = 1, priceCents = null) }
         }

@@ -21,6 +21,7 @@ import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.components.assertWeekdayCellsFit
@@ -66,14 +67,14 @@ class RoutineEditorWeekdaysTest {
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
-        val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
+        val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT)) }
         val viewModel = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
                 routineRepository,
                 RoutineCategoryRepository(db),
-                ShoppingRepository(db),
-                ExerciseRepository(db.exerciseItemDao()),
+                ShoppingRepository(db, clock = SystemAppClock),
+                ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),
                 clock = SystemAppClock,

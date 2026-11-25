@@ -16,7 +16,7 @@ import androidx.room.PrimaryKey
 data class ShoppingList(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
     val lastResetKey: String? = null,
 ) {
     companion object {
@@ -26,6 +26,6 @@ data class ShoppingList(
          * nova tarefa, junto com a tarefa): nome aparado, sem reinício. Uma regra só; não monte a
          * entidade de outro jeito. Nome em branco não é lista: quem chama não cria.
          */
-        fun named(name: String): ShoppingList = ShoppingList(name = name.trim())
+        fun named(name: String, createdAt: Long): ShoppingList = ShoppingList(name = name.trim(), createdAt = createdAt)
     }
 }

@@ -4,6 +4,7 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -32,7 +33,7 @@ class HistoryCsvTest {
     @Test
     fun `tarefas e rotinas em ordem com cabecalho e CRLF`() {
         val rows = HistoryCsv.rows(
-            tasks = listOf(Task(id = 7, title = "Pagar contas; luz")),
+            tasks = listOf(Task(id = 7, title = "Pagar contas; luz", createdAt = TEST_CREATED_AT)),
             taskLogs = listOf(CompletionLog(taskId = 7, completedAt = millis(day.atTime(9, 5)))),
             routines = listOf(routine),
             routineLogs = listOf(RoutineCompletion(routineId = 1, epochDay = day.minusDays(1).toEpochDay(), completedAt = millis(day.minusDays(1).atTime(17, 40)))),

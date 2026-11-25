@@ -28,6 +28,7 @@ import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.ui.calendar.CalendarScreen
@@ -87,7 +88,7 @@ class RoutineDeleteFromEditorTest {
         routines = testRoutineRepository(db, alarms)
         tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         offers = UndoOffers(tasks, routines, appScope, clock = SystemAppClock)
-        routineId = runBlocking { routines.add(Routine(title = "Treino", startMinute = 23 * 60)).id }
+        routineId = runBlocking { routines.add(Routine(title = "Treino", startMinute = 23 * 60, createdAt = TEST_CREATED_AT)).id }
     }
 
     @After
@@ -100,8 +101,8 @@ class RoutineDeleteFromEditorTest {
             SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
             routines,
             RoutineCategoryRepository(testDb.db),
-            ShoppingRepository(testDb.db),
-            ExerciseRepository(testDb.db.exerciseItemDao()),
+            ShoppingRepository(testDb.db, clock = SystemAppClock),
+            ExerciseRepository(testDb.db.exerciseItemDao(), clock = SystemAppClock),
             offers,
             testDb.appScope(),
             clock = SystemAppClock,
@@ -152,7 +153,7 @@ class RoutineDeleteFromEditorTest {
     fun `excluir pelo editor aberto a partir da Hoje mostra a mensagem na Hoje e Desfazer devolve`() {
         val today = testDb.track(
             run {
-                val shopping = ShoppingRepository(testDb.db)
+                val shopping = ShoppingRepository(testDb.db, clock = SystemAppClock)
                 TodayViewModel(
                     routines,
                     tasks,
@@ -185,7 +186,7 @@ class RoutineDeleteFromEditorTest {
 
     @Test
     fun `excluir pelo editor aberto a partir do Calendario mostra a mensagem la e Desfazer devolve`() {
-        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db), clock = SystemAppClock))
+        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db, clock = SystemAppClock), clock = SystemAppClock))
         deleteFromEditorOver { CalendarScreen(onOpenTask = {}, onOpenRoutine = {}, onOpenSettings = {}, viewModel = calendar) }
     }
 

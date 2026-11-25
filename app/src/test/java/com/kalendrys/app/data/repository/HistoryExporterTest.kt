@@ -10,6 +10,7 @@ import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -67,7 +68,7 @@ class HistoryExporterTest {
             "2026-10-24;Tarefa;;;2026-10-24 10:00;Excluída\r\n"
 
     private suspend fun seed() {
-        db.taskDao().insert(Task(id = 7, title = "Pagar contas; luz"))
+        db.taskDao().insert(Task(id = 7, title = "Pagar contas; luz", createdAt = TEST_CREATED_AT))
         db.completionLogDao().insert(CompletionLog(taskId = 7, completedAt = millis(day.atTime(9, 5))))
         db.completionLogDao().insert(CompletionLog(taskId = 99, completedAt = millis(day.atTime(10, 0)))) // tarefa excluída
         db.routineDao().insert(Routine(id = 1, title = "Treino", startMinute = 17 * 60 + 20, durationMinutes = 15, createdAt = 0L))

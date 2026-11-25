@@ -8,7 +8,11 @@ import kotlinx.coroutines.flow.Flow
  * Lista de exercícios de uma rotina do tipo `EXERCICIO`. Fina sobre o [ExerciseItemDao]: cada
  * edição persiste na hora (a UI reflete via Flow), pela fila do editor da rotina (v1.9.0). Espelha o [ShoppingRepository]; sem total (isso era do módulo de compras).
  */
-class ExerciseRepository(private val dao: ExerciseItemDao) {
+class ExerciseRepository(
+    private val dao: ExerciseItemDao,
+    /** O relógio do app (v1.10.0, 16.3): o carimbo de criação dos exercícios. */
+    private val clock: AppClock,
+) {
 
     fun observeItems(routineId: Long): Flow<List<ExerciseItem>> = dao.observeByRoutine(routineId)
 
@@ -27,6 +31,7 @@ class ExerciseRepository(private val dao: ExerciseItemDao) {
                 load = load?.trim()?.takeIf { it.isNotEmpty() },
                 restSeconds = restSeconds?.takeIf { it >= 0 },
                 position = nextPosition,
+                createdAt = clock.nowMillis(),
             ),
         )
     }

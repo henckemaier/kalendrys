@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
@@ -58,7 +59,7 @@ class TaskListMidnightTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock)
-        shopping = ShoppingRepository(db)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After

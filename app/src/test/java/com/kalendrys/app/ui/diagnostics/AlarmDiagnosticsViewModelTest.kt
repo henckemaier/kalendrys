@@ -30,6 +30,7 @@ import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.clockOf
 import java.io.File
@@ -154,7 +155,7 @@ class AlarmDiagnosticsViewModelTest {
         // Longe do relógio real: o ReminderScheduler agenda a partir de System.currentTimeMillis.
         val due = LocalDate.now(zone).plusDays(2)
         val reminderAt = due.atTime(LocalTime.of(10, 0)).atZone(zone).toInstant().toEpochMilli()
-        runBlocking { testDb.db.taskDao().insert(Task(title = "Pagar a conta", dueDate = due.toEpochDay(), reminderAt = reminderAt)) }
+        runBlocking { testDb.db.taskDao().insert(Task(title = "Pagar a conta", dueDate = due.toEpochDay(), reminderAt = reminderAt, createdAt = TEST_CREATED_AT)) }
         val realNow = System.currentTimeMillis()
         val tasks = taskRepository(ReminderScheduler(context))
         runBlocking { tasks.rescheduleReminders(realNow) }
@@ -207,7 +208,7 @@ class AlarmDiagnosticsViewModelTest {
         runBlocking { routines.add(Routine(title = "Almoço", startMinute = 12 * 60, remind = true, createdAt = 0)) }
         val due = LocalDate.of(2026, 11, 16)
         val reminderAt = due.atTime(LocalTime.of(9, 15)).atZone(zone).toInstant().toEpochMilli()
-        runBlocking { testDb.db.taskDao().insert(Task(title = "Ligar", dueDate = due.toEpochDay(), reminderAt = reminderAt)) }
+        runBlocking { testDb.db.taskDao().insert(Task(title = "Ligar", dueDate = due.toEpochDay(), reminderAt = reminderAt, createdAt = TEST_CREATED_AT)) }
 
         assertEquals(NextAppAlarm(reminderAt, AppAlarmKind.TASK), nextAlarm(routines = routines))
     }
@@ -224,10 +225,10 @@ class AlarmDiagnosticsViewModelTest {
         runBlocking {
             val dao = testDb.db.taskDao()
             // Lembrete daqui a 2h, mas concluída hoje cedo: encerrada, o agendador não a reagenda.
-            val done = dao.insert(Task(title = "Concluída", dueDate = today, reminderAt = at(16, 10)))
+            val done = dao.insert(Task(title = "Concluída", dueDate = today, reminderAt = at(16, 10), createdAt = TEST_CREATED_AT))
             testDb.db.completionLogDao().insert(CompletionLog(taskId = done, completedAt = at(16, 7)))
             // Lembrete único de 1h atrás: já tocou.
-            dao.insert(Task(title = "Passada", dueDate = today, reminderAt = at(16, 7)))
+            dao.insert(Task(title = "Passada", dueDate = today, reminderAt = at(16, 7), createdAt = TEST_CREATED_AT))
         }
 
         assertEquals(null, nextAlarm())
@@ -244,6 +245,7 @@ class AlarmDiagnosticsViewModelTest {
                     dueDate = LocalDate.of(2026, 11, 10).toEpochDay(),
                     reminderAt = at(10, 8),
                     repeat = ReminderRepeat.DAILY,
+                    createdAt = TEST_CREATED_AT,
                 ),
             )
         }
@@ -263,6 +265,7 @@ class AlarmDiagnosticsViewModelTest {
                     routineId = treino.id,
                     epochDay = LocalDate.of(2026, 11, 16).toEpochDay(),
                     type = RoutineOverrideType.SKIP,
+                    createdAt = TEST_CREATED_AT,
                 ),
             )
         }
@@ -285,7 +288,7 @@ class AlarmDiagnosticsViewModelTest {
     /** Diária às 10:00 com âncora em 10/11; devolve o id. */
     private fun insertDaily(title: String = "Remédio"): Long = runBlocking {
         testDb.db.taskDao().insert(
-            Task(title = title, dueDate = LocalDate.of(2026, 11, 10).toEpochDay(), reminderAt = at(10, 10), repeat = ReminderRepeat.DAILY),
+            Task(title = title, dueDate = LocalDate.of(2026, 11, 10).toEpochDay(), reminderAt = at(10, 10), repeat = ReminderRepeat.DAILY, createdAt = TEST_CREATED_AT),
         )
     }
 
@@ -326,7 +329,7 @@ class AlarmDiagnosticsViewModelTest {
         // Única para amanhã, concluída (adiantada) hoje sem reescrever a data: não está encerrada e
         // o dia concluído não a afeta (o predicado só vale para as repetidas).
         val id = runBlocking {
-            testDb.db.taskDao().insert(Task(title = "Única", dueDate = LocalDate.of(2026, 11, 17).toEpochDay(), reminderAt = at(17, 9)))
+            testDb.db.taskDao().insert(Task(title = "Única", dueDate = LocalDate.of(2026, 11, 17).toEpochDay(), reminderAt = at(17, 9), createdAt = TEST_CREATED_AT))
         }
         runBlocking { testDb.db.completionLogDao().insert(CompletionLog(taskId = id, completedAt = at(16, 7))) }
 
@@ -341,7 +344,7 @@ class AlarmDiagnosticsViewModelTest {
         val first = LocalDate.now(zone).plusDays(2)
         val firstAt = first.atTime(LocalTime.of(10, 0)).atZone(zone).toInstant().toEpochMilli()
         val id = runBlocking {
-            testDb.db.taskDao().insert(Task(title = "Remédio", dueDate = first.toEpochDay(), reminderAt = firstAt, repeat = ReminderRepeat.DAILY))
+            testDb.db.taskDao().insert(Task(title = "Remédio", dueDate = first.toEpochDay(), reminderAt = firstAt, repeat = ReminderRepeat.DAILY, createdAt = TEST_CREATED_AT))
         }
         // Conclusão gravada no próprio dia da primeira ocorrência (antes do horário).
         val doneAt = first.atTime(LocalTime.of(7, 0)).atZone(zone).toInstant().toEpochMilli()

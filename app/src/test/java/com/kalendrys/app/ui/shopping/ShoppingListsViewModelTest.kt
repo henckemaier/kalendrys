@@ -11,7 +11,9 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -45,7 +47,7 @@ class ShoppingListsViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        repository = ShoppingRepository(db)
+        repository = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
@@ -77,7 +79,7 @@ class ShoppingListsViewModelTest {
         repository.add(mercado, "Arroz", quantity = 2, priceCents = 1_000)
         repository.add(mercado, "Feijão", quantity = 1, priceCents = 800)
         repository.setPicked(repository.observeItems(mercado).first().first(), true)
-        db.routineDao().insert(Routine(title = "Compras do sábado", startMinute = 540, shoppingListId = mercado))
+        db.routineDao().insert(Routine(title = "Compras do sábado", startMinute = 540, shoppingListId = mercado, createdAt = TEST_CREATED_AT))
 
         val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
@@ -130,8 +132,8 @@ class ShoppingListsViewModelTest {
     fun `excluir apaga a lista e os itens e desvincula rotina e tarefa`() = runTest {
         val listId = repository.createList("Mercado")
         repository.add(listId, "Arroz", quantity = 1, priceCents = null)
-        val routineId = db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = listId))
-        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId))
+        val routineId = db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = listId, createdAt = TEST_CREATED_AT))
+        val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {

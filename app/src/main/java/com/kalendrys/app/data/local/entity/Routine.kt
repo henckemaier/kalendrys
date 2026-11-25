@@ -31,7 +31,7 @@ data class Routine(
     val daysOfWeek: Int = RoutineDays.ALL,
     /** Avisar com uma notificação na hora em que o bloco começa. */
     val remind: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
     val archivedAt: Long? = null,
     /**
      * Categoria à qual a rotina pertence ([RoutineCategory.id]), ou `null` se sem categoria. Só a

@@ -27,6 +27,6 @@ data class ShoppingItem(
     val priceCents: Long? = null,
     val picked: Boolean = false,
     val position: Int,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
     @ColumnInfo(defaultValue = "0") val pickedBeforeReset: Boolean = false,
 )

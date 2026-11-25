@@ -10,6 +10,7 @@ import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -30,7 +31,7 @@ class ShoppingListCardTest {
         val rotina = ShoppingListOwner(ShoppingListOwner.Kind.ROUTINE, id = 1, title = "Feira de sábado")
         val tarefa = ShoppingListOwner(ShoppingListOwner.Kind.TASK, id = 2, title = "Churrasco")
         val summary = ShoppingListSummary(
-            list = ShoppingList(id = 10, name = "Mercado"),
+            list = ShoppingList(id = 10, name = "Mercado", createdAt = TEST_CREATED_AT),
             progress = ShoppingProgress(picked = 2, total = 3),
             totalCents = 0,
             owners = listOf(rotina, tarefa),

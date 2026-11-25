@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.TaskTiming
@@ -56,7 +57,7 @@ class NewTaskPanelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         tasks = testTaskRepository(testDb.db)
-        shopping = ShoppingRepository(testDb.db)
+        shopping = ShoppingRepository(testDb.db, clock = SystemAppClock)
         panel = NewTaskPanel(tasks, shopping, testDb.appScope(), NewTaskDraftStore()) {
             shopping.observeSummaries()
                 .onStart { listObservers.incrementAndGet() }

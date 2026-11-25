@@ -26,6 +26,7 @@ import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -64,11 +65,11 @@ class TaskListScrollTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        runBlocking { titles.forEach { db.taskDao().insert(Task(title = it)) } }
+        runBlocking { titles.forEach { db.taskDao().insert(Task(title = it, createdAt = TEST_CREATED_AT)) } }
         viewModel = testDb.track(
             TaskViewModel(
                 TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock),
-                ShoppingRepository(db),
+                ShoppingRepository(db, clock = SystemAppClock),
                 testUndoOffers(testDb),
                 clock = SystemAppClock,
             ),
