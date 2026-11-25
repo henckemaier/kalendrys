@@ -1834,6 +1834,8 @@ Base: `main` em d67327d (v1.9.1 publicada). As decisões P1 a P12 são do usuár
 
 ### 16.1 Decisões do usuário
 
+> **A P12 foi substituída pela 16.10**, que traz as decisões seguintes do usuário sobre rotina, tarefa e lista.
+
 | # | Decisão |
 |---|---------|
 | P1 | O escopo que a 14.1 chamava de v1.10.0 fica **dividido em duas versões** (16.2) |
@@ -1850,6 +1852,8 @@ Base: `main` em d67327d (v1.9.1 publicada). As decisões P1 a P12 são do usuár
 | P12 | No editor de rotina, a seção "Lista de compras" só aparece quando a rotina tem lista; sem lista, o "Adicionar lista de compras" fica dentro de "Mais opções". A mesma regra vale para o detalhe da tarefa. Entra na v1.10.0 (16.6) |
 
 ### 16.2 Divisão (P1)
+
+> **Substituída pela 16.10.2:** são três versões; a v1.10.0 é "Rotinas e tarefas".
 
 | Versão | Nome | Conteúdo |
 |--------|------|----------|
@@ -1897,6 +1901,8 @@ título cortado do editor em paisagem, leia-se **v1.11.0**.
 
 ### 16.4 Tarefa repetida: qual ocorrência um registro satisfaz
 
+> **Movida pela 16.10.2:** esta regra e a 16.5 passam para a **v1.11.0**. O desenho não muda.
+
 Até a v1.9.1 a tarefa que se repete nunca ficava atrasada: o estado era só "hoje" ou "próxima".
 E concluir num dia que não é dia dela só gravava o registro daquele dia (15.6).
 
@@ -1932,6 +1938,8 @@ da versão e fica em commit próprio.
 
 ### 16.6 Conteúdo da rotina no editor
 
+> **Substituída pela 16.10:** rotina não tem lista; a lista é de uma tarefa só (16.10.4, 16.10.5).
+
 **Em aberto na data desta emenda.** A P12 decidiu a lista de compras. Depois dela o usuário pediu
 para unificar lista de compras e exercícios e tirar as categorias das rotinas; o desenho proposto
 e as perguntas P13 a P18 aguardam resposta, e esta subseção é reescrita quando chegarem. Nenhum
@@ -1942,6 +1950,8 @@ frase nem cartão, e o único lugar para anexar é "Mais opções"; anexar faz a
 hora e a tela rola até ela; desvincular faz sumir; Reverter e a criação seguem as regras da 15.5.
 
 ### 16.7 Etapas da v1.10.0
+
+> **Substituída pela 16.10.6:** a v1.10.0 passou a ter as etapas E0 e T1 a T4; E1 e E2 abaixo são da v1.11.0.
 
 | Etapa | Conteúdo | Aceite |
 |-------|----------|--------|
@@ -1973,3 +1983,129 @@ Ordem de corte: primeiro a P3 (a regra do atraso fica); depois nada mais da E0 �
 
 Abertura a frio: **não medida** desde a v1.8.0 (14.14, 15.12). O aparelho do usuário não foi
 liberado (P10) e no emulador não se tenta. Fica registrado de novo como não medido.
+
+### 16.10 Emenda de 2026-11-25 (segunda) — rotina, tarefa e lista
+
+Depois da P12 o usuário redefiniu a distinção entre rotina e tarefa, em quatro rodadas de
+perguntas (P13 a P46). Esta subseção é o resultado final e **substitui** a P12 da 16.1, a 16.2,
+a 16.6 e a 16.7. Corrige também o ADR-0001 (seção 9 de lá). As decisões são do usuário.
+
+#### 16.10.1 A distinção
+
+- **Rotina:** bloco de hábito com horário e duração, que se repete. Tem **tipo**, Nenhum ou
+  Exercício, escolhido ao criar e ao editar. Só o tipo Exercício tem conteúdo: os exercícios.
+  Rotina **não tem lista**. As categorias criadas pelo usuário deixam de existir nas telas.
+- **Tarefa:** coisa pontual, com ou sem data e horário. É a **única dona de lista**, de compras
+  ou em geral. Com data e horário, aparece na Hoje entre as rotinas, no horário dela, com formato
+  próprio; isso já existia desde a v1.8.0 (14.5) e não muda. Tarefa não ganha duração.
+- **Lista:** pertence a **uma tarefa só**. Lista sem tarefa não existe. Excluir a tarefa exclui a
+  lista e os itens.
+- **Não há aba Listas.** A barra fica com Tarefas, Hoje e Calendário.
+
+#### 16.10.2 Divisão das versões
+
+| Versão | Nome | Conteúdo |
+|--------|------|----------|
+| **v1.10.0** | Rotinas e tarefas | Base técnica (16.3) e esta subseção |
+| **v1.11.0** | Tarefas repetidas | 16.4 e 16.5, com a P2 e a P3 |
+| **v1.12.0** | Adaptativo, calendário e busca | O que a 16.2 dava à v1.11.0 |
+
+Não se juntam a v1.10.0 e a regra das repetidas: uma tem migração, backup novo, troca de
+navegação e reescrita do editor; a outra muda a regra de estado em cinco superfícies e o lembrete
+de tarefa. A regra das repetidas fica mais importante depois desta emenda, porque a compra
+recorrente passa a ser tarefa repetida.
+
+#### 16.10.3 Dados: banco 11 para 12
+
+Nenhuma tabela é recriada. Na ordem:
+
+1. Coluna nova de **tipo** na rotina. Rotina em categoria do tipo Exercício vira Exercício; todas
+   as outras, Nenhum.
+2. Tabela nova de **exercícios salvos**.
+3. O vínculo de lista é apagado de **todas as rotinas**. Nenhuma rotina é apagada.
+4. **Lista usada por mais de uma tarefa:** fica com a tarefa mais antiga; cada uma das outras
+   recebe uma cópia da lista com os itens (P44). Assim nenhuma tarefa perde a lista que mostrava.
+5. Vínculo de tarefa para lista que não existe é limpo.
+6. Lista sem tarefa é **apagada com os itens**: as avulsas e as que só rotinas usavam. Itens sem
+   lista também.
+7. Índice único no vínculo de lista da tarefa: o banco passa a recusar duas tarefas na mesma
+   lista. Só é criado depois dos passos 4 a 6. Se a revisão linha a linha achar que o risco de a
+   migração falhar não compensa, o índice sai e a regra fica só no repositório.
+
+A coluna antiga do vínculo na rotina e a tabela de categorias continuam no banco, sem uso:
+tirá-las exige recriar a tabela de rotinas, que é a dos alarmes. Exercícios de rotinas que já
+foram de categoria Exercício e mudaram continuam guardados e voltam se o tipo for Exercício.
+
+O descarte dos passos 3 e 6 foi **autorizado pelo usuário**, que tem dados reais no aparelho.
+Condição da release (P43): backup exportado pela v1.9.1 antes de atualizar; depois da migração não
+há volta sem ele. O CHANGELOG e a nota da versão avisam.
+
+**Backup versão 7.** Leva o tipo e os exercícios salvos; deixa de levar vínculo de lista em
+rotina. Restaurar um backup da versão 6 ou anterior aplica as **mesmas regras** dos passos 1 e 3
+a 6. As regras são funções puras em `domain/`, usadas pela migração e pelo restauro, com teste de
+que os dois caminhos dão o mesmo resultado para os mesmos dados. O restauro da versão 7 passa
+pelas mesmas funções, que não mudam nada em dado já correto.
+
+#### 16.10.4 Lista dentro da tarefa
+
+- **Adicionar lista** cria a lista na hora, com o nome da tarefa. Não há mais escolha entre nova
+  e existente, nem seletor. O painel de nova tarefa continua podendo criar a lista junto.
+- A seção de lista do detalhe da tarefa fica à vista, como era. A lista abre na mesma tela de
+  lista de sempre: itens, adicionar rápido, marcar, total, zerar marcados, dica de gestos.
+- **Excluir lista** (no detalhe e na tela da lista) apaga a lista e os itens, com confirmação
+  (P45). Não existe mais desvincular. O Reverter do detalhe não desfaz criar nem excluir lista.
+- **Excluir a tarefa** apaga a tarefa, a lista e os itens numa transação. A oferta de Desfazer
+  guarda os três em memória e os devolve juntos, com os mesmos identificadores, no mesmo molde em
+  que já guardava a tarefa inteira (14.2). Se o processo morrer antes, a exclusão vale. Excluir
+  pelo detalhe não pede confirmação (P7): a proteção é o Desfazer.
+- A lista de uma tarefa sem repetição já concluída continua com ela.
+- **Link de lista.** Continua existindo, porque notificações e ofertas abrem a lista por ele. A
+  regra de pilha E-1 muda: a lista abre sobre o detalhe da tarefa dona, e esse sobre a aba
+  Tarefas. Lista que não existe mais abre a aba Tarefas. O atalho "Listas" do app sai; um atalho
+  antigo fixado na tela inicial cai na aba Tarefas, sem erro.
+- O carrinho de progresso some dos blocos de rotina e aparece na linha da tarefa na Hoje.
+
+#### 16.10.5 Rotina: tipo e exercícios
+
+- Ordem do editor: Título; Quando; Lembrar; Tipo; Exercícios (só no tipo Exercício); Aparência;
+  "Mais opções" com Vigência e Observações. Saem as seções Categoria e Lista.
+- Os exercícios podem ser montados já na **criação**; são gravados junto com a rotina.
+- Trocar de Exercício para Nenhum **guarda** os exercícios, sem perguntar; voltam se o tipo
+  voltar. O tipo entra nos campos do Reverter.
+- **Exercícios salvos:** um salvo é um exercício (nome, séries, repetições, carga, descanso).
+  Aplicar um salvo **copia**; não há vínculo vivo. São escolhidos, editados e excluídos num painel
+  do próprio editor, e criados pela opção de salvar no diálogo do exercício.
+- "Todas as rotinas" perde o filtro e o nome da categoria na linha. A tela de categorias sai de
+  Ajustes.
+
+#### 16.10.6 Etapas da v1.10.0
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Base técnica (16.3). Feita e revisada em 68051ed | Os da 16.7 |
+| T1 | Dados (16.10.3): migração, entidades, funções das regras, backup 7 e restauro, excluir e restaurar tarefa com lista, fim dos caminhos de lista em rotina | Teste de migração com banco real para cada caso; restauro de backup antigo igual à migração; ida e volta do backup 7. Revisão do arquiteto linha a linha antes dos testes |
+| T2 | Rotina (16.10.5) | Semântica do editor nos dois tipos e na criação; salvo é cópia; Reverter |
+| T3 | Navegação e listas (16.10.4): três abas, adicionar e excluir lista, pilha do link, atalho, Desfazer com lista, carrinho na linha da tarefa | Voltar a partir de lista aberta por notificação nunca sai do app; atalho antigo não quebra; excluir tarefa e desfazer devolve lista e itens |
+| T4 | Fechamento | Jornadas e perfil, tamanho do APK, matriz manual, atualização por cima da v1.9.1 com dados de cada caso da migração, aviso no CHANGELOG |
+
+T2 corre em paralelo com T1 e T3. Primeiro corte: os exercícios salvos.
+
+#### 16.10.7 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Migração que apaga dados num aparelho com dados reais | Autorização do usuário, backup como condição da release, aviso no CHANGELOG, teste com banco real de cada caso |
+| Índice único falhando na migração e travando a abertura do app | Criado por último, depois da limpeza; teste com listas compartilhadas e vínculos órfãos; pode sair na revisão da T1 |
+| Regras da migração e do restauro divergindo | Funções puras únicas e teste cruzado |
+| Lista de tarefa concluída e escondida fica fora de alcance | Aceito; não é dado perdido, a tarefa a mantém |
+| Barra mexida agora e de novo na v1.12.0 | Aceito pelo usuário ao tirar a aba agora |
+| Dado parado no banco (coluna e tabela sem uso) | Registrado; limpeza só com parecer próprio |
+
+Pendente na data desta emenda:
+
+- **Três detalhes propostos pelo arquiteto e ainda não confirmados pelo usuário:** a cópia da
+  lista compartilhada para as outras tarefas (P44, passo 4 da 16.10.3; a alternativa é só a mais
+  antiga ficar com a lista), a confirmação ao excluir lista (P45) e o nome da lista nova igual ao
+  da tarefa (P46). Se a resposta for outra, esta subseção é corrigida.
+- O resultado da conferência visual da Hoje com tarefas entre rotinas, pedida pelo usuário; se
+  trouxer ajuste, entra na T3.
