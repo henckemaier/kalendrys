@@ -16,7 +16,6 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -73,7 +72,6 @@ class RoutineEditorWeekdaysTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
                 routineRepository,
                 RoutineCategoryRepository(db),
-                ShoppingRepository(db, clock = SystemAppClock),
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),

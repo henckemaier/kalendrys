@@ -108,7 +108,6 @@ class RoutineEditorViewModelTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 repository,
                 RoutineCategoryRepository(db),
-                shopping,
                 exercises,
                 undoOffers,
                 testDb.appScope(),
@@ -156,30 +155,26 @@ class RoutineEditorViewModelTest {
         vm.updateStart(LocalTime.of(7, 0))
         vm.toggleDay(DayOfWeek.SUNDAY)
         vm.updateColor(RoutineColor.entries.last())
-        vm.createShoppingList("Feira")
 
         assertTrue(db.routineDao().all().isEmpty())
-        assertTrue(db.shoppingListDao().all().isEmpty())
         assertTrue(alarms.calls.isEmpty())
-        val state = vm.awaitUi { it.pendingListName == "Feira" }
-        assertTrue(state.hasDraftChanges)
+        assertTrue(vm.awaitUi { it.hasDraftChanges }.hasDraftChanges)
     }
 
     @Test
-    fun `criacao - Criar rotina grava rotina e lista nova juntas, agenda e fecha`() = runTest {
+    fun `criacao - Criar rotina grava a rotina, sem lista, agenda e fecha`() = runTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.updateTitle("Feira")
-        vm.createShoppingList(" Hortifruti ")
 
         vm.create()
         vm.awaitClosed()
 
         val routine = db.routineDao().all().single()
-        val list = db.shoppingListDao().all().single()
         assertEquals("Feira", routine.title)
-        assertEquals("Hortifruti", list.name)
-        assertEquals(list.id, routine.shoppingListId)
+        // Rotina não tem lista desde a v1.10.0 (ADR-0002 16.10.1).
+        assertNull(routine.shoppingListId)
+        assertTrue(db.shoppingListDao().all().isEmpty())
         assertTrue(alarms.calls.isNotEmpty())
     }
 
@@ -223,29 +218,15 @@ class RoutineEditorViewModelTest {
     }
 
     @Test
-    fun `criacao - descartar fecha sem gravar nem criar lista`() = runTest {
+    fun `criacao - descartar fecha sem gravar`() = runTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.updateTitle("Rascunho")
-        vm.createShoppingList("Feira")
 
         vm.discardDraft()
         vm.awaitClosed()
 
         assertTrue(db.routineDao().all().isEmpty())
-        assertTrue(db.shoppingListDao().all().isEmpty())
-    }
-
-    @Test
-    fun `criacao - modelo mantem a lista ja escolhida`() = runTest {
-        val listId = shopping.createList("Mercado")
-        val vm = viewModel()
-        vm.awaitLoaded()
-        vm.attachShoppingList(listId)
-
-        vm.applyDraft(RoutineDraft(title = "Treino", startMinute = 1080))
-
-        assertEquals(listId, vm.awaitUi { it.fields?.shoppingListId == listId }.fields!!.shoppingListId)
     }
 
     // --- Edição -------------------------------------------------------------------------------------
@@ -383,33 +364,6 @@ class RoutineEditorViewModelTest {
     }
 
     @Test
-    fun `edicao - lista existente, nova e desvincular`() = runTest {
-        val routine = saved()
-        val listId = shopping.createList("Mercado")
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        vm.attachShoppingList(listId)
-        eventually { row(routine.id).shoppingListId == listId }
-
-        vm.createShoppingList("Farmácia")
-        eventually { db.shoppingListDao().all().size == 2 && row(routine.id).shoppingListId != listId }
-
-        vm.detachShoppingList()
-        eventually { row(routine.id).shoppingListId == null }
-        assertEquals(2, db.shoppingListDao().all().size)
-    }
-
-    @Test
-    fun `edicao - vinculo orfao equivale a sem lista`() = runTest {
-        val routine = routines.add(Routine(title = "Feira", startMinute = 480, shoppingListId = 999, createdAt = TEST_CREATED_AT))
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        assertNull(vm.uiState.value.shoppingList)
-    }
-
-    @Test
     fun `edicao - excluir grava o pendente, arquiva, oferece Desfazer e fecha`() = runTest {
         val routine = saved()
         val vm = viewModel(routine.id)
@@ -428,6 +382,7 @@ class RoutineEditorViewModelTest {
 
     @Test
     fun `edicao - duplicar copia a linha gravada, sem lista nem pausa, e fecha`() = runTest {
+        // Vínculo de lista de antes da v1.10.0 (a coluna fica no banco): a cópia não o leva.
         val listId = shopping.createList("Mercado")
         val routine = routines.add(Routine(title = "Treino", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         routines.pause(routine, now = 1L)
@@ -470,23 +425,6 @@ class RoutineEditorViewModelTest {
         vm.awaitPendingWrites()
 
         assertNull(row(routine.id).pausedAt)
-    }
-
-    @Test
-    fun `edicao - Reverter depois de criar lista nova deixa a lista avulsa`() = runTest {
-        // N4 da revisão da E3: o vínculo volta ao do retrato; a lista criada continua na aba Listas.
-        val routine = saved()
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        vm.createShoppingList("Feira")
-        eventually { row(routine.id).shoppingListId != null }
-
-        vm.revert()
-        vm.awaitPendingWrites()
-
-        assertNull(row(routine.id).shoppingListId)
-        assertEquals(listOf("Feira"), db.shoppingListDao().all().map { it.name })
     }
 
     // --- NB-E3-B do Lince ---------------------------------------------------------------------------

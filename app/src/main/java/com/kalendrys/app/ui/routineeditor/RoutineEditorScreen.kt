@@ -53,7 +53,6 @@ import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
-import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.theme.Spacing
 import kotlinx.coroutines.flow.collectLatest
 
@@ -66,8 +65,6 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 fun RoutineEditorScreen(
     onBack: () -> Unit,
-    /** Abre a tela da lista de compras anexada (rota `shopping-list/{listId}`, ligada na navegação). */
-    onOpenShoppingList: (Long) -> Unit = {},
     viewModel: RoutineEditorViewModel = viewModel(factory = RoutineEditorViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -160,7 +157,6 @@ fun RoutineEditorScreen(
                 state = state,
                 fields = fields,
                 viewModel = viewModel,
-                onOpenShoppingList = onOpenShoppingList,
                 // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
                 contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s, bottom = Spacing.xxl),
             )
@@ -194,14 +190,12 @@ private fun EditorContent(
     state: RoutineEditorViewModel.UiState,
     fields: RoutineDraft,
     viewModel: RoutineEditorViewModel,
-    onOpenShoppingList: (Long) -> Unit,
     contentPadding: PaddingValues,
 ) {
     var showStartPicker by rememberSaveable { mutableStateOf(false) }
     var showEndPicker by rememberSaveable { mutableStateOf(false) }
     var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
     var showEndDatePicker by rememberSaveable { mutableStateOf(false) }
-    var showListPicker by rememberSaveable { mutableStateOf(false) }
     // Diálogo de add/editar exercício. editingExerciseId null + diálogo aberto = novo item; senão, edição.
     var showExerciseDialog by rememberSaveable { mutableStateOf(false) }
     var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -252,17 +246,6 @@ private fun EditorContent(
             item(key = "category") {
                 CategorySection(categories = state.categories, selectedId = fields.categoryId, onSelect = viewModel::updateCategory)
             }
-        }
-        // Lista de compras: qualquer rotina pode ter uma, inclusive a nova (criada junto com ela, 15.5).
-        item(key = "shopping-list") {
-            ListSection(
-                shoppingList = state.shoppingList,
-                pendingListName = state.pendingListName,
-                routineId = state.routine?.id,
-                onOpen = onOpenShoppingList,
-                onDetach = viewModel::detachShoppingList,
-                onAdd = { showListPicker = true },
-            )
         }
         if (state.isExerciseCategory) {
             item(key = "exercise-title") { SectionTitle(stringResource(R.string.exercise_section_title)) }
@@ -379,21 +362,6 @@ private fun EditorContent(
                 showEndDatePicker = false
             },
             onDismiss = { showEndDatePicker = false },
-        )
-    }
-    if (showListPicker) {
-        ShoppingListPicker(
-            lists = state.availableLists,
-            suggestedName = fields.title,
-            onCreate = { name ->
-                viewModel.createShoppingList(name)
-                showListPicker = false
-            },
-            onPick = { listId ->
-                viewModel.attachShoppingList(listId)
-                showListPicker = false
-            },
-            onDismiss = { showListPicker = false },
         )
     }
     if (showExerciseDialog) {

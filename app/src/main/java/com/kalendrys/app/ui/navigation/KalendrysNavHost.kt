@@ -236,7 +236,6 @@ fun KalendrysNavHost(
                 ) {
                     RoutineEditorScreen(
                         onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) },
-                        onOpenShoppingList = openShoppingList,
                     )
                 }
                 // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado

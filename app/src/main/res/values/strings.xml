@@ -184,9 +184,6 @@
     <string name="routine_when">Quando</string>
     <string name="routine_appearance">Aparência</string>
     <string name="routine_title_required">Dê um título à rotina.</string>
-    <string name="routine_list_pending">Lista nova: %1$s</string>
-    <string name="routine_list_pending_hint">Ela é criada junto com a rotina.</string>
-    <string name="routine_list_pending_remove">Não criar a lista</string>
     <string name="routine_more_options_expanded">Aberto</string>
     <string name="routine_more_options_collapsed">Recolhido</string>
     <!-- Editores (tarefa e rotina), v1.9.0: desfaz as alterações da sessão (ADR-0002 15.3) -->

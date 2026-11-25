@@ -28,12 +28,6 @@ data class RoutineDraft(
     val startEpochDay: Long? = null,
     /** Último dia (epoch day) em que a rotina vale (rotina temporária), ou null para sem fim. */
     val endEpochDay: Long? = null,
-    /**
-     * Lista de compras anexada ([com.kalendrys.app.data.local.entity.ShoppingList.id]), ou null.
-     * Na criação, uma lista existente escolhida; a lista NOVA fica fora daqui, no ViewModel, e é criada
-     * junto com a rotina. Os itens da lista nunca são do editor; persistem na hora.
-     */
-    val shoppingListId: Long? = null,
 ) {
     val hasDays: Boolean get() = daysOfWeek and RoutineDays.ALL != 0
 
@@ -70,7 +64,6 @@ data class RoutineDraft(
             weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = startEpochDay,
             endEpochDay = endEpochDay,
-            shoppingListId = shoppingListId,
         )
 
     /** [now]: o instante de criação, do relógio do app (v1.10.0, 16.3). */
@@ -98,7 +91,6 @@ data class RoutineDraft(
             weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = routine.startEpochDay,
             endEpochDay = routine.endEpochDay,
-            shoppingListId = routine.shoppingListId,
         )
     }
 }

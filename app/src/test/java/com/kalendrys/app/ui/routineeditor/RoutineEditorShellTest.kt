@@ -30,7 +30,6 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
@@ -89,7 +88,6 @@ class RoutineEditorShellTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 routines,
                 RoutineCategoryRepository(db),
-                ShoppingRepository(db, clock = SystemAppClock),
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 offers,
                 testDb.appScope(),
@@ -132,7 +130,9 @@ class RoutineEditorShellTest {
     @Test
     fun `edicao - secoes na ordem da P4`() {
         showSaved()
-        val order = listOf("Título", "Quando", "Avisar no início", "Lista de compras", "Aparência")
+        // Sem a seção Lista desde a v1.10.0 (ADR-0002 16.10.5): rotina não tem lista.
+        assertEquals(0, compose.onAllNodes(hasText("Lista de compras"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        val order = listOf("Título", "Quando", "Avisar no início", "Aparência")
         val tops = order.map { label ->
             compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         }

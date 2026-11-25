@@ -101,7 +101,6 @@ class RoutineDeleteFromEditorTest {
             SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
             routines,
             RoutineCategoryRepository(testDb.db),
-            ShoppingRepository(testDb.db, clock = SystemAppClock),
             ExerciseRepository(testDb.db.exerciseItemDao(), clock = SystemAppClock),
             offers,
             testDb.appScope(),
