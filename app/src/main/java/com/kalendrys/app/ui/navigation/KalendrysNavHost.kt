@@ -54,7 +54,6 @@ import com.kalendrys.app.R
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.ui.calendar.CalendarScreen
-import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
 import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.diagnostics.AlarmDiagnosticsScreen
@@ -122,7 +121,6 @@ fun KalendrysNavHost(
     val openTask: (Long) -> Unit = { taskId -> navController.navigate(taskDetailRoute(taskId)) }
     val openSettings: () -> Unit = { navController.navigate(SETTINGS_ROUTE) { launchSingleTop = true } }
     val openDiagnostics: () -> Unit = { navController.navigate(ALARM_DIAGNOSTICS_ROUTE) { launchSingleTop = true } }
-    val openCategories: () -> Unit = { navController.navigate(ROUTINE_CATEGORIES_ROUTE) { launchSingleTop = true } }
     val openRoutine: (Long) -> Unit = { routineId -> navController.navigate(routineEditorRoute(routineId)) }
     val openShoppingList: (Long) -> Unit = { listId -> navController.navigate(shoppingListRoute(listId)) }
     val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
@@ -274,7 +272,6 @@ fun KalendrysNavHost(
                     SettingsScreen(
                         onBack = { navController.popIfCurrent(SETTINGS_ROUTE) },
                         onOpenDiagnostics = openDiagnostics,
-                        onOpenCategories = openCategories,
                     )
                 }
                 composable(
@@ -283,13 +280,6 @@ fun KalendrysNavHost(
                     popExitTransition = { slideOutOfContainer(SlideDirection.End) },
                 ) {
                     AlarmDiagnosticsScreen(onBack = { navController.popIfCurrent(ALARM_DIAGNOSTICS_ROUTE) })
-                }
-                composable(
-                    route = ROUTINE_CATEGORIES_ROUTE,
-                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-                ) {
-                    RoutineCategoriesScreen(onBack = { navController.popIfCurrent(ROUTINE_CATEGORIES_ROUTE) })
                 }
             }
         }
@@ -334,7 +324,6 @@ fun KalendrysNavHost(
 
 private const val SETTINGS_ROUTE = "settings"
 private const val ALARM_DIAGNOSTICS_ROUTE = "alarm-diagnostics"
-private const val ROUTINE_CATEGORIES_ROUTE = "routine-categories"
 
 /** Evita desempilhar duas vezes com toques repetidos em "voltar" durante a animação. */
 private fun NavHostController.popIfCurrent(route: String) {

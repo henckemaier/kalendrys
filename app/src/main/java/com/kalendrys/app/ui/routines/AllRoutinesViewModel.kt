@@ -9,14 +9,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.domain.AppLocale
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -26,60 +23,41 @@ const val ALL_ROUTINES_ROUTE = "routines-all"
 /**
  * "Todas as rotinas" (v1.8.0, E2; ADR-0002, 14.4): a gestão das rotinas, fora do retrato do dia.
  * Mostra as ativas e as pausadas (as arquivadas não), cada grupo por horário de início, título e id;
- * pausar, retomar e excluir (arquivar) com o Desfazer do app. O filtro por categoria (P3) mora aqui, não na Hoje.
- * As regras (alarmes, avisos, catch-up) ficam no [RoutineRepository]; aqui só a lista e o filtro.
+ * pausar, retomar e excluir (arquivar) com o Desfazer do app. Sem categorias desde a v1.10.0 (ADR-0002,
+ * 16.10.5): nem filtro nem nome da categoria na linha.
+ * As regras (alarmes, avisos, catch-up) ficam no [RoutineRepository]; aqui só a lista.
  */
 class AllRoutinesViewModel(
     private val routines: RoutineRepository,
-    categories: RoutineCategoryRepository,
     /** Excluir e oferecer o Desfazer do app (NB-E3-C), o mesmo caminho do editor. */
     private val undoOffers: UndoOffers,
 ) : ViewModel() {
 
-    /** Uma linha: a rotina e a categoria dela (null sem categoria ou com categoria excluída). */
-    data class Row(val routine: Routine, val category: RoutineCategory?) {
+    /** Uma linha: a rotina. */
+    data class Row(val routine: Routine) {
         val isPaused: Boolean get() = routine.pausedAt != null
     }
 
     data class UiState(
         val isLoaded: Boolean = false,
-        /** Ativas do filtro atual, por horário. */
+        /** Ativas, por horário. */
         val active: List<Row> = emptyList(),
-        /** Pausadas do filtro atual, por horário. */
+        /** Pausadas, por horário. */
         val paused: List<Row> = emptyList(),
-        /** Existe alguma rotina não arquivada (sem filtro): sem nenhuma, a tela mostra o estado vazio. */
+        /** Existe alguma rotina não arquivada: sem nenhuma, a tela mostra o estado vazio. */
         val hasAny: Boolean = false,
-        /** Categorias existentes, para os chips (vazio = a tela não mostra o filtro). */
-        val categories: List<RoutineCategory> = emptyList(),
-        /** Categoria do filtro ativo, ou null para "todas". */
-        val selectedCategoryId: Long? = null,
     )
 
-    private val selectedCategoryId = MutableStateFlow<Long?>(null)
-
     val uiState: StateFlow<UiState> =
-        combine(routines.routines, categories.categories, selectedCategoryId) { all, categoryList, rawSelected ->
-            // Categoria do filtro excluída: volta sozinho para "todas".
-            val selected = rawSelected?.takeIf { id -> categoryList.any { it.id == id } }
-            val byId = categoryList.associateBy { it.id }
-            val visible = all.filter { it.archivedAt == null }
-            val rows = visible
-                .filter { selected == null || it.categoryId == selected }
-                .sortedWith(ORDER)
-                .map { Row(it, it.categoryId?.let(byId::get)) }
+        routines.routines.map { all ->
+            val rows = all.filter { it.archivedAt == null }.sortedWith(ORDER).map(::Row)
             UiState(
                 isLoaded = true,
                 active = rows.filterNot { it.isPaused },
                 paused = rows.filter { it.isPaused },
-                hasAny = visible.isNotEmpty(),
-                categories = categoryList,
-                selectedCategoryId = selected,
+                hasAny = rows.isNotEmpty(),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
-
-    fun selectCategory(categoryId: Long?) {
-        selectedCategoryId.value = categoryId
-    }
 
     fun pause(routine: Routine) {
         viewModelScope.launch { routines.pause(routine) }
@@ -105,7 +83,7 @@ class AllRoutinesViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                AllRoutinesViewModel(app.routineRepository, app.routineCategoryRepository, app.undoOffers)
+                AllRoutinesViewModel(app.routineRepository, app.undoOffers)
             }
         }
     }
