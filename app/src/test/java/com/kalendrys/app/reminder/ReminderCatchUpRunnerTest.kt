@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
@@ -278,7 +279,7 @@ class ReminderCatchUpRunnerTest {
         seenAt(at(8))
         repository.deleteTask(task) // às 8:30, antes do lembrete
         clock = at(10)
-        repository.restoreTask(task) // "Desfazer" às 10:00
+        repository.restoreTask(TaskWithList(task, null, emptyList())) // "Desfazer" às 10:00
         runner.run(at(10, 5))
         assertEquals(emptyList<Long>(), notifier.shown)
     }

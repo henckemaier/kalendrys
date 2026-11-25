@@ -14,3 +14,13 @@ data class ShoppingListStatsRow(
     val picked: Int,
     val totalCents: Long,
 )
+
+/**
+ * Uma tarefa excluída com a lista dela e os itens, como estavam (v1.10.0, ADR-0002 16.10.4): o que o
+ * Desfazer guarda em memória e devolve junto. [list] nulo = tarefa sem lista (ou vínculo órfão).
+ */
+data class TaskWithList(
+    val task: com.kalendrys.app.data.local.entity.Task,
+    val list: com.kalendrys.app.data.local.entity.ShoppingList?,
+    val items: List<com.kalendrys.app.data.local.entity.ShoppingItem>,
+)

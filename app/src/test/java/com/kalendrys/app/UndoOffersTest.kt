@@ -11,6 +11,7 @@ import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.deletedTaskTarget
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -80,7 +81,7 @@ class UndoOffersTest {
     private fun offers(scope: CoroutineScope, clock: () -> Long = { System.currentTimeMillis() }) =
         UndoOffers(repository, routines, scope, clockOf(now = clock))
 
-    private fun deletedTask(task: Task) = UndoTarget.DeletedTask(task)
+    private fun deletedTask(task: Task) = deletedTaskTarget(task)
 
     private suspend fun tomorrowWithList(): Long {
         val listId = shopping.createList("Feira")
@@ -150,26 +151,41 @@ class UndoOffersTest {
     }
 
     @Test
-    fun `excluir mantem o historico e restaurar o reconecta, com o vinculo de lista`() = runTest {
+    fun `excluir mantem o historico e restaurar o reconecta, com a lista e os itens`() = runTest {
         val offers = offers(this)
         val id = tomorrowWithList()
         val logId = repository.logCompletion(id)
         val task = repository.observeTask(id).first()!!
+        val listId = checkNotNull(task.shoppingListId)
+        val list = testDb.db.shoppingListDao().byId(listId)!!
+        shopping.add(listId, "Arroz", quantity = 1, priceCents = null)
+        val items = testDb.db.shoppingItemDao().all().filter { it.listId == listId }
         val history = repository.observeCompletions(id).first()
 
-        repository.deleteTask(task)
+        offers.deleteTask(task).join()
         assertNull(repository.observeTask(id).first())
-        // Sem Desfazer a tarefa fica excluída, mas o histórico de conclusões continua lá.
+        // v1.10.0: a lista e os itens saem com a tarefa; o histórico de conclusões continua lá.
+        assertNull(testDb.db.shoppingListDao().byId(listId))
         assertEquals(history, repository.observeCompletions(id).first())
 
-        offers.offer(deletedTask(task))
         offers.undo(offers.pending.value!!).join()
 
         assertNull("Desfazer limpa a oferta", offers.pending.value)
-        val restored = repository.observeTask(id).first()!!
-        assertEquals(task, restored)
-        assertEquals(task.shoppingListId, restored.shoppingListId)
+        assertEquals(task, repository.observeTask(id).first())
+        assertEquals("a lista volta com o mesmo id", list, testDb.db.shoppingListDao().byId(listId))
+        assertEquals("e os itens também", items, testDb.db.shoppingItemDao().all().filter { it.listId == listId })
         assertEquals(listOf(logId), repository.observeCompletions(id).first().map { it.id })
+    }
+
+    @Test
+    fun `excluir tarefa que ja nao existe nao oferece Desfazer`() = runTest {
+        val offers = offers(this)
+        val task = repository.addTask("Feira")
+        repository.deleteTask(task)
+
+        offers.deleteTask(task).join()
+
+        assertNull(offers.pending.value)
     }
 
     @Test
@@ -177,10 +193,10 @@ class UndoOffersTest {
         val offers = offers(this)
         val id = tomorrowWithList()
         val task = repository.observeTask(id).first()!!
-        repository.deleteTask(task)
+        val deleted = checkNotNull(repository.deleteTask(task))
         scheduler.reset()
 
-        offers.offer(deletedTask(task))
+        offers.offer(UndoTarget.DeletedTask(deleted))
         offers.undo(offers.pending.value!!).join()
 
         assertEquals(task, repository.observeTask(id).first())
@@ -269,7 +285,7 @@ class UndoOffersTest {
         fromScreenThenClose { offers.deleteTask(task) }.join()
 
         assertNull(repository.observeTask(task.id).first())
-        assertEquals(UndoTarget.DeletedTask(task), offers.pending.value?.target)
+        assertEquals(deletedTaskTarget(task), offers.pending.value?.target)
     }
 
     @Test
