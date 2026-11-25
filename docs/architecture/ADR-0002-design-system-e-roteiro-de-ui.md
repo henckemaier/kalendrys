@@ -1871,6 +1871,22 @@ título cortado do editor em paisagem, leia-se **v1.11.0**.
   hoje como fluxo; repositórios e ViewModels a recebem por parâmetro. É pré-requisito da 16.4,
   que depende de "hoje" e precisa de teste de virada de dia, e fecha o limite da meia-noite da
   aba Tarefas (15.9).
+  Regras da peça (`AppClock`, revisada em 68051ed):
+  - **Só dois primitivos**, o instante de agora e o fuso, lidos a cada chamada. Hoje, a hora local
+    e o fluxo da data saem deles, para que agora e hoje não possam discordar, nem num relógio de
+    teste. O relógio de teste tem um instante só; avançá-lo move tudo.
+  - **O domínio continua puro:** recebe data, instante e fuso por parâmetro, nunca o relógio.
+  - **Tela só lê o relógio para valor que é da própria tela** (data inicial de um seletor, o
+    minuto corrente, um rótulo de "hoje"). O que decide o que aparece numa lista vem do estado do
+    ViewModel.
+  - **As entidades não carimbam a criação sozinhas.** A data de criação da rotina entra na regra
+    de ocorrência, então um valor padrão lido do sistema era uma leitura de hoje escondida. Quem
+    cria passa o instante. O esquema do banco não muda.
+  - **Preso por teste:** um teste varre o código de produção e falha em qualquer leitura direta
+    de hora, data ou fuso do sistema fora de duas exceções escritas nele: a própria peça e a
+    migração já publicada, que não se altera.
+  - Limite conhecido, igual ao de antes: o fluxo da data não reemite quando a hora ou o fuso
+    mudam com a coleta em andamento; só na meia-noite seguinte ou ao recomeçar.
 - **Instante pronto para os alarmes de rotina.** O repositório passa ao `RoutineAlarms` o
   instante já convertido, em vez de data e hora locais convertidas lá com o fuso do sistema
   (ADR-0003, 8.6). Os extras de dia e minuto do alarme, que ninguém lê, saem.
