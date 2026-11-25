@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
@@ -18,10 +19,12 @@ import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
+import com.kalendrys.app.domain.ListOwnership
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineColor
+import com.kalendrys.app.domain.RoutineKind
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -64,10 +67,11 @@ class BackupManager(
         val shoppingItems: Int = 0,
         val exerciseItems: Int = 0,
         val shoppingLists: Int = 0,
+        val savedExercises: Int = 0,
     ) {
         val total: Int
             get() = tasks + completionLogs + routines + routineCompletions +
-                routineCategories + routineOverrides + shoppingItems + exerciseItems + shoppingLists
+                routineCategories + routineOverrides + shoppingItems + exerciseItems + shoppingLists + savedExercises
     }
 
     /** Grava o backup no arquivo escolhido; devolve o que foi exportado. Lança [IOException] se não abrir. */
@@ -106,6 +110,7 @@ class BackupManager(
         lateinit var shoppingItems: List<ShoppingItem>
         lateinit var exerciseItems: List<ExerciseItem>
         lateinit var shoppingLists: List<ShoppingList>
+        lateinit var savedExercises: List<SavedExercise>
         // Snapshot consistente mesmo com o app gravando no meio da exportação.
         database.withTransaction {
             shoppingLists = database.shoppingListDao().all()
@@ -117,6 +122,7 @@ class BackupManager(
             overrides = database.routineOverrideDao().all()
             shoppingItems = database.shoppingItemDao().all()
             exerciseItems = database.exerciseItemDao().all()
+            savedExercises = database.savedExerciseDao().all()
         }
 
         val root = JSONObject().apply {
@@ -133,6 +139,7 @@ class BackupManager(
             put("shoppingLists", shoppingLists.toJsonArray(ShoppingList::toJson))
             put("shoppingItems", shoppingItems.toJsonArray(ShoppingItem::toJson))
             put("exerciseItems", exerciseItems.toJsonArray(ExerciseItem::toJson))
+            put("savedExercises", savedExercises.toJsonArray(SavedExercise::toJson))
             put("settings", current.toJson())
         }
         val stats = Stats(
@@ -145,6 +152,7 @@ class BackupManager(
             shoppingItems = shoppingItems.size,
             exerciseItems = exerciseItems.size,
             shoppingLists = shoppingLists.size,
+            savedExercises = savedExercises.size,
         )
         return root.toString(2) to stats
     }
@@ -161,7 +169,7 @@ class BackupManager(
             throw IOException("Backup incompatível (schemaVersion=$version)")
         }
 
-        val tasks = root.getJSONArray("tasks").map(JSONObject::toTask)
+        val parsedTasks = root.getJSONArray("tasks").map(JSONObject::toTask)
         val logs = root.getJSONArray("completionLogs").map(JSONObject::toCompletionLog)
         val parsedRoutines = root.getJSONArray("routines").map(JSONObject::toRoutine)
         val routineLogs = root.getJSONArray("routineCompletions").map(JSONObject::toRoutineCompletion)
@@ -170,22 +178,41 @@ class BackupManager(
         val overrides = root.optJSONArray("routineOverrides").orEmpty().map(JSONObject::toRoutineOverride)
         // v6: listas independentes. Backup ≤ v5 (itens presos a routineId, sem listas) passa pela
         // MESMA regra da migração 9→10 (LegacyShoppingLists); backup v3 nem tem a array -> vazia.
-        val shoppingLists: List<ShoppingList>
-        val shoppingItems: List<ShoppingItem>
-        val routines: List<Routine>
+        val parsedLists: List<ShoppingList>
+        val parsedItems: List<ShoppingItem>
         if (version >= 6) {
-            shoppingLists = root.optJSONArray("shoppingLists").orEmpty().map(JSONObject::toShoppingList)
-            shoppingItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
-            routines = parsedRoutines
+            parsedLists = root.optJSONArray("shoppingLists").orEmpty().map(JSONObject::toShoppingList)
+            parsedItems = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toShoppingItem)
         } else {
             val legacy = root.optJSONArray("shoppingItems").orEmpty().map(JSONObject::toLegacyShoppingItem)
             val converted = LegacyShoppingLists.convert(legacy, parsedRoutines.associate { it.id to it.title })
-            shoppingLists = converted.lists
-            shoppingItems = converted.items
-            routines = parsedRoutines.map { r -> converted.routineLinks[r.id]?.let { r.copy(shoppingListId = it) } ?: r }
+            parsedLists = converted.lists
+            parsedItems = converted.items
+            // O vínculo rotina → lista que a conversão dava sai logo abaixo (passo 3): a lista fica sem
+            // tarefa e cai no passo 6, como na migração 9→10 seguida da 11→12.
         }
         // Retrocompatível: um backup v4 (schemaVersion < 5) não tem esta array -> lista vazia.
         val exerciseItems = root.optJSONArray("exerciseItems").orEmpty().map(JSONObject::toExerciseItem)
+        // v7: exercícios salvos; backup ≤ v6 não tem a array -> vazia.
+        val savedExercises = root.optJSONArray("savedExercises").orEmpty().map(JSONObject::toSavedExercise)
+
+        // Regras da v1.10.0 (ADR-0002 16.10.3), as MESMAS da migração 11→12 ([ListOwnership]):
+        // 1. Backup ≤ v6 não tem o tipo: sai da categoria. No v7 o tipo já vem gravado e não se recalcula.
+        // 3. Rotina sem lista, em qualquer versão.
+        val categoryKinds = categories.associate { it.id to it.kind }
+        val routines = parsedRoutines.map { r ->
+            val kind = if (version >= 7) r.kind else ListOwnership.kindFromCategory(r.categoryId?.let(categoryKinds::get)).name
+            r.copy(kind = kind, shoppingListId = null)
+        }
+        // 4 a 6. Lista de uma tarefa só; no v7, dado já correto, não muda nada.
+        val plan = ListOwnership.plan(
+            tasks = parsedTasks.map { ListOwnership.TaskLink(it.id, it.createdAt, it.shoppingListId) },
+            lists = parsedLists,
+            items = parsedItems,
+        )
+        val tasks = parsedTasks.map { t -> if (t.id in plan.taskLinks) t.copy(shoppingListId = plan.taskLinks[t.id]) else t }
+        val shoppingLists = parsedLists.filter { it.id !in plan.deletedListIds } + plan.newLists
+        val shoppingItems = parsedItems.filter { it.id !in plan.deletedItemIds } + plan.newItems
 
         // Limpa e reinsere numa transação só: ou o restauro vale inteiro, ou não vale nada.
         database.withTransaction {
@@ -198,6 +225,7 @@ class BackupManager(
             database.shoppingItemDao().clear()
             database.shoppingListDao().clear()
             database.exerciseItemDao().clear()
+            database.savedExerciseDao().clear()
             database.taskDao().insertAll(tasks)
             database.completionLogDao().insertAll(logs)
             database.routineDao().insertAll(routines)
@@ -207,6 +235,7 @@ class BackupManager(
             database.shoppingListDao().insertAll(shoppingLists)
             database.shoppingItemDao().insertAll(shoppingItems)
             database.exerciseItemDao().insertAll(exerciseItems)
+            database.savedExerciseDao().insertAll(savedExercises)
         }
 
         // Configurações ficam no DataStore (fora da transação do Room).
@@ -231,6 +260,7 @@ class BackupManager(
             shoppingItems = shoppingItems.size,
             exerciseItems = exerciseItems.size,
             shoppingLists = shoppingLists.size,
+            savedExercises = savedExercises.size,
         )
     }
 
@@ -248,11 +278,14 @@ class BackupManager(
          * v6: listas de compras independentes (ADR-0001) — array shoppingLists; shoppingItems com
          * listId/pickedBeforeReset (sem routineId); shoppingListId em tarefas e rotinas. Backup ≤ v5
          * é convertido pela mesma regra da migração 9→10 ([LegacyShoppingLists]).
+         * v7 (v1.10.0, ADR-0002 16.10.3): `kind` na rotina e a array savedExercises; a rotina deixa de
+         * levar shoppingListId. Restaurar ≤ v6 aplica as regras dos passos 1 e 3 a 6 da migração 11→12
+         * ([ListOwnership]); o v7 passa pelos passos 3 a 6, que não mudam dado já correto.
          */
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
 
         /** Metadado: versão do schema do Room no momento do export (ver AppDatabase.version). */
-        private const val DATABASE_VERSION = 11
+        private const val DATABASE_VERSION = 12
 
         private val DEFAULT_SUMMARY_MINUTE = AppSettings.minuteOfDay(AppSettings.DEFAULT_SUMMARY_TIME)
     }
@@ -344,7 +377,8 @@ private fun Routine.toJson() = JSONObject().apply {
     put("weekInterval", weekInterval)
     putNullableLong("startEpochDay", startEpochDay)
     putNullableLong("endEpochDay", endEpochDay)
-    putNullableLong("shoppingListId", shoppingListId)
+    // v7: rotina sem lista (o shoppingListId não vai mais); o tipo vai.
+    put("kind", kind)
 }
 
 private fun JSONObject.toRoutine() = Routine(
@@ -366,8 +400,30 @@ private fun JSONObject.toRoutine() = Routine(
     weekInterval = optInt("weekInterval", 1),
     startEpochDay = nullableLong("startEpochDay"),
     endEpochDay = nullableLong("endEpochDay"),
-    // Retrocompatível: backup ≤ v5 não tem o campo (o vínculo vem do LegacyShoppingLists).
+    // Backup ≤ v6 pode trazer o vínculo de lista: o restauro o apaga (passo 3 da 16.10.3).
     shoppingListId = nullableLong("shoppingListId"),
+    // v7; backup ≤ v6 não tem: o restauro calcula pela categoria (passo 1).
+    kind = optString("kind", RoutineKind.DEFAULT.name),
+)
+
+private fun SavedExercise.toJson() = JSONObject().apply {
+    put("id", id)
+    put("name", name)
+    put("sets", sets)
+    put("reps", reps)
+    putNullableString("load", load)
+    putNullableInt("restSeconds", restSeconds)
+    put("createdAt", createdAt)
+}
+
+private fun JSONObject.toSavedExercise() = SavedExercise(
+    id = getLong("id"),
+    name = getString("name"),
+    sets = optInt("sets", 1),
+    reps = optInt("reps", 1),
+    load = nullableString("load"),
+    restSeconds = nullableInt("restSeconds"),
+    createdAt = getLong("createdAt"),
 )
 
 private fun RoutineCategory.toJson() = JSONObject().apply {
