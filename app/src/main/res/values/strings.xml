@@ -213,7 +213,6 @@
     <!-- Editor de rotina: lista de exercícios (categorias do tipo EXERCICIO) -->
     <string name="exercise_section_title">Lista de exercícios</string>
     <string name="exercise_empty">Nenhum exercício ainda. Toque em \"Adicionar exercício\".</string>
-    <string name="exercise_new_routine_hint">Salve a rotina para montar a lista de exercícios.</string>
     <string name="exercise_add_item">Adicionar exercício</string>
     <string name="exercise_add_title">Novo exercício</string>
     <string name="exercise_edit_title">Editar exercício</string>

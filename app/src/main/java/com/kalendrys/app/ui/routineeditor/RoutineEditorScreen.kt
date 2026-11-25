@@ -249,53 +249,43 @@ private fun EditorContent(
         }
         if (state.isExerciseCategory) {
             item(key = "exercise-title") { SectionTitle(stringResource(R.string.exercise_section_title)) }
-            if (state.isNew) {
-                item(key = "exercise-hint") {
+            // Também na criação (v1.10.0, 16.10.5): o rascunho guarda e o "Criar rotina" grava junto.
+            if (exerciseItems.isEmpty()) {
+                item(key = "exercise-empty") {
                     Text(
-                        text = stringResource(R.string.exercise_new_routine_hint),
+                        text = stringResource(R.string.exercise_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp),
                     )
                 }
             } else {
-                if (exerciseItems.isEmpty()) {
-                    item(key = "exercise-empty") {
-                        Text(
-                            text = stringResource(R.string.exercise_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                    }
-                } else {
-                    itemsIndexed(exerciseItems, key = { _, it -> "exercise-item-${it.id}" }) { index, item ->
-                        ExerciseItemRow(
-                            item = item,
-                            index = index,
-                            count = exerciseItems.size,
-                            onMoveUp = { viewModel.moveExerciseItem(item, up = true) },
-                            onMoveDown = { viewModel.moveExerciseItem(item, up = false) },
-                            onEdit = {
-                                editingExerciseId = item.id
-                                showExerciseDialog = true
-                            },
-                            onDelete = { viewModel.removeExerciseItem(item) },
-                        )
-                    }
-                }
-                item(key = "exercise-add") {
-                    TextButton(
-                        onClick = {
-                            editingExerciseId = null
+                itemsIndexed(exerciseItems, key = { _, it -> "exercise-item-${it.id}" }) { index, item ->
+                    ExerciseItemRow(
+                        item = item,
+                        index = index,
+                        count = exerciseItems.size,
+                        onMoveUp = { viewModel.moveExerciseItem(item, up = true) },
+                        onMoveDown = { viewModel.moveExerciseItem(item, up = false) },
+                        onEdit = {
+                            editingExerciseId = item.id
                             showExerciseDialog = true
                         },
-                        modifier = Modifier.padding(top = 4.dp),
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.exercise_add_item))
-                    }
+                        onDelete = { viewModel.removeExerciseItem(item) },
+                    )
+                }
+            }
+            item(key = "exercise-add") {
+                TextButton(
+                    onClick = {
+                        editingExerciseId = null
+                        showExerciseDialog = true
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.exercise_add_item))
                 }
             }
         }

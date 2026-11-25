@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingList
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +42,22 @@ interface RoutineDao {
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(routines: List<Routine>)
+
+    /**
+     * Rotina nova com os exercícios dela (criação no editor e Duplicar, v1.10.0 16.10.5): grava a
+     * rotina e, com o id dela, os [exercises] (cada um com `routineId` = 0 até aqui) numa transação
+     * só. Falhar no meio não deixa rotina sem os exercícios que a tela mostrava. Devolve o id da rotina.
+     */
+    @Transaction
+    suspend fun insertRoutineWithExercises(routine: Routine, exercises: List<ExerciseItem>): Long {
+        val routineId = insert(routine)
+        if (exercises.isNotEmpty()) insertExercises(exercises.map { it.copy(id = 0, routineId = routineId) })
+        return routineId
+    }
+
+    /** Grava os exercícios SÓ dentro de [insertRoutineWithExercises] (USO RESTRITO). */
+    @Insert
+    suspend fun insertExercises(items: List<ExerciseItem>)
 
     /**
      * Rotina nova com lista nova (criação no editor, v1.9.0 15.5): grava a lista e a rotina já

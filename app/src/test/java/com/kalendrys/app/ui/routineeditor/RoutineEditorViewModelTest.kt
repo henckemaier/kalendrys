@@ -602,6 +602,141 @@ class RoutineEditorViewModelTest {
         assertEquals("aquecer", vm.notesInput)
     }
 
+    // --- Exercícios já na criação (v1.10.0, T2, C3; ADR-0002 16.10.5) -----------------------------
+
+    /** Rotina nova com o tipo que mostra exercícios (por ora pela categoria EXERCICIO; o C2 troca pelo tipo). */
+    private suspend fun RoutineEditorViewModel.chooseExerciseType() {
+        val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
+        eventually { uiState.value.categories.any { it.id == categoryId } }
+        updateCategory(categoryId)
+        awaitUi { it.isExerciseCategory }
+    }
+
+    @Test
+    fun `criacao - exercicios montados no rascunho nao gravam antes e contam como mudanca`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        val initial = vm.awaitUi { it.isExerciseCategory }
+        assertTrue(initial.exerciseItems.isEmpty())
+
+        vm.addExerciseItem("Agachamento", sets = 3, reps = 10, load = "20kg", restSeconds = 60)
+
+        val state = vm.awaitUi { it.exerciseItems.size == 1 }
+        assertEquals("Agachamento", state.exerciseItems.single().name)
+        assertTrue(state.hasDraftChanges)
+        assertTrue(db.routineDao().all().isEmpty())
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `criacao - Criar rotina grava os exercicios junto, na ordem, normalizados`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Força")
+        vm.addExerciseItem(" Supino ", sets = 0, reps = 8, load = "  ", restSeconds = -5)
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = "30kg", restSeconds = 90)
+        vm.addExerciseItem("Prancha", sets = 2, reps = 1, load = null, restSeconds = null)
+        vm.awaitUi { it.exerciseItems.size == 3 }
+
+        vm.create()
+        vm.awaitClosed()
+
+        val routine = db.routineDao().all().single()
+        val items = db.exerciseItemDao().byRoutine(routine.id)
+        assertEquals(listOf("Supino", "Remada", "Prancha"), items.map { it.name })
+        assertEquals(listOf(0, 1, 2), items.map { it.position })
+        assertTrue(items.all { it.routineId == routine.id && it.id > 0 })
+        assertEquals(1, items[0].sets)
+        assertNull(items[0].load)
+        assertNull(items[0].restSeconds)
+        assertEquals("30kg", items[1].load)
+        assertEquals(90, items[1].restSeconds)
+    }
+
+    @Test
+    fun `criacao - editar, mover e remover mexem so no rascunho`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Pernas")
+        vm.addExerciseItem("A", 1, 1, null, null)
+        vm.addExerciseItem("B", 1, 1, null, null)
+        vm.addExerciseItem("C", 1, 1, null, null)
+        val three = vm.awaitUi { it.exerciseItems.size == 3 }.exerciseItems
+        assertEquals("ids provisórios distintos", 3, three.map { it.id }.distinct().size)
+
+        vm.moveExerciseItem(three[2], up = true) // A C B
+        vm.updateExerciseItem(three[0], "A2", 4, 6, "10kg", 30)
+        vm.removeExerciseItem(three[1]) // A2 C
+        val after = vm.awaitUi { it.exerciseItems.map { e -> e.name } == listOf("A2", "C") }.exerciseItems
+        assertEquals(listOf(0, 1), after.map { it.position })
+        assertEquals(4, after[0].sets)
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("A2", "C"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    @Test
+    fun `criacao - tipo sem exercicios esconde, mas Criar rotina grava os exercicios do rascunho (P2)`() = runTest {
+        // Decisão do Forja na T2 (P2): trocar para Nenhum nunca perde exercícios, na criação também.
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Treino")
+        vm.addExerciseItem("Flexão", 3, 15, null, null)
+        vm.awaitUi { it.exerciseItems.size == 1 }
+
+        vm.updateCategory(null)
+        val hidden = vm.awaitUi { !it.isExerciseCategory }
+        assertTrue(hidden.exerciseItems.isEmpty())
+        assertEquals(1, hidden.draftExercises.size)
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("Flexão"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    @Test
+    fun `criacao - descartar com exercicios nao grava nada`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.addExerciseItem("Flexão", 3, 15, null, null)
+        vm.awaitUi { it.exerciseItems.size == 1 }
+
+        vm.discardDraft()
+        vm.awaitClosed()
+
+        assertTrue(db.routineDao().all().isEmpty())
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `edicao - duplicar copia os exercicios na ordem, com ids novos`() = runTest {
+        val routine = saved()
+        exercises.add(routine.id, "A", sets = 3, reps = 10, load = "20kg", restSeconds = 60)
+        exercises.add(routine.id, "B", sets = 2, reps = 8, load = null, restSeconds = null)
+        val originals = db.exerciseItemDao().byRoutine(routine.id)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.duplicate("Cópia")
+        vm.awaitClosed()
+
+        val copy = db.routineDao().all().single { it.id != routine.id }
+        val copied = db.exerciseItemDao().byRoutine(copy.id)
+        assertEquals(listOf("A", "B"), copied.map { it.name })
+        assertEquals(listOf("20kg", null), copied.map { it.load })
+        assertTrue(copied.none { c -> originals.any { it.id == c.id } })
+        assertEquals("o original fica como estava", originals, db.exerciseItemDao().byRoutine(routine.id))
+    }
+
     private companion object {
         const val TIMEOUT_MS = 5_000L
     }

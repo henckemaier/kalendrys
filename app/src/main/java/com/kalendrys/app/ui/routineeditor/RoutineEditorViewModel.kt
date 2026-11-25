@@ -22,6 +22,7 @@ import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.nowLocal
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
@@ -56,7 +57,8 @@ import kotlinx.coroutines.launch
  * Editor de rotina (v1.9.0, ADR-0002 15.5), em dois modos:
  *
  * - **Criação** ([isNew]): rascunho ([RoutineDraft]) e o botão "Criar rotina". Nada é gravado nem
- *   agendado antes dele. Depois de criar, a tela fecha (P3). Voltar com algo preenchido pede
+ *   agendado antes dele; os exercícios montados aqui são gravados JUNTO com a rotina, numa transação
+ *   ([RoutineRepository.add] com `exercises`, v1.10.0 16.10.5). Depois de criar, a tela fecha (P3). Voltar com algo preenchido pede
  *   confirmação ([UiState.hasDraftChanges]).
  * - **Edição**: a tela mostra a linha do banco e envia MUDANÇAS ([RoutineChange]) pelo
  *   [RoutineRepository.edit], que as aplica sobre a linha mais recente (15.2): pausar ou arquivar
@@ -111,6 +113,11 @@ class RoutineEditorViewModel(
         val exerciseItems: List<ExerciseItem> = emptyList(),
         /** Exercícios como estavam ao abrir o editor; null até a 1ª leitura da lista. */
         val exerciseBaseline: List<ExerciseItem>? = null,
+        /**
+         * Criação: TODOS os exercícios do rascunho, mesmo com o tipo sem exercícios (escondidos, mas
+         * gravados junto: P2 da T2). [exerciseItems] é o que a tela mostra.
+         */
+        val draftExercises: List<ExerciseItem> = emptyList(),
         /** Edição: campos mexidos na sessão (o Reverter só manda esses de volta). */
         val touched: Set<Field> = emptySet(),
         /** Criação: o "Criar rotina" já foi tocado e a gravação está em curso (botão e descarte desligados). */
@@ -121,7 +128,7 @@ class RoutineEditorViewModel(
 
         /** Criação: algo mudou desde a abertura (voltar pede confirmação). */
         val hasDraftChanges: Boolean
-            get() = isNew && fields != null && fields != initialDraft
+            get() = isNew && fields != null && (fields != initialDraft || draftExercises.isNotEmpty())
 
         /** Criação: o "Criar rotina" está liberado. */
         val canCreate: Boolean get() = isNew && fields?.isValid == true
@@ -144,6 +151,14 @@ class RoutineEditorViewModel(
     private val draft = MutableStateFlow<RoutineDraft?>(null)
     private val initialDraft = MutableStateFlow<RoutineDraft?>(null)
     private val creating = MutableStateFlow(false)
+
+    /**
+     * Criação: os exercícios do rascunho, na ordem da tela. São [ExerciseItem] sem rotina, com id
+     * NEGATIVO provisório ([nextDraftExerciseId]) só para a tela e o diálogo os identificarem; o banco
+     * dá os ids de verdade no "Criar rotina".
+     */
+    private val newExercises = MutableStateFlow<List<ExerciseItem>>(emptyList())
+    private var nextDraftExerciseId = -1L
 
     /** Excluir ou duplicar já foi pedido (a tela vai fechar): um segundo toque não repete (OBS-2). */
     private var leaving = false
@@ -187,11 +202,11 @@ class RoutineEditorViewModel(
         combine(fields, categoryRepository.categories) { f, categories -> kindOf(f, categories) }
             .distinctUntilChanged()
 
-    // Só assina exercise_item quando a categoria é EXERCICIO; rotina nova (sem id) fica vazia.
+    // Só mostra exercícios quando o tipo é EXERCICIO; na criação, os do rascunho.
     @OptIn(ExperimentalCoroutinesApi::class)
     private val exerciseItems: Flow<List<ExerciseItem>> =
         if (isNew) {
-            flowOf(emptyList())
+            selectedKind.flatMapLatest { kind -> if (kind == RoutineCategoryKind.EXERCICIO) newExercises else flowOf(emptyList()) }
         } else {
             selectedKind.flatMapLatest { kind ->
                 if (kind == RoutineCategoryKind.EXERCICIO) {
@@ -206,10 +221,11 @@ class RoutineEditorViewModel(
     private data class ModuleItems(
         val exercise: List<ExerciseItem> = emptyList(),
         val exerciseBaseline: List<ExerciseItem>? = null,
+        val draft: List<ExerciseItem> = emptyList(),
     )
 
     private val moduleItems: Flow<ModuleItems> =
-        combine(exerciseItems, exerciseBaseline) { e, base -> ModuleItems(e, base) }
+        combine(exerciseItems, exerciseBaseline, newExercises) { e, base, draft -> ModuleItems(e, base, draft) }
 
     private data class EditorState(
         val routine: Routine?,
@@ -241,6 +257,7 @@ class RoutineEditorViewModel(
                 selectedKind = kindOf(editor.fields, categories),
                 exerciseItems = module.exercise,
                 exerciseBaseline = module.exerciseBaseline,
+                draftExercises = module.draft,
                 touched = editor.touched,
                 creating = editor.creating,
             )
@@ -413,30 +430,67 @@ class RoutineEditorViewModel(
         }
     }
 
-    // --- Lista de exercícios (T34): só vale para uma rotina já criada. ------------------------------
+    // --- Lista de exercícios (T34; na criação também desde a v1.10.0, 16.10.5) ---------------------
+    // Edição: cada mexida grava na hora, pela fila. Criação: só o rascunho em memória ([newExercises]),
+    // gravado junto com a rotina no "Criar rotina"; voltar e descartar não grava nada.
 
     fun addExerciseItem(name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
-        if (isNew || name.isBlank()) return
-        enqueueAction { exerciseRepository.add(routineId, name, sets, reps, load, restSeconds) }
+        if (name.isBlank()) return
+        if (isNew) {
+            val fields = ExerciseFields(name, sets, reps, load, restSeconds)
+            newExercises.update { list ->
+                list + fields.toItem(routineId = NEW_ROUTINE_ID, position = list.size, createdAt = 0L).copy(id = nextDraftExerciseId--)
+            }
+        } else {
+            enqueueAction { exerciseRepository.add(routineId, name, sets, reps, load, restSeconds) }
+        }
     }
 
     fun updateExerciseItem(item: ExerciseItem, name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
         if (name.isBlank()) return
-        enqueueAction { exerciseRepository.update(item, name, sets, reps, load, restSeconds) }
+        if (isNew) {
+            val fields = ExerciseFields(name, sets, reps, load, restSeconds).normalized()
+            newExercises.update { list ->
+                list.map {
+                    if (it.id != item.id) {
+                        it
+                    } else {
+                        it.copy(name = fields.name, sets = fields.sets, reps = fields.reps, load = fields.load, restSeconds = fields.restSeconds)
+                    }
+                }
+            }
+        } else {
+            enqueueAction { exerciseRepository.update(item, name, sets, reps, load, restSeconds) }
+        }
     }
 
     fun removeExerciseItem(item: ExerciseItem) {
-        enqueueAction { exerciseRepository.remove(item) }
+        if (isNew) {
+            newExercises.update { list -> list.filterNot { it.id == item.id }.reindexed() }
+        } else {
+            enqueueAction { exerciseRepository.remove(item) }
+        }
     }
 
     /** Reordena o exercício para cima ([up] = true) ou para baixo, trocando a posição com o vizinho. */
     fun moveExerciseItem(item: ExerciseItem, up: Boolean) {
-        enqueueAction { exerciseRepository.move(item, up) }
+        if (isNew) {
+            newExercises.update { list ->
+                val from = list.indexOfFirst { it.id == item.id }
+                val to = if (up) from - 1 else from + 1
+                if (from < 0 || to !in list.indices) list else list.toMutableList().apply { add(to, removeAt(from)) }.reindexed()
+            }
+        } else {
+            enqueueAction { exerciseRepository.move(item, up) }
+        }
     }
+
+    /** Rascunho: a posição de cada exercício é o lugar dele na lista. */
+    private fun List<ExerciseItem>.reindexed(): List<ExerciseItem> = mapIndexed { index, item -> item.copy(position = index) }
 
     // --- Ações --------------------------------------------------------------------------------------
 
-    /** Criação: aplica um modelo. */
+    /** Criação: aplica um modelo (os exercícios já montados ficam). */
     fun applyDraft(newDraft: RoutineDraft) {
         if (!isNew) return
         newTitle = newDraft.title
@@ -445,16 +499,18 @@ class RoutineEditorViewModel(
     }
 
     /**
-     * "Criar rotina": grava a rotina, agenda e FECHA a
+     * "Criar rotina": grava a rotina com os exercícios do rascunho (mesmo escondidos por um tipo sem
+     * exercícios, P2 da T2; uma transação), agenda e FECHA a
      * tela (P3). No escopo do app: voltar logo depois do toque não corta a criação. Um toque só vale.
      */
     fun create() {
         val current = draft.value ?: return
         if (!isNew || !current.isValid || creating.value) return
         creating.value = true
+        val exercises = newExercises.value.map(ExerciseFields::of)
         editScope.launch {
             try {
-                repository.add(current.toNewRoutine(now = clock.nowMillis()))
+                repository.add(current.toNewRoutine(now = clock.nowMillis()), exercises = exercises)
                 eventChannel.send(Event.Closed)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -486,7 +542,7 @@ class RoutineEditorViewModel(
 
     /**
      * Duplica a rotina como uma nova ([copyTitle]), a partir da linha gravada depois das gravações
-     * pendentes. A cópia nasce ativa, sem pausa e sem lista (rotina não tem
+     * pendentes, com os exercícios. A cópia nasce ativa, sem pausa e sem lista (rotina não tem
      * lista desde a v1.10.0, ADR-0002 16.10.1).
      */
     fun duplicate(copyTitle: String) {
@@ -496,6 +552,9 @@ class RoutineEditorViewModel(
         editScope.launch {
             awaitPendingWrites()
             val latest = repository.observeRoutine(routineId).first() ?: return@launch
+            // Os exercícios vão junto, na mesma ordem e numa transação (v1.10.0, 16.10.5), mesmo com o
+            // tipo sem exercícios: na cópia eles ficam guardados do mesmo jeito.
+            val exercises = exerciseRepository.itemsOf(routineId).map(ExerciseFields::of)
             repository.add(
                 latest.copy(
                     id = NEW_ROUTINE_ID,
@@ -505,6 +564,7 @@ class RoutineEditorViewModel(
                     pausedAt = null,
                     shoppingListId = null,
                 ),
+                exercises = exercises,
             )
             eventChannel.send(Event.Closed)
         }

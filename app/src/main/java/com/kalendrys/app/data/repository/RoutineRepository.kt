@@ -9,6 +9,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.ShoppingList
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineCatchUp
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineOverrideType
@@ -91,18 +92,17 @@ class RoutineRepository(
         completionDao.observeBetween(start.toEpochDay(), endExclusive.toEpochDay())
 
     /**
-     * Cria a rotina e agenda. Com [newListName] não em branco, cria TAMBÉM uma lista nova
-     * ([ShoppingList.named]) e vincula a rotina a ela numa transação só (v1.9.0, 15.5, como o painel
-     * de nova tarefa já faz): falhar a rotina não deixa lista avulsa. Nesse caso o
-     * [Routine.shoppingListId] de [routine] é ignorado.
+     * Cria a rotina e agenda. Com [exercises], grava TAMBÉM os exercícios dela, na ordem dada e numa
+     * transação só (v1.10.0, ADR-0002 16.10.5: montados já na criação, ou copiados pelo Duplicar). Os
+     * exercícios entram qualquer que seja o tipo: trocar para Nenhum só os esconde, nunca os perde
+     * (P2 da T2). Exercício sem nome não entra. Rotina não tem lista desde a v1.10.0.
      */
-    suspend fun add(routine: Routine, newListName: String? = null): Routine = change {
-        val newList = newListName?.takeIf { it.isNotBlank() }?.let { ShoppingList.named(it, clock.nowMillis()) }
-        if (newList == null) {
-            routine.copy(id = routineDao.insert(routine))
-        } else {
-            checkNotNull(routineDao.byId(routineDao.insertRoutineWithNewList(newList, routine)))
-        }
+    suspend fun add(routine: Routine, exercises: List<ExerciseFields> = emptyList()): Routine = change {
+        val createdAt = clock.nowMillis()
+        val items = exercises.filter { it.isValid }
+            .mapIndexed { position, fields -> fields.toItem(routineId = 0, position = position, createdAt = createdAt) }
+        val id = if (items.isEmpty()) routineDao.insert(routine) else routineDao.insertRoutineWithExercises(routine, items)
+        routine.copy(id = id)
     }
 
     /**
