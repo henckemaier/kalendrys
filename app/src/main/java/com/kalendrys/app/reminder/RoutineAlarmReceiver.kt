@@ -75,7 +75,7 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
     // Alarme one-off do adiamento: exato quando possível, como os demais avisos do app.
     private fun scheduleSnooze(context: Context, routineId: Long, epochDay: Long) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        val triggerAt = RoutineSnooze.triggerAt(System.currentTimeMillis())
+        val triggerAt = RoutineSnooze.triggerAt((context.applicationContext as KalendrysApp).clock.nowMillis())
         val operation = PendingIntent.getBroadcast(
             context,
             routineId.toInt(),

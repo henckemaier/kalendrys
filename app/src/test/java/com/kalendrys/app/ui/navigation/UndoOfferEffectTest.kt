@@ -23,6 +23,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -31,6 +32,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.components.showUndo
@@ -84,7 +86,7 @@ class UndoOfferEffectTest {
         testDb = ViewModelTestDatabase(context)
         appScope = testDb.appScope()
         val db = testDb.db
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         routines = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -93,8 +95,9 @@ class UndoOfferEffectTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        offers = UndoOffers(repository, routines, appScope) { now }
+        offers = UndoOffers(repository, routines, appScope, clockOf { now })
         compose.setContent {
             KalendrysTheme {
                 // Tirar e pôr de volta (com geração nova) descarta o coletor, o estado da mensagem e a tela,

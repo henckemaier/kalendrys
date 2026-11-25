@@ -44,7 +44,7 @@ class TaskWithNewListTest {
             .allowMainThreadQueries()
             .build()
         scheduler = FakeReminderScheduler(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
         shopping = ShoppingRepository(db)
     }
 

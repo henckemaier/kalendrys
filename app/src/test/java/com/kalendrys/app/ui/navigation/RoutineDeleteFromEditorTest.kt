@@ -23,6 +23,7 @@ import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -84,8 +85,8 @@ class RoutineDeleteFromEditorTest {
         val db = testDb.db
         alarms = FakeRoutineAlarms(context)
         routines = testRoutineRepository(db, alarms)
-        tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        offers = UndoOffers(tasks, routines, appScope)
+        tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
+        offers = UndoOffers(tasks, routines, appScope, clock = SystemAppClock)
         routineId = runBlocking { routines.add(Routine(title = "Treino", startMinute = 23 * 60)).id }
     }
 
@@ -103,6 +104,7 @@ class RoutineDeleteFromEditorTest {
             ExerciseRepository(testDb.db.exerciseItemDao()),
             offers,
             testDb.appScope(),
+            clock = SystemAppClock,
         ),
     )
 
@@ -156,8 +158,9 @@ class RoutineDeleteFromEditorTest {
                     tasks,
                     DayOfWeek.MONDAY,
                     shopping,
-                    TodayRepository(tasks, routines, shopping),
+                    TodayRepository(tasks, routines, shopping, clock = SystemAppClock),
                     offers,
+                    clock = SystemAppClock,
                 )
             },
         )
@@ -182,7 +185,7 @@ class RoutineDeleteFromEditorTest {
 
     @Test
     fun `excluir pelo editor aberto a partir do Calendario mostra a mensagem la e Desfazer devolve`() {
-        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db)))
+        val calendar = testDb.track(CalendarViewModel(tasks, routines, ShoppingRepository(testDb.db), clock = SystemAppClock))
         deleteFromEditorOver { CalendarScreen(onOpenTask = {}, onOpenRoutine = {}, onOpenSettings = {}, viewModel = calendar) }
     }
 

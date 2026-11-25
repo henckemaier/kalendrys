@@ -48,6 +48,8 @@ class BackupManager(
     private val database: AppDatabase,
     private val contentResolver: ContentResolver,
     private val settings: SettingsRepository,
+    /** O relógio do app (v1.10.0, 16.3): o carimbo do arquivo exportado. */
+    private val clock: AppClock,
     private val afterRestore: suspend () -> Unit = {},
 ) {
 
@@ -121,7 +123,7 @@ class BackupManager(
             put("schemaVersion", SCHEMA_VERSION)
             put("databaseVersion", DATABASE_VERSION)
             put("appVersion", BuildConfig.VERSION_NAME)
-            put("exportedAt", System.currentTimeMillis())
+            put("exportedAt", clock.nowMillis())
             put("tasks", tasks.toJsonArray(Task::toJson))
             put("completionLogs", logs.toJsonArray(CompletionLog::toJson))
             put("routines", routines.toJsonArray(Routine::toJson))

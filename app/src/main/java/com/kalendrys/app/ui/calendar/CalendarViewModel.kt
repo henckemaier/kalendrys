@@ -12,9 +12,11 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.CalendarCalculator
 import com.kalendrys.app.domain.ReminderRecurrence
 import com.kalendrys.app.domain.ReminderRepeat
@@ -37,6 +39,8 @@ class CalendarViewModel(
     private val repository: TaskRepository,
     private val routineRepository: RoutineRepository,
     private val shoppingRepository: ShoppingRepository,
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     /** Um evento no dia: conclusão (do histórico) ou tarefa marcada para o dia. */
@@ -55,9 +59,9 @@ class CalendarViewModel(
 
     data class UiState(
         val isLoaded: Boolean = false,
-        val today: LocalDate = LocalDate.now(),
-        val month: YearMonth = YearMonth.now(),
-        val selectedDate: LocalDate = LocalDate.now(),
+        val today: LocalDate,
+        val month: YearMonth = YearMonth.from(today),
+        val selectedDate: LocalDate = today,
         val completedByDay: Map<LocalDate, List<Entry>> = emptyMap(),
         val remindersByDay: Map<LocalDate, List<Entry>> = emptyMap(),
         /** Dias do mês com algum bloco de rotina feito (contam no ponto de "concluídas"). */
@@ -78,8 +82,8 @@ class CalendarViewModel(
         val routines: List<RoutineCompletion>,
     )
 
-    private val month = MutableStateFlow(YearMonth.now())
-    private val selectedDate = MutableStateFlow(LocalDate.now())
+    private val month = MutableStateFlow(YearMonth.from(clock.today()))
+    private val selectedDate = MutableStateFlow(clock.today())
 
     /** Só as conclusões do mês visível, emitidas junto com o mês a que pertencem (sem misturar meses). */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -101,7 +105,7 @@ class CalendarViewModel(
             repository.lastCompletions,
         ) { tasks, routinesAndOverrides, logs, selected, lastCompletions ->
             val (routines, overrides) = routinesAndOverrides
-            val zone = ZoneId.systemDefault()
+            val zone = clock.zone()
             val titles = tasks.associate { it.id to it.title }
             // Tarefas excluídas continuam no histórico; ficam sem título (title = null).
             val completed = CalendarCalculator.groupByDay(logs.tasks, zone) { it.completedAt }
@@ -113,7 +117,7 @@ class CalendarViewModel(
                 .mapTo(HashSet()) { it.routineId }
             UiState(
                 isLoaded = true,
-                today = LocalDate.now(),
+                today = clock.today(),
                 month = logs.month,
                 selectedDate = selected,
                 completedByDay = completed,
@@ -128,7 +132,7 @@ class CalendarViewModel(
                     }
                     .sortedWith(compareBy({ it.startMinute }, { it.routine.id })),
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(today = clock.today()))
 
     /**
      * Tarefas marcadas para cada dia do mês visível (as que se repetem, em cada dia em que
@@ -183,12 +187,12 @@ class CalendarViewModel(
 
     /** Ao trocar de mês, seleciona hoje (se for o mês atual) ou o dia 1. */
     fun showMonth(target: YearMonth) {
-        val today = LocalDate.now()
+        val today = clock.today()
         month.value = target
         selectedDate.value = if (target == YearMonth.from(today)) today else target.atDay(1)
     }
 
-    fun goToToday() = select(LocalDate.now())
+    fun goToToday() = select(clock.today())
 
 
     private fun timeOf(epochMillis: Long, zone: ZoneId): LocalTime =
@@ -198,7 +202,7 @@ class CalendarViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                CalendarViewModel(app.repository, app.routineRepository, app.shoppingRepository)
+                CalendarViewModel(app.repository, app.routineRepository, app.shoppingRepository, app.clock)
             }
         }
     }

@@ -54,6 +54,7 @@ class RoutineRepositoryEditTest {
             notifications,
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
         shopping = ShoppingRepository(db)
     }

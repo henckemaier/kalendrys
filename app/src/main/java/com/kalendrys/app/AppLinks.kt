@@ -12,7 +12,8 @@ sealed interface LaunchRequest {
 
     /** Aba Tarefas com o painel de nova tarefa aberto (widget e atalho "Nova tarefa"). */
     data object NewTask : LaunchRequest
-    data class OpenRoutines(val date: LocalDate) : LaunchRequest
+    /** [date] nulo = hoje, resolvido por quem abre (com o relógio do app). */
+    data class OpenRoutines(val date: LocalDate?) : LaunchRequest
     data object OpenCalendar : LaunchRequest
 
     /** Aba Listas e, sobre ela, a tela da lista. [taskId] é a tarefa de origem (oferta P3), se houver. */
@@ -102,7 +103,7 @@ object AppLinks {
         return when (data.host) {
             HOST_TASK -> data.lastPathSegment?.toLongOrNull()?.let { LaunchRequest.OpenTask(it) }
             HOST_NEW_TASK -> LaunchRequest.NewTask
-            HOST_ROUTINES -> LaunchRequest.OpenRoutines(parseDate(data.lastPathSegment) ?: LocalDate.now())
+            HOST_ROUTINES -> LaunchRequest.OpenRoutines(parseDate(data.lastPathSegment))
             HOST_CALENDAR -> LaunchRequest.OpenCalendar
             HOST_LIST -> data.lastPathSegment?.toLongOrNull()?.let { listId ->
                 LaunchRequest.OpenList(listId, data.getQueryParameter(PARAM_TASK_ID)?.toLongOrNull())

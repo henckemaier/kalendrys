@@ -13,6 +13,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.AppAlarmKind
@@ -30,6 +31,7 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -80,7 +82,7 @@ class AlarmDiagnosticsViewModelTest {
     fun tearDown() = testDb.close()
 
     private fun taskRepository(scheduler: ReminderScheduler = FakeReminderScheduler(context)) = testDb.db.let { db ->
-        TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     private fun routineRepository(
@@ -96,7 +98,7 @@ class AlarmDiagnosticsViewModelTest {
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             deliverDueBlocks = deliverDueBlocks,
-            clock = { now },
+            clock = clockOf(zone = { zone }) { now },
         )
     }
 
@@ -105,7 +107,7 @@ class AlarmDiagnosticsViewModelTest {
         routines: RoutineRepository = routineRepository(),
         clock: () -> Long = { now },
     ): NextAppAlarm? {
-        val viewModel = testDb.track(AlarmDiagnosticsViewModel(tasks, routines, settings, zone = { zone }, clock = clock))
+        val viewModel = testDb.track(AlarmDiagnosticsViewModel(tasks, routines, settings, clockOf(zone = { zone }, now = clock)))
         viewModel.refresh()
         val deadline = System.currentTimeMillis() + TIMEOUT_MS
         while (viewModel.nextAlarm.value == AlarmDiagnosticsViewModel.NextAlarmState.Loading) {
@@ -191,7 +193,7 @@ class AlarmDiagnosticsViewModelTest {
         runBlocking {
             settings.setSummaryEnabled(true)
             settings.setSummaryTime(LocalTime.of(21, 30))
-            DailyScheduler(context).scheduleAll(settings.settings.first(), LocalDateTime.of(2026, 11, 16, 8, 0))
+            DailyScheduler(context, clock = SystemAppClock).scheduleAll(settings.settings.first(), LocalDateTime.of(2026, 11, 16, 8, 0))
         }
         val scheduled = scheduledAt(DailyReceiver::class.java, DailyReceiver.ACTION_SUMMARY)
 

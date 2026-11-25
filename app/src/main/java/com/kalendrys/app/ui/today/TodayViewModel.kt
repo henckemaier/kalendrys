@@ -13,6 +13,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -63,6 +64,8 @@ class TodayViewModel(
      * escopo do app, e a mensagem sobrevive a girar e a trocar de aba. A Hoje não tem mensagem própria.
      */
     private val undoOffers: UndoOffers,
+    /** O relógio do app (v1.10.0, 16.3): o fuso das conclusões por dia. */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     /** Um ponto na faixa da semana: a cor do bloco e se ele foi feito. */
@@ -195,7 +198,7 @@ class TodayViewModel(
                 return@combine null
             }
             taskLogs = taskCompletions
-            val zone = ZoneId.systemDefault()
+            val zone = clock.zone()
             val taskDoneByDay = taskCompletions
                 .groupBy({ epochDayOf(it.completedAt, zone) }, { it.taskId })
                 .mapValues { (_, ids) -> ids.toSet() }
@@ -376,7 +379,7 @@ class TodayViewModel(
      * concluída de novo), desfazer a primeira devolveria a data errada (NB-1 da v1.8.0).
      */
     private fun taskLogFor(taskId: Long, date: LocalDate): Long? {
-        val zone = ZoneId.systemDefault()
+        val zone = clock.zone()
         val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
         val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         return taskLogs
@@ -430,6 +433,7 @@ class TodayViewModel(
                     app.shoppingRepository,
                     app.todayRepository,
                     app.undoOffers,
+                    app.clock,
                 )
             }
         }

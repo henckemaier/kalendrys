@@ -9,8 +9,6 @@ import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TodayOverview
 import java.time.Duration
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -29,9 +27,8 @@ class TodayRepository(
     private val taskRepository: TaskRepository,
     private val routineRepository: RoutineRepository,
     private val shoppingRepository: ShoppingRepository,
-    private val dates: () -> Flow<LocalDate> = ::currentDate,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
-    private val clock: (ZoneId) -> LocalDateTime = { LocalDateTime.now(it) },
+    /** O relógio do app (v1.10.0, 16.3): a data do retrato ([AppClock.dates]) e o agora dele, da mesma fonte. */
+    private val clock: AppClock,
 ) {
 
     /** Cada incremento faz todo [observe] em andamento recalcular o retrato ([refresh]). */
@@ -52,13 +49,13 @@ class TodayRepository(
 
     /**
      * A ÚNICA fonte da data de [today] e de [observe] (O-4 da v1.8.0). Cada [refresh] relê a data:
-     * a fonte recomeça com o relógio de agora (o laço da meia-noite do currentDate() mede a próxima
+     * a fonte recomeça com o relógio de agora (o laço da meia-noite do [AppClock.dates] mede a próxima
      * virada de novo), então um relógio ou fuso trocado com a Hoje aberta chega aqui no próximo
      * refresh (a troca de hora e de fuso já chama refresh pelo BootReceiver -> KalendrysWidgets.updateAll;
      * a Hoje pede um ao voltar para a frente). A mesma data não sai duas vezes.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val days: Flow<LocalDate> = refreshes.flatMapLatest { dates() }.distinctUntilChanged()
+    private val days: Flow<LocalDate> = refreshes.flatMapLatest { clock.dates() }.distinctUntilChanged()
 
     /**
      * A data de hoje, da MESMA fonte que este retrato usa (emite de novo na virada da meia-noite e
@@ -68,7 +65,7 @@ class TodayRepository(
     val today: Flow<LocalDate> get() = days
 
     /** O agora do mesmo relógio do retrato (instante de uma conclusão feita pela Hoje). */
-    fun now(): ZonedDateTime = clock(zone()).atZone(zone())
+    fun now(): ZonedDateTime = clock.now()
 
     private data class Snapshot(
         val tasks: List<Task>,
@@ -105,8 +102,8 @@ class TodayRepository(
             }.let { snapshots -> combine(snapshots, refreshes) { snapshot, _ -> snapshot } }
                 .transformLatest { snapshot ->
                 while (true) {
-                    val zone = zone()
-                    val now = clock(zone)
+                    val zone = clock.zone()
+                    val now = clock.nowLocal()
                     val overview = TodayOverview.build(
                         tasks = snapshot.tasks,
                         completions = snapshot.taskLogs,

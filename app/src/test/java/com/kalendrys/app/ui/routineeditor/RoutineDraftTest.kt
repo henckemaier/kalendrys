@@ -89,8 +89,8 @@ class RoutineDraftTest {
 
     @Test
     fun `rotina nova leva a lista do rascunho`() {
-        assertEquals(9L, RoutineDraft(title = "Feira", startMinute = 480, shoppingListId = 9).toNewRoutine().shoppingListId)
-        assertEquals(null, RoutineDraft(title = "Feira", startMinute = 480).toNewRoutine().shoppingListId)
+        assertEquals(9L, RoutineDraft(title = "Feira", startMinute = 480, shoppingListId = 9).toNewRoutine(now = 0L).shoppingListId)
+        assertEquals(null, RoutineDraft(title = "Feira", startMinute = 480).toNewRoutine(now = 0L).shoppingListId)
     }
 
     @Test

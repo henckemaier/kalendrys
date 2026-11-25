@@ -11,14 +11,12 @@ import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -64,7 +62,7 @@ class TodayRepositoryRefreshTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         val routines = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -73,25 +71,14 @@ class TodayRepositoryRefreshTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             mark = InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        today = TodayRepository(
-            tasks,
-            routines,
-            ShoppingRepository(db),
-            dates = { flowOf(day) },
-            zone = { zone },
-            clock = { now },
-        )
-        clockDated = TodayRepository(
-            tasks,
-            routines,
-            ShoppingRepository(db),
-            // Como o currentDate(): lê o relógio ao começar e espera; aqui sem virada sozinha, para que
-            // só o refresh possa trazer o dia novo.
-            dates = { flow<LocalDate> { emit(now.toLocalDate()); awaitCancellation() } },
-            zone = { zone },
-            clock = { now },
-        )
+        // O relógio do app lendo o relógio de parede do teste: a data sai do laço de sempre
+        // ([AppClock.dates]: lê ao começar e espera a meia-noite), então um relógio trocado no meio só
+        // chega com o refresh, que recomeça a fonte (v1.10.0: a mesma fonte para data e agora).
+        val clock = clockOf(zone = { zone }) { now.atZone(zone).toInstant().toEpochMilli() }
+        today = TodayRepository(tasks, routines, ShoppingRepository(db), clock)
+        clockDated = TodayRepository(tasks, routines, ShoppingRepository(db), clock)
     }
 
     @After

@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -84,8 +85,7 @@ class RoutineRepositoryCatchUpTest {
                 routines.forEach { delivered += date to it.id }
             },
             mark = mark,
-            zone = { zone },
-            clock = { clockMillis },
+            clock = clockOf(zone = { zone }) { clockMillis },
         )
     }
 

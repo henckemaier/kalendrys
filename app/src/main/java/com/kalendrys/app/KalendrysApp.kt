@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.StrictMode
 import com.kalendrys.app.data.local.AppDatabase
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
@@ -12,8 +13,10 @@ import com.kalendrys.app.data.repository.RoutineCatchUpMark
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.repository.TodayRepository
+import com.kalendrys.app.data.repository.timeOfDay
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.settingsDataStore
 import com.kalendrys.app.reminder.AndroidCatchUpNotifier
@@ -51,6 +54,13 @@ import kotlinx.coroutines.launch
  */
 class KalendrysApp : Application() {
 
+    /**
+     * O relógio do app (v1.10.0, ADR-0002 16.3): a única peça que lê agora, fuso e a data de hoje.
+     * Repositórios, ViewModels (pelas factories), catch-ups, receivers e agendadores recebem este; as
+     * telas o leem por `LocalAppClock`, provido na MainActivity.
+     */
+    val clock: AppClock = SystemAppClock
+
     val database: AppDatabase by lazy { AppDatabase.create(this) }
 
     val repository: TaskRepository by lazy {
@@ -59,6 +69,7 @@ class KalendrysApp : Application() {
             database.completionLogDao(),
             ReminderScheduler(this),
             database.shoppingItemDao(),
+            clock,
             // Fecha a janela do catch-up antes de gravar (ADR-0003): horário já passado não vira atrasado.
             beforeReminderChange = { reminderCatchUp.run() },
         )
@@ -66,7 +77,7 @@ class KalendrysApp : Application() {
 
     /** Caminho único de entrega de lembretes de tarefa (ADR-0003). */
     val reminderCatchUp: ReminderCatchUpRunner by lazy {
-        ReminderCatchUpRunner(repository, settingsRepository, AndroidCatchUpNotifier(this, shoppingRepository))
+        ReminderCatchUpRunner(repository, settingsRepository, AndroidCatchUpNotifier(this, shoppingRepository, clock), clock)
     }
 
     val routineNotifications: RoutineNotifications by lazy { RoutineNotifications(this) }
@@ -95,6 +106,7 @@ class KalendrysApp : Application() {
 
                 override suspend fun set(millis: Long) = settingsRepository.setRoutineLastSeen(millis)
             },
+            clock = clock,
         )
     }
 
@@ -113,9 +125,9 @@ class KalendrysApp : Application() {
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */
-    val todayRepository: TodayRepository by lazy { TodayRepository(repository, routineRepository, shoppingRepository) }
+    val todayRepository: TodayRepository by lazy { TodayRepository(repository, routineRepository, shoppingRepository, clock) }
 
-    val historyExporter: HistoryExporter by lazy { HistoryExporter(database, contentResolver) }
+    val historyExporter: HistoryExporter by lazy { HistoryExporter(database, contentResolver, clock) }
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(settingsDataStore) }
 
@@ -126,7 +138,7 @@ class KalendrysApp : Application() {
     val newTaskPanel: NewTaskPanel by lazy { NewTaskPanel(repository, shoppingRepository, appScope) }
 
     /** Desfazer das exclusões que fecham a tela (tarefa e rotina), na origem; só em memória (E0-D, P8). */
-    val undoOffers: UndoOffers by lazy { UndoOffers(repository, routineRepository, appScope) }
+    val undoOffers: UndoOffers by lazy { UndoOffers(repository, routineRepository, appScope, clock) }
 
     /**
      * Backup/restauro completo. Depois de restaurar (substitui tudo), reagenda os alarmes e
@@ -139,6 +151,7 @@ class KalendrysApp : Application() {
             database = database,
             contentResolver = contentResolver,
             settings = settingsRepository,
+            clock = clock,
             afterRestore = {
                 // Marca = agora e só agenda: o passado do backup não vira atrasado nem perdido (ADR-0003, 4.2).
                 reminderCatchUp.establishBaseline()
@@ -149,14 +162,15 @@ class KalendrysApp : Application() {
         )
     }
 
-    val dailyScheduler: DailyScheduler by lazy { DailyScheduler(this) }
+    val dailyScheduler: DailyScheduler by lazy { DailyScheduler(this, clock) }
 
     /** Catch-up do resumo diário (ADR-0003, 4.3.2): decide pela janela se o resumo sai, depois agenda. */
     val summaryCatchUp: DailySummaryCatchUp by lazy {
         DailySummaryCatchUp(
             settings = settingsRepository,
             schedule = { settings, now -> dailyScheduler.scheduleAll(settings, now) },
-            show = { DailySummaryNotifier.show(this, todayRepository.current()) },
+            show = { DailySummaryNotifier.show(this, todayRepository.current(), clock.timeOfDay()) },
+            clock = clock,
         )
     }
 

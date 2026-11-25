@@ -25,6 +25,7 @@ import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
@@ -104,14 +105,14 @@ class ShoppingProgressTagFitTest {
     fun tearDown() = testDb.close()
 
     private fun taskRepository() = testDb.db.let { db ->
-        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     private fun routinesViewModel(): TodayViewModel =
         testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), testUndoOffers(testDb)))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), testUndoOffers(testDb), clock = SystemAppClock))
 
     private var fontScale by mutableFloatStateOf(1f)
 

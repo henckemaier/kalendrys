@@ -12,6 +12,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -74,8 +75,7 @@ class RoutineTwoAlarmsSystemTest {
             deliverDueBlocks = { routines, _ -> delivered += routines.map { it.title } },
             mark = InMemoryRoutineCatchUpMark(),
             // Como na produção: o fuso lido a cada chamada, o mesmo que o RoutineAlarms usa.
-            zone = { ZoneId.systemDefault() },
-            clock = { millis(day.atTime(8, 0)) },
+            clock = clockOf(zone = { ZoneId.systemDefault() }) { millis(day.atTime(8, 0)) },
         )
     }
 

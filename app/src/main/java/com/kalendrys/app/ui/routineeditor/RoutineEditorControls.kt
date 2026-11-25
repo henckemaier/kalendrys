@@ -78,6 +78,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ExerciseFormat
 import com.kalendrys.app.domain.RoutineColor
@@ -88,6 +89,7 @@ import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.WeekdayToggleRow
@@ -466,7 +468,7 @@ internal fun RoutineDatePicker(
     minEpochDay: Long? = null,
 ) {
     val state = rememberDatePickerState(
-        initialSelectedDateMillis = (initialEpochDay ?: minEpochDay ?: LocalDate.now().toEpochDay()) * MILLIS_PER_DAY,
+        initialSelectedDateMillis = (initialEpochDay ?: minEpochDay ?: LocalAppClock.current.today().toEpochDay()) * MILLIS_PER_DAY,
         selectableDates = object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean =
                 minEpochDay == null || utcTimeMillis / MILLIS_PER_DAY >= minEpochDay

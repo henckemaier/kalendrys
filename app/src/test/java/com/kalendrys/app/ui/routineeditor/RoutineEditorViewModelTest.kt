@@ -8,6 +8,7 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -110,6 +111,7 @@ class RoutineEditorViewModelTest {
                 exercises,
                 undoOffers,
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         // O estado é WhileSubscribed: mantém alguém assinando, como a tela.
@@ -502,6 +504,7 @@ class RoutineEditorViewModelTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
     }
 

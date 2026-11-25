@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.reminder.ReminderActionReceiver.Companion.occurrenceDay
 import java.time.LocalDate
@@ -49,7 +50,7 @@ class AndroidCatchUpNotifierDayTest {
         val firedAt = yesterday.atTime(LocalTime.of(23, 50)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val task = Task(id = 7, title = "Remédio", repeat = ReminderRepeat.DAILY)
 
-        AndroidCatchUpNotifier(app, ShoppingRepository(db)).showReminder(task, firedAt)
+        AndroidCatchUpNotifier(app, ShoppingRepository(db), clock = SystemAppClock).showReminder(task, firedAt)
 
         val notification = shadowOf(app.getSystemService(NotificationManager::class.java)).allNotifications.single()
         val days = notification.actions.map { shadowOf(it.actionIntent).savedIntent.occurrenceDay() }

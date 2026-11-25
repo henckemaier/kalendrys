@@ -83,7 +83,7 @@ class HistoryExporterTest {
         seed()
         val file = tempFile("bytes")
 
-        val written = HistoryExporter(db, context.contentResolver).exportTo(Uri.fromFile(file))
+        val written = HistoryExporter(db, context.contentResolver, clock = SystemAppClock).exportTo(Uri.fromFile(file))
 
         assertEquals(3, written)
         val bytes = file.readBytes()
@@ -99,7 +99,7 @@ class HistoryExporterTest {
         seed()
         val file = tempFile("overwrite").apply { writeText("x".repeat(10_000)) }
 
-        HistoryExporter(db, context.contentResolver).exportTo(Uri.fromFile(file))
+        HistoryExporter(db, context.contentResolver, clock = SystemAppClock).exportTo(Uri.fromFile(file))
 
         assertEquals("﻿" + expectedContent, file.readText(Charsets.UTF_8))
     }

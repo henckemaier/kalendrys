@@ -7,6 +7,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
@@ -15,6 +16,7 @@ import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +59,7 @@ class UndoOffersTest {
         val db = testDb.db
         scheduler = FakeReminderScheduler(context)
         alarms = FakeRoutineAlarms(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
         routines = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -66,6 +68,7 @@ class UndoOffersTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
         shopping = ShoppingRepository(db)
     }
@@ -74,7 +77,7 @@ class UndoOffersTest {
     fun tearDown() = testDb.close()
 
     private fun offers(scope: CoroutineScope, clock: () -> Long = { System.currentTimeMillis() }) =
-        UndoOffers(repository, routines, scope, clock)
+        UndoOffers(repository, routines, scope, clockOf(now = clock))
 
     private fun deletedTask(task: Task) = UndoTarget.DeletedTask(task)
 

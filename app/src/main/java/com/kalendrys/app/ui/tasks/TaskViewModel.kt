@@ -9,9 +9,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.data.repository.currentDate
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskFiltering
 import com.kalendrys.app.domain.TaskSchedule
@@ -20,13 +21,14 @@ import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.visibleProgressFor
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneId
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 
@@ -34,6 +36,8 @@ class TaskViewModel(
     private val repository: TaskRepository,
     private val shoppingRepository: ShoppingRepository,
     private val undoOffers: UndoOffers,
+    /** O relógio do app (v1.10.0, 16.3): a data de hoje da aba, a mesma das conclusões do dia. */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     /**
@@ -51,7 +55,7 @@ class TaskViewModel(
     enum class Filter { OVERDUE, TODAY, UPCOMING, NO_DATE }
 
     data class UiState(
-        val today: LocalDate = LocalDate.now(),
+        val today: LocalDate,
         val overdue: List<Item> = emptyList(),
         val dueToday: List<Item> = emptyList(),
         val upcoming: List<Item> = emptyList(),
@@ -80,19 +84,20 @@ class TaskViewModel(
      * adiantada aparece em "Concluídas hoje" E em "Próximas" (com a próxima data), e a única concluída
      * hoje e reaberta para outra data aparece em "Concluídas hoje" E na seção da data nova (15.6, 14.10).
      *
-     * A data de hoje vem do [currentDate] (troca sozinha na meia-noite), e o registro é filtrado por ela:
-     * na virada, um registro de ontem que ainda não saiu do fluxo não conta. Limite conhecido: este fluxo
-     * de data e o do repositório são dois relógios; a fonte única de data é da v1.10.0.
+     * A data de hoje vem do relógio do app ([AppClock.dates], troca sozinha na meia-noite) e é a MESMA
+     * que escolhe os registros do dia (v1.10.0, 16.3; fecha o limite da 15.9): cada dia novo refaz a
+     * consulta das conclusões daquele dia, e o registro ainda é filtrado pela data, então na virada um
+     * registro de ontem não conta hoje.
      */
-    private val baseState: Flow<UiState> =
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val baseState: Flow<UiState> = clock.dates().flatMapLatest { today ->
         combine(
             repository.tasks,
-            repository.completionsToday,
+            repository.observeCompletionsBetween(today, today.plusDays(1)),
             repository.lastCompletions,
             shoppingRepository.observeProgressByList(),
-            currentDate(),
-        ) { tasks, logsToday, last, progressByList, today ->
-            val zone = ZoneId.systemDefault()
+        ) { tasks, logsToday, last, progressByList ->
+            val zone = clock.zone()
             val doneTodayIds = TodayOverview.doneTodayIds(tasks, logsToday, today, zone)
             val byStatus = tasks.groupBy { task ->
                 TaskSchedule.status(
@@ -129,12 +134,13 @@ class TaskViewModel(
                 isLoaded = true,
             )
         }
+    }
 
     /** A lista como a tela a vê: base agrupada + busca/filtros (barato) aplicados por cima. */
     val uiState: StateFlow<UiState> =
         combine(baseState, _query, _filters) { base, query, filters ->
             base.filtered(query, filters)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(today = clock.today()))
 
     fun setQuery(query: String) {
         _query.value = query
@@ -180,7 +186,7 @@ class TaskViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                TaskViewModel(app.repository, app.shoppingRepository, app.undoOffers)
+                TaskViewModel(app.repository, app.shoppingRepository, app.undoOffers, app.clock)
             }
         }
     }

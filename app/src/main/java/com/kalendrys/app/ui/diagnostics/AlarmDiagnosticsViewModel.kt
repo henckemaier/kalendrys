@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
@@ -34,8 +35,8 @@ class AlarmDiagnosticsViewModel(
     private val tasks: TaskRepository,
     private val routines: RoutineRepository,
     private val settings: SettingsRepository,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     sealed interface NextAlarmState {
@@ -49,11 +50,11 @@ class AlarmDiagnosticsViewModel(
     val nextAlarm: StateFlow<NextAlarmState> = _nextAlarm.asStateFlow()
 
     fun refresh() {
-        viewModelScope.launch { _nextAlarm.value = NextAlarmState.Loaded(compute(clock())) }
+        viewModelScope.launch { _nextAlarm.value = NextAlarmState.Loaded(compute(clock.nowMillis())) }
     }
 
     private suspend fun compute(now: Long): NextAppAlarm? {
-        val zone = zone()
+        val zone = clock.zone()
         val task = tasks.nextReminderToDeliver(now, zone)
         val routine = routines.nextRemindingStart(now)
         val current = settings.settings.first()
@@ -70,7 +71,7 @@ class AlarmDiagnosticsViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as KalendrysApp
-                AlarmDiagnosticsViewModel(app.repository, app.routineRepository, app.settingsRepository)
+                AlarmDiagnosticsViewModel(app.repository, app.routineRepository, app.settingsRepository, app.clock)
             }
         }
     }

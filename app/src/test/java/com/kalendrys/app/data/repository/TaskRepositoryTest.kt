@@ -48,7 +48,7 @@ class TaskRepositoryTest {
             .allowMainThreadQueries()
             .build()
         scheduler = FakeReminderScheduler(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     @After
@@ -116,7 +116,7 @@ class TaskRepositoryTest {
     @Test
     fun `falha no gancho beforeReminderChange nao impede gravar a tarefa`() = runTest {
         // A notificação do catch-up falhou: perder a gravação seria pior (parecer do Esquadro, NB-2).
-        val failing = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+        val failing = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock) {
             throw IllegalStateException("notificação falhou")
         }
         val task = failing.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
@@ -134,7 +134,7 @@ class TaskRepositoryTest {
     fun `gancho beforeReminderChange roda antes de gravar em add update e restore`() = runTest {
         // O gancho vê o banco ANTES da escrita: é o que fecha a janela do catch-up (ADR-0003).
         val seen = mutableListOf<List<String>>()
-        val hooked = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+        val hooked = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock) {
             seen += db.taskDao().all().map { it.title }
         }
         val task = hooked.addTask("Treino", timing = todayTiming(ReminderRepeat.DAILY))
@@ -437,7 +437,7 @@ class TaskRepositoryTest {
         assertEquals(LocalDate.now().toEpochDay(), log.rewrittenDueDate)
         // Simula o processo morto: um repositório novo, sem nada em memória, só o banco.
         scheduler.reset()
-        val fresh = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        val fresh = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
 
         fresh.undoCompletion(logId)
 
@@ -879,7 +879,7 @@ class TaskRepositoryTest {
                 super.rescheduleAll(alarms)
             }
         }
-        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao())
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao(), clock = SystemAppClock)
         val day = LocalDate.now().plusDays(2)
         val task = repo.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
         val logId = repo.logCompletion(task.id, completedAt = at(day, 7))
@@ -912,7 +912,7 @@ class TaskRepositoryTest {
     @Test
     fun `concluir e desfazer concorrendo com o catch-up terminam no alarme certo nas duas ordens`() = runTest {
         val racing = MarkingScheduler(ApplicationProvider.getApplicationContext())
-        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao())
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), racing, db.shoppingItemDao(), clock = SystemAppClock)
         val day = LocalDate.now().plusDays(2)
         val task = repo.addTask("Remédio", timing = TaskTiming(date = day, time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY))
         repeat(25) { round ->

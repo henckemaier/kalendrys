@@ -52,17 +52,18 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import com.kalendrys.app.R
+import com.kalendrys.app.data.repository.nowLocal
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.WeekdayToggleRow
 import com.kalendrys.app.ui.components.weekdayNumericDateLabel
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
@@ -77,7 +78,8 @@ fun TaskTimingField(
     modifier: Modifier = Modifier,
     warnIfPast: Boolean = true,
 ) {
-    val zone = ZoneId.systemDefault()
+    val clock = LocalAppClock.current
+    val zone = clock.zone()
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -85,7 +87,7 @@ fun TaskTimingField(
 
     val reminderAt = timing.reminderAt(zone)
     val isPast = timing.effectiveRepeat == ReminderRepeat.NONE && reminderAt != null &&
-        reminderAt <= System.currentTimeMillis()
+        reminderAt <= clock.nowMillis()
     val warning = when {
         reminderAt == null -> null
         isPast && warnIfPast -> R.string.reminder_in_past
@@ -97,7 +99,7 @@ fun TaskTimingField(
     Column(modifier) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TimingChip(
-                label = if (date == null) stringResource(R.string.task_no_date) else dateLabel(date),
+                label = if (date == null) stringResource(R.string.task_no_date) else dateLabel(date, clock.today()),
                 icon = { Icon(Icons.Outlined.Event, null, Modifier.size(InputChipDefaults.IconSize)) },
                 onClick = { showDatePicker = true },
                 onClear = if (date != null) ({ onTimingChange(TaskTiming(date = null)) }) else null,
@@ -156,7 +158,7 @@ fun TaskTimingField(
 
     if (showDatePicker) {
         TaskDatePickerDialog(
-            initialDate = date ?: LocalDate.now(zone),
+            initialDate = date ?: clock.today(),
             onConfirm = { picked ->
                 onTimingChange(timing.copy(date = picked))
                 showDatePicker = false
@@ -167,7 +169,7 @@ fun TaskTimingField(
     if (showTimePicker && date != null) {
         TimePickerDialog(
             title = stringResource(R.string.reminder_pick_time),
-            initialTime = timing.time ?: ReminderTime.suggestedTime(date, LocalDateTime.now(zone)),
+            initialTime = timing.time ?: ReminderTime.suggestedTime(date, clock.nowLocal()),
             onConfirm = { time ->
                 onTimingChange(timing.copy(time = time))
                 showTimePicker = false
@@ -349,7 +351,7 @@ private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /** "Hoje", "Amanhã", "Ontem", "Qua, 30/10" (dia da semana pela tabela pt-BR) ou, em outro ano, "30/10/2027". */
 @Composable
-fun dateLabel(date: LocalDate, today: LocalDate = LocalDate.now()): String = when {
+fun dateLabel(date: LocalDate, today: LocalDate): String = when {
     date == today -> stringResource(R.string.reminder_today)
     date == today.plusDays(1) -> stringResource(R.string.reminder_tomorrow)
     date == today.minusDays(1) -> stringResource(R.string.yesterday)

@@ -1,5 +1,6 @@
 package com.kalendrys.app.ui.tasks
 
+import com.kalendrys.app.data.repository.SystemAppClock
 import java.time.ZoneId
 import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.TaskChange
@@ -62,7 +63,7 @@ class TaskViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         shoppingRepository = ShoppingRepository(db)
         undoOffers = testUndoOffers(testDb, tasks = taskRepository)
     }
@@ -73,7 +74,7 @@ class TaskViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers))
+    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers, clock = SystemAppClock))
 
     private suspend fun ReceiveTurbine<TaskViewModel.UiState>.awaitState(
         predicate: (TaskViewModel.UiState) -> Boolean,

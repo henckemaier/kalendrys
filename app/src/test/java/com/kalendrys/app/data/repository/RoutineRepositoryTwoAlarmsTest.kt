@@ -11,6 +11,7 @@ import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineAlarms.Call
 import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -84,8 +85,7 @@ class RoutineRepositoryTwoAlarmsTest {
             db.shoppingItemDao(),
             deliverDueBlocks = { routines, date -> synchronized(delivered) { routines.forEach { delivered += date to it.id } } },
             mark = mark,
-            zone = { zone },
-            clock = { clock() },
+            clock = clockOf(zone = { zone }) { clock() },
         )
     }
 

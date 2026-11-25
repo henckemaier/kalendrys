@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
@@ -21,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import com.kalendrys.app.domain.AppLocale
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.navigation.KalendrysNavHost
 import com.kalendrys.app.ui.theme.Appearance
 import com.kalendrys.app.ui.theme.FirstFrameHold
@@ -73,10 +75,12 @@ class MainActivity : ComponentActivity() {
             val theme = current ?: Appearance()
             if (current != null) SideEffect { themedContentReady = true }
             KalendrysTheme(themeMode = theme.themeMode, dynamicColor = theme.dynamicColor) {
-                KalendrysNavHost(
-                    launchRequest = launchRequest,
-                    onLaunchRequestHandled = { launchRequest = null },
-                )
+                CompositionLocalProvider(LocalAppClock provides (application as KalendrysApp).clock) {
+                    KalendrysNavHost(
+                        launchRequest = launchRequest,
+                        onLaunchRequestHandled = { launchRequest = null },
+                    )
+                }
             }
         }
     }

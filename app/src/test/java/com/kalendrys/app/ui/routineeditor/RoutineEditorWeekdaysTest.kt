@@ -17,6 +17,7 @@ import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -63,6 +64,7 @@ class RoutineEditorWeekdaysTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
         val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
         val viewModel = testDb.track(
@@ -74,6 +76,7 @@ class RoutineEditorWeekdaysTest {
                 ExerciseRepository(db.exerciseItemDao()),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         compose.setContent {

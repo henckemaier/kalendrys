@@ -1,5 +1,6 @@
 package com.kalendrys.app.ui.today
 
+import com.kalendrys.app.data.repository.SystemAppClock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import com.kalendrys.app.testutil.testUndoOffers
@@ -77,8 +78,9 @@ class TodayViewModelTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         shoppingRepository = ShoppingRepository(db)
         undoOffers = testUndoOffers(testDb, routineRepository, tasks = taskRepository)
     }
@@ -95,8 +97,9 @@ class TodayViewModelTest {
             taskRepository,
             DayOfWeek.MONDAY,
             shoppingRepository,
-            TodayRepository(taskRepository, routineRepository, shoppingRepository),
+            TodayRepository(taskRepository, routineRepository, shoppingRepository, clock = SystemAppClock),
             undoOffers,
+            clock = SystemAppClock,
         ),
     )
 
@@ -396,7 +399,7 @@ class TodayViewModelTest {
         val log = db.completionLogDao().all().single { it.taskId == id }
         assertEquals(yesterday, Instant.ofEpochMilli(log.completedAt).atZone(ZoneId.systemDefault()).toLocalDate())
         // Números de hoje (o retrato do widget): a tarefa de hoje continua pendente.
-        val overview = com.kalendrys.app.data.repository.TodayRepository(taskRepository, routineRepository, shoppingRepository).current()
+        val overview = com.kalendrys.app.data.repository.TodayRepository(taskRepository, routineRepository, shoppingRepository, clock = SystemAppClock).current()
         assertEquals(true, overview.pending.any { it.taskId == id })
         assertEquals(0, overview.doneCount)
     }

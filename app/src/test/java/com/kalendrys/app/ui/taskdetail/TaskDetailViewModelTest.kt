@@ -10,6 +10,7 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
@@ -74,7 +75,7 @@ class TaskDetailViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         shoppingRepository = ShoppingRepository(db)
         undoOffers = testUndoOffers(testDb, tasks = taskRepository)
         editScope = testDb.appScope()
@@ -97,6 +98,7 @@ class TaskDetailViewModelTest {
             shoppingRepository,
             undoOffers,
             editScope,
+            clock = SystemAppClock,
         ),
     ).also { viewModels += it }
 

@@ -26,6 +26,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.navigation.UndoOfferEffect
 import com.kalendrys.app.data.local.entity.Task
@@ -77,13 +78,14 @@ class TaskListShellTest {
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
         runBlocking { db.taskDao().insert(Task(title = "Comprar pão")) }
-        val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         offers = testUndoOffers(testDb, tasks = repository)
         viewModel = testDb.track(
             TaskViewModel(
                 repository,
                 ShoppingRepository(db),
                 offers,
+                clock = SystemAppClock,
             ),
         )
         compose.setContent {

@@ -21,10 +21,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +34,8 @@ class TaskRepository(
     private val completionLogDao: CompletionLogDao,
     private val scheduler: ReminderScheduler,
     private val shoppingItemDao: ShoppingItemDao,
+    /** O relógio do app (v1.10.0, 16.3): agora, fuso e a data de hoje. */
+    private val clock: AppClock,
     /**
      * Roda o catch-up de lembretes (ADR-0003) ANTES de gravar em [addTask], [edit] (data, hora e repetição),
      * [restoreTask] e [undoCompletion]: fecha a janela no instante da mudança, para um horário já
@@ -47,18 +47,13 @@ class TaskRepository(
 
     val tasks: Flow<List<Task>> = taskDao.observeAll()
 
-    /** Só as conclusões de hoje; troca de dia sozinho à meia-noite. */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val completionsToday: Flow<List<CompletionLog>> =
-        currentDate().flatMapLatest { today -> observeCompletionsBetween(today, today.plusDays(1)) }
-
     /** Última conclusão de cada tarefa (taskId → epoch millis): ver [TaskSchedule.isFinished]. */
     val lastCompletions: Flow<Map<Long, Long>> =
         completionLogDao.observeLastCompletions().map { rows -> rows.associate { it.taskId to it.completedAt } }
 
     /** Conclusões entre [start] (inclusive) e [endExclusive], pelo dia local. */
     fun observeCompletionsBetween(start: LocalDate, endExclusive: LocalDate): Flow<List<CompletionLog>> {
-        val zone = ZoneId.systemDefault()
+        val zone = clock.zone()
         return completionLogDao.observeBetween(
             start = start.atStartOfDay(zone).toInstant().toEpochMilli(),
             end = endExclusive.atStartOfDay(zone).toInstant().toEpochMilli(),
@@ -96,7 +91,7 @@ class TaskRepository(
                 location = location.trim(),
                 shoppingListId = if (newList != null) null else shoppingListId,
             ),
-            ZoneId.systemDefault(),
+            clock.zone(),
         )
         return alarmLock.withLock {
             val saved = if (newList == null) {
@@ -117,10 +112,10 @@ class TaskRepository(
      * concluir ontem pela Hoje e depois pela notificação de ontem não grava duas vezes (NB-E5-A). Só
      * lê: não mexe em alarmes nem no banco.
      */
-    suspend fun taskForReminder(taskId: Long, now: Long = System.currentTimeMillis(), occurrenceDay: LocalDate? = null): Task? {
+    suspend fun taskForReminder(taskId: Long, now: Long = clock.nowMillis(), occurrenceDay: LocalDate? = null): Task? {
         val task = taskDao.byId(taskId) ?: return null
         if (task.repeat == ReminderRepeat.NONE) return task.takeUnless { isFinished(task) }
-        val zone = ZoneId.systemDefault()
+        val zone = clock.zone()
         val day = occurrenceDay ?: Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val doneThatDay = completionLogDao.isCompletedBetween(
             taskId = taskId,
@@ -140,10 +135,10 @@ class TaskRepository(
      * Guardada pelo dia da ocorrência ([taskForReminder]): já concluída nesse dia, única encerrada ou
      * excluída não grava de novo. Devolve se gravou.
      */
-    suspend fun completeFromReminder(taskId: Long, occurrenceDay: LocalDate?, now: Long = System.currentTimeMillis()): Boolean {
+    suspend fun completeFromReminder(taskId: Long, occurrenceDay: LocalDate?, now: Long = clock.nowMillis()): Boolean {
         val task = taskForReminder(taskId, now, occurrenceDay) ?: return false
         val completedAt = if (task.repeat != ReminderRepeat.NONE && occurrenceDay != null) {
-            TaskSchedule.completionInstantOn(occurrenceDay, Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()))
+            TaskSchedule.completionInstantOn(occurrenceDay, Instant.ofEpochMilli(now).atZone(clock.zone()))
         } else {
             now
         }
@@ -168,7 +163,7 @@ class TaskRepository(
      *
      * Devolve se gravou.
      */
-    suspend fun edit(taskId: Long, change: TaskChange, zone: ZoneId = ZoneId.systemDefault()): Boolean {
+    suspend fun edit(taskId: Long, change: TaskChange, zone: ZoneId = clock.zone()): Boolean {
         if (change.touchesReminder) closeReminderWindow()
         return alarmLock.withLock {
             val current = taskDao.byId(taskId) ?: return@withLock false
@@ -254,10 +249,10 @@ class TaskRepository(
      */
     suspend fun logCompletion(
         taskId: Long,
-        completedAt: Long = System.currentTimeMillis(),
-        now: Long = System.currentTimeMillis(),
+        completedAt: Long = clock.nowMillis(),
+        now: Long = clock.nowMillis(),
     ): Long = alarmLock.withLock {
-        val zone = ZoneId.systemDefault()
+        val zone = clock.zone()
         val day = Instant.ofEpochMilli(completedAt).atZone(zone).toLocalDate()
         // Conclusão RETROATIVA (num dia anterior a hoje, pela Hoje): não tem efeito de hoje, a mesma regra
         // das rotinas (ShoppingReset.routineResets): não tira a notificação da tela, não zera a lista e
@@ -353,8 +348,8 @@ class TaskRepository(
      */
     suspend fun linkedTasks(
         listId: Long,
-        today: LocalDate = LocalDate.now(),
-        zone: ZoneId = ZoneId.systemDefault(),
+        today: LocalDate = clock.today(),
+        zone: ZoneId = clock.zone(),
     ): List<ShoppingCompletionOffer.LinkedTask> {
         val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val end = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -398,10 +393,10 @@ class TaskRepository(
      * Agenda a próxima ocorrência de cada tarefa estritamente depois de [now]. Chamado só pelo
      * catch-up de lembretes (ADR-0003, passo 4, depois da entrega) e pela linha de base do restauro.
      */
-    suspend fun rescheduleReminders(now: Long = System.currentTimeMillis()) = alarmLock.withLock {
+    suspend fun rescheduleReminders(now: Long = clock.nowMillis()) = alarmLock.withLock {
         // Lê tarefas e conclusões e marca DENTRO da trava (NB-E1-B): um concluir ou desfazer no meio não
         // vê seu alarme sobrescrito por uma leitura anterior a ele.
-        val zone = ZoneId.systemDefault()
+        val zone = clock.zone()
         val tasks = tasksToRemind(now)
         val doneDays = completionDaysFrom(now, zone)
         scheduler.rescheduleAll(
@@ -414,8 +409,8 @@ class TaskRepository(
      * 14.3): a mesma conta do [nextReminderToDeliver]. Sem ocorrência a entregar, CANCELA o alarme da
      * tarefa (NB-1 da revisão da E1): não fica um alarme marcado que a conta já não prevê.
      */
-    private suspend fun scheduleNext(task: Task, now: Long = System.currentTimeMillis()) {
-        val zone = ZoneId.systemDefault()
+    private suspend fun scheduleNext(task: Task, now: Long = clock.nowMillis()) {
+        val zone = clock.zone()
         val doneDays = completionDaysFrom(now, zone)[task.id].orEmpty()
         val at = nextDelivered(task, now, zone, doneDays)
         if (at != null) scheduler.schedule(task, at) else scheduler.cancel(task.id)
@@ -434,8 +429,8 @@ class TaskRepository(
      * encerradas. Um conjunto só para o [rescheduleReminders] e para o diagnóstico de alarmes.
      * Só leitura.
      */
-    suspend fun tasksToRemind(now: Long = System.currentTimeMillis()): List<Task> {
-        val zone = ZoneId.systemDefault()
+    suspend fun tasksToRemind(now: Long = clock.nowMillis()): List<Task> {
+        val zone = clock.zone()
         val last = completionLogDao.lastCompletions().associate { it.taskId to it.completedAt }
         return taskDao.withPendingReminder(now).filterNot { TaskSchedule.isFinished(it, last[it.id], zone) }
     }
@@ -447,7 +442,7 @@ class TaskRepository(
      * [MAX_DISCARDED_OCCURRENCES] vezes por tarefa. Desde a v1.8.0 (E1) é a MESMA conta que o
      * agendador usa ([scheduleNext], [rescheduleReminders]): o diagnóstico mostra o alarme marcado. Só leitura.
      */
-    suspend fun nextReminderToDeliver(now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): Long? {
+    suspend fun nextReminderToDeliver(now: Long = clock.nowMillis(), zone: ZoneId = clock.zone()): Long? {
         val tasks = tasksToRemind(now)
         if (tasks.isEmpty()) return null
         val doneDays = completionDaysFrom(now, zone)
@@ -479,7 +474,7 @@ class TaskRepository(
 
     /** Sem repetição e já concluída (no dia dela ou depois): não lembra mais. */
     private suspend fun isFinished(task: Task): Boolean =
-        TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), ZoneId.systemDefault())
+        TaskSchedule.isFinished(task, completionLogDao.lastCompletion(task.id), clock.zone())
 
     private companion object {
         const val TAG = "TaskRepository"

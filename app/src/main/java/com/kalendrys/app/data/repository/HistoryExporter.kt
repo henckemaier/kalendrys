@@ -6,7 +6,6 @@ import androidx.room.withTransaction
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.domain.HistoryCsv
 import java.io.IOException
-import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -14,6 +13,7 @@ import kotlinx.coroutines.withContext
 class HistoryExporter(
     private val database: AppDatabase,
     private val contentResolver: ContentResolver,
+    private val clock: AppClock,
 ) {
 
     /** Quantas conclusões há para exportar (0 = nada, nem vale abrir o seletor de arquivo). */
@@ -29,7 +29,7 @@ class HistoryExporter(
                 taskLogs = database.completionLogDao().all(),
                 routines = database.routineDao().all(),
                 routineLogs = database.routineCompletionDao().all(),
-                zone = ZoneId.systemDefault(),
+                zone = clock.zone(),
             )
         }
         withContext(Dispatchers.IO) {

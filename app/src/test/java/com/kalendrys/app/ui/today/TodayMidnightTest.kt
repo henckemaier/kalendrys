@@ -5,16 +5,16 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.TodayRepository
+import com.kalendrys.app.testutil.FakeAppClock
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -30,7 +30,8 @@ import org.robolectric.annotation.Config
 
 /**
  * Virada da meia-noite na Hoje (NB-E3-B da v1.8.0): a seleção é ACOMPANHANDO HOJE ou UM DIA ESCOLHIDO,
- * e o hoje vem da mesma fonte de datas do [TodayRepository] (aqui, uma fonte controlada pelo teste).
+ * e o hoje vem da mesma fonte de datas do [TodayRepository]: o relógio do app (v1.10.0), aqui um
+ * [FakeAppClock] que o teste avança (a virada é o instante cruzando a meia-noite).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -42,7 +43,10 @@ class TodayMidnightTest {
 
     /** Quarta, 18 de novembro de 2026; a semana começa no domingo (15). */
     private val wednesday = LocalDate.of(2026, 11, 18)
-    private val dates = MutableStateFlow(wednesday)
+    private val clock = FakeAppClock.at(wednesday.atTime(10, 0))
+
+    /** Avança o relógio para as 10:00 de [day]: cruzando a meia-noite, o dia novo sai no fluxo. */
+    private fun turnTo(day: LocalDate) = clock.setLocal(day.atTime(10, 0))
 
     @Before
     fun setup() {
@@ -57,23 +61,18 @@ class TodayMidnightTest {
         Dispatchers.resetMain()
     }
 
-    /** Relógio de parede para a fonte que só lê a data ao começar (como o currentDate(); O-4). */
+    /** Relógio de parede lido pelo laço de sempre ([AppClock.dates]: lê ao começar e espera; O-4). */
     @Volatile
     private var wallClockDay = wednesday
 
     private fun viewModel(readsClock: Boolean = false): TodayViewModel {
-        val today = TodayRepository(
-            repos.tasks,
-            repos.routines,
-            repos.shopping,
-            dates = if (readsClock) {
-                { flow<LocalDate> { emit(wallClockDay); awaitCancellation() } }
-            } else {
-                { dates }
-            },
-            clock = { (if (readsClock) wallClockDay else dates.value).atTime(10, 0) },
-        )
-        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today, repos.undoOffers))
+        val appClock: AppClock = if (readsClock) {
+            clockOf { wallClockDay.atTime(10, 0).atZone(clock.zone()).toInstant().toEpochMilli() }
+        } else {
+            clock
+        }
+        val today = TodayRepository(repos.tasks, repos.routines, repos.shopping, appClock)
+        return testDb.track(TodayViewModel(repos.routines, repos.tasks, DayOfWeek.SUNDAY, repos.shopping, today, repos.undoOffers, clock = appClock))
     }
 
     private suspend fun ReceiveTurbine<TodayViewModel.UiState>.awaitState(
@@ -89,7 +88,7 @@ class TodayMidnightTest {
         val vm = viewModel()
         vm.uiState.test {
             awaitState { it.selectedDate == wednesday && it.isShowingToday }
-            dates.value = wednesday.plusDays(1)
+            turnTo(wednesday.plusDays(1))
             val state = awaitState { it.today == wednesday.plusDays(1) && it.overview?.date == wednesday.plusDays(1) }
             assertEquals(wednesday.plusDays(1), state.selectedDate)
             assertTrue(state.isShowingToday)
@@ -106,10 +105,10 @@ class TodayMidnightTest {
             awaitState { it.selectedDate == wednesday }
             vm.select(wednesday.plusDays(1))
             awaitState { it.selectedDate == wednesday.plusDays(1) && !it.isShowingToday }
-            dates.value = wednesday.plusDays(1)
+            turnTo(wednesday.plusDays(1))
             awaitState { it.today == wednesday.plusDays(1) && it.isShowingToday }
             // Voltou a acompanhar: a próxima virada leva junto.
-            dates.value = wednesday.plusDays(2)
+            turnTo(wednesday.plusDays(2))
             val state = awaitState { it.today == wednesday.plusDays(2) }
             assertEquals(wednesday.plusDays(2), state.selectedDate)
             cancelAndIgnoreRemainingEvents()
@@ -123,7 +122,7 @@ class TodayMidnightTest {
             awaitState { it.selectedDate == wednesday }
             vm.select(wednesday.minusDays(1))
             awaitState { it.selectedDate == wednesday.minusDays(1) }
-            dates.value = wednesday.plusDays(1)
+            turnTo(wednesday.plusDays(1))
             val state = awaitState { it.today == wednesday.plusDays(1) }
             assertEquals(wednesday.minusDays(1), state.selectedDate)
             assertFalse(state.isShowingToday)
@@ -143,7 +142,7 @@ class TodayMidnightTest {
             awaitState { it.selectedDate == wednesday.plusDays(2) }
             vm.select(wednesday)
             awaitState { it.selectedDate == wednesday && it.isShowingToday }
-            dates.value = wednesday.plusDays(1)
+            turnTo(wednesday.plusDays(1))
             awaitState { it.selectedDate == wednesday.plusDays(1) }
             cancelAndIgnoreRemainingEvents()
         }
@@ -182,12 +181,12 @@ class TodayMidnightTest {
     @Test
     fun `virada na troca de semana leva a faixa para a semana nova`() = runTest {
         val saturday = LocalDate.of(2026, 11, 21)
-        dates.value = saturday
+        turnTo(saturday)
         val vm = viewModel()
         vm.uiState.test {
             val before = awaitState { it.selectedDate == saturday }
             assertEquals(LocalDate.of(2026, 11, 15), before.week.first().date)
-            dates.value = saturday.plusDays(1)
+            turnTo(saturday.plusDays(1))
             val after = awaitState { it.selectedDate == saturday.plusDays(1) && it.overview?.date == saturday.plusDays(1) }
             assertEquals(LocalDate.of(2026, 11, 22), after.week.first().date)
             assertEquals(after.selectedDate, after.overview?.date)

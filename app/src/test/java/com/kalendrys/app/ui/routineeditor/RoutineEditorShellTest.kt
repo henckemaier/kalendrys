@@ -31,6 +31,7 @@ import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testUndoOffers
@@ -91,6 +92,7 @@ class RoutineEditorShellTest {
                 ExerciseRepository(db.exerciseItemDao()),
                 offers,
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         viewModel = vm

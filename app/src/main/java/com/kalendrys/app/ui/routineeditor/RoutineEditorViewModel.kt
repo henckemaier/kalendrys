@@ -17,11 +17,13 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.nowLocal
 import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
@@ -31,7 +33,6 @@ import com.kalendrys.app.ui.edit.EditQueue
 import com.kalendrys.app.ui.edit.TextFieldBuffer
 import com.kalendrys.app.ui.tasks.ReminderTime
 import java.time.DayOfWeek
-import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +82,8 @@ class RoutineEditorViewModel(
     private val undoOffers: UndoOffers,
     /** Escopo das gravações ([KalendrysApp.editScope]): sobrevive ao fechar a tela. */
     private val editScope: CoroutineScope,
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     private val routineId: Long = savedStateHandle[ROUTINE_ID_ARG] ?: NEW_ROUTINE_ID
@@ -278,7 +281,7 @@ class RoutineEditorViewModel(
 
     init {
         if (isNew) {
-            val now = LocalDateTime.now()
+            val now = clock.nowLocal()
             val suggested = ReminderTime.suggestedTime(now.toLocalDate(), now)
             val start = RoutineDraft(startMinute = suggested.hour * 60 + suggested.minute)
             initialDraft.value = start
@@ -515,7 +518,7 @@ class RoutineEditorViewModel(
         val listName = pendingListName.value
         editScope.launch {
             try {
-                repository.add(current.toNewRoutine(), newListName = listName)
+                repository.add(current.toNewRoutine(now = clock.nowMillis()), newListName = listName)
                 eventChannel.send(Event.Closed)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -560,7 +563,7 @@ class RoutineEditorViewModel(
                 latest.copy(
                     id = NEW_ROUTINE_ID,
                     title = copyTitle,
-                    createdAt = System.currentTimeMillis(),
+                    createdAt = clock.nowMillis(),
                     archivedAt = null,
                     pausedAt = null,
                     shoppingListId = null,
@@ -662,6 +665,7 @@ class RoutineEditorViewModel(
                     app.exerciseRepository,
                     app.undoOffers,
                     app.editScope,
+                    app.clock,
                 )
             }
         }
