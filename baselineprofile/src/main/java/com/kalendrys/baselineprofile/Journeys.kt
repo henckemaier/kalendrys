@@ -52,31 +52,54 @@ private const val SUMMARY_ITEMS = 25
  * confere o resultado.
  */
 
+/**
+ * TODO seletor das jornadas passa por aqui (v1.10.0, E0): restrito ao pacote do app. Sem o pacote, um
+ * marcador casava com o widget da tela inicial (desc "Nova tarefa", igual ao FAB da aba Tarefas), e o
+ * backTo "chegava" depois de o Voltar ter saído do app. Cria um seletor novo a cada chamada (o
+ * BySelector acumula critérios e não aceita dois pacotes).
+ */
+private fun inApp(): BySelector = By.pkg(PACKAGE_NAME)
+
+/** O app está em primeiro plano (a janela ativa é dele). */
+private fun MacrobenchmarkScope.appInForeground(): Boolean =
+    runCatching { device.currentPackageName }.getOrNull() == PACKAGE_NAME
+
+/**
+ * Aperta Voltar SÓ com o app em primeiro plano, e derruba em [step] se o Voltar levar para fora dele:
+ * fora do app, um Voltar a mais mexe na tela inicial e o passo seguinte já não diz nada.
+ */
+private fun MacrobenchmarkScope.pressBackInApp(step: String) {
+    if (!appInForeground()) fail("$step: o app não está em primeiro plano; não aperta Voltar fora dele")
+    device.pressBack()
+    device.waitForIdle()
+    if (!appInForeground()) fail("$step: o Voltar saiu do app")
+}
+
 /** Abas e o marcador de cada tela (qualquer um deles basta: com e sem conteúdo). */
 private enum class Tab(val label: String, val markers: List<BySelector>) {
-    TODAY("Hoje", listOf(By.text("Progresso do dia"), By.text("Nada no seu dia ainda"))),
-    TASKS("Tarefas", listOf(By.text("Buscar tarefas"), By.text("Nenhuma tarefa"))),
-    CALENDAR("Calendário", listOf(By.desc("Próximo mês"))),
-    LISTS("Listas", listOf(By.desc("Nova lista"))),
+    TODAY("Hoje", listOf(inApp().text("Progresso do dia"), inApp().text("Nada no seu dia ainda"))),
+    TASKS("Tarefas", listOf(inApp().text("Buscar tarefas"), inApp().text("Nenhuma tarefa"))),
+    CALENDAR("Calendário", listOf(inApp().desc("Próximo mês"))),
+    LISTS("Listas", listOf(inApp().desc("Nova lista"))),
 }
 
 /** O FAB de "Todas as rotinas" (a descrição; o editor novo tem "Nova rotina" só como TEXTO, no título). */
-private val ALL_ROUTINES_MARKER: BySelector = By.desc("Nova rotina")
+private val ALL_ROUTINES_MARKER: BySelector = inApp().desc("Nova rotina")
 
 /** O FAB da aba Tarefas (a da Hoje diz também o dia: "Nova tarefa em ..."). */
-private val TASKS_FAB: BySelector = By.desc("Nova tarefa")
+private val TASKS_FAB: BySelector = inApp().desc("Nova tarefa")
 
 /**
  * Derruba a geração no passo [step], com os textos da tela na mensagem: sem eles, a falha no emulador
  * só diria o passo, não onde a jornada estava.
  */
 private fun MacrobenchmarkScope.fail(step: String): Nothing =
-    throw AssertionError("$step. Na tela (${runCatching { device.currentPackageName }.getOrNull()}): ${screenSummary()}")
+    error("$step. Na tela (${runCatching { device.currentPackageName }.getOrNull()}): ${screenSummary()}")
 
 /** Os textos e descrições visíveis do app, na ordem da árvore (sem repetir). */
 private fun MacrobenchmarkScope.screenSummary(): String =
     runCatching {
-        device.findObjects(By.pkg(PACKAGE_NAME))
+        device.findObjects(inApp())
             .mapNotNull { node -> runCatching { node.text?.takeIf { it.isNotBlank() } ?: node.contentDescription }.getOrNull() }
             .filter { it.isNotBlank() }
             .distinct()
@@ -96,14 +119,18 @@ private fun MacrobenchmarkScope.requireClick(selector: BySelector, step: String)
 }
 
 /**
- * Volta até a tela com algum dos [markers]: o primeiro Voltar pode só fechar o teclado (o dumpsys nem
- * sempre diz que ele está aberto), por isso confere e volta de novo. Derruba em [step] se não chegar.
+ * Volta até a tela com algum dos [markers] (seletores [inApp]: só marcadores do app contam): o primeiro
+ * Voltar pode só fechar o teclado (o dumpsys nem sempre diz que ele está aberto), por isso confere e
+ * volta de novo; antes do primeiro, confere se já está lá. Derruba em [step] se não chegar e, já no Voltar que tirar o app do primeiro plano,
+ * para com erro em vez de seguir apertando Voltar na tela inicial ([pressBackInApp]).
  */
 private fun MacrobenchmarkScope.backTo(markers: List<BySelector>, step: String) {
+    // Já na tela (um Voltar anterior, como o de fechar o teclado, já saiu): não aperta mais nada.
+    if (appInForeground() && waitForAny(markers, timeoutMs = 0)) return
     repeat(MAX_BACKS) {
-        device.pressBack()
-        device.waitForIdle()
+        pressBackInApp(step)
         if (waitForAny(markers)) return
+        if (!appInForeground()) fail("$step: o app saiu do primeiro plano")
     }
     fail(step)
 }
@@ -132,11 +159,11 @@ private fun MacrobenchmarkScope.openTab(tab: Tab) {
         if (waitForAny(tab.markers, timeoutMs = 0)) return
         scrollToTop()
         if (waitForAny(tab.markers, timeoutMs = 0)) return
-        val label = device.findObject(By.text(tab.label))
+        val label = device.findObject(inApp().text(tab.label))
         if (label != null) {
             runCatching { label.click() }
         } else {
-            device.pressBack()
+            pressBackInApp("openTab '${tab.label}'")
         }
         if (waitForAny(tab.markers)) return
     }
@@ -157,7 +184,7 @@ fun MacrobenchmarkScope.waitForToday() {
  * cabe na tela (o Compose só marca como rolável o que tem para onde rolar).
  */
 private fun MacrobenchmarkScope.mainList(): UiObject2? =
-    device.findObjects(By.scrollable(true))
+    device.findObjects(inApp().scrollable(true))
         .maxByOrNull { runCatching { it.visibleBounds.height() }.getOrDefault(0) }
         ?.also { it.setGestureMargin(device.displayWidth / 5) }
 
@@ -196,7 +223,7 @@ private fun MacrobenchmarkScope.flingMainList() {
  * do item confere o retorno.
  */
 private fun MacrobenchmarkScope.findInList(text: String): UiObject2? {
-    val selector = By.text(text)
+    val selector = inApp().text(text)
     scrollToTop()
     repeat(MAX_SCROLLS) {
         device.findObject(selector)?.let { found -> clearOfFab(found, selector)?.let { return it } }
@@ -254,7 +281,7 @@ private fun MacrobenchmarkScope.actOnFresh(selector: BySelector, action: (UiObje
 }
 
 /** O primeiro campo de texto da tela, painel ou diálogo aberto (o título, nos editores). */
-private val FIRST_FIELD: BySelector = By.clazz("android.widget.EditText")
+private val FIRST_FIELD: BySelector = inApp().clazz("android.widget.EditText")
 
 /** Escreve [text] no primeiro campo de texto da tela; derruba em [step] se não houver campo. */
 private fun MacrobenchmarkScope.requireTypeInFirstField(text: String, step: String) {
@@ -275,9 +302,9 @@ private fun MacrobenchmarkScope.requireTypeInFirstField(text: String, step: Stri
 private fun MacrobenchmarkScope.typeAndConfirm(text: String, step: String, confirm: String = "Salvar") {
     requireTypeInFirstField(text, step)
     hideKeyboard()
-    requireClick(By.text(confirm), "$step: sem '$confirm'")
+    requireClick(inApp().text(confirm), "$step: sem '$confirm'")
     // Espera o painel, o diálogo ou o editor fechar.
-    if (!device.wait(Until.gone(By.text(confirm)), TIMEOUT_MS)) fail("$step: '$confirm' não fechou a tela")
+    if (!device.wait(Until.gone(inApp().text(confirm)), TIMEOUT_MS)) fail("$step: '$confirm' não fechou a tela")
 }
 
 /**
@@ -295,10 +322,7 @@ private fun MacrobenchmarkScope.editAndLeave(title: String, backMarker: BySelect
 
 /** Fecha o teclado, se aberto (o Voltar com ele aberto só o fecha; sem ele, sairia da tela). */
 private fun MacrobenchmarkScope.hideKeyboard() {
-    if (isKeyboardShown()) {
-        device.pressBack()
-        device.waitForIdle()
-    }
+    if (isKeyboardShown()) pressBackInApp("hideKeyboard")
 }
 
 /**
@@ -320,9 +344,9 @@ fun MacrobenchmarkScope.browseTasks() {
     openTab(Tab.TASKS)
     flingMainList()
     scrollToTop()
-    requireClick(By.text("Buscar tarefas"), "browseTasks: sem a busca 'Buscar tarefas'")
+    requireClick(inApp().text("Buscar tarefas"), "browseTasks: sem a busca 'Buscar tarefas'")
     requireTypeInFirstField("Perfil", "browseTasks: busca")
-    requireClick(By.desc("Limpar busca"), "browseTasks: sem 'Limpar busca'")
+    requireClick(inApp().desc("Limpar busca"), "browseTasks: sem 'Limpar busca'")
     device.waitForIdle()
     // Fecha o teclado sem sair da aba: depois do Limpar a dica volta e o foco continua no campo, então
     // a dica não diz nada do teclado (NB-E7-B). Voltar só com o teclado aberto; sem ele, o Voltar
@@ -330,7 +354,7 @@ fun MacrobenchmarkScope.browseTasks() {
     hideKeyboard()
     // ensureSampleTasks acabou de garantir a tarefa: não achá-la é falha, não caminho alternativo.
     if (!clickInList(SAMPLE_TASKS.first())) fail("browseTasks: sem a tarefa '${SAMPLE_TASKS.first()}' na lista")
-    requireShown(By.text("Detalhes da tarefa"), "browseTasks: o detalhe da tarefa não abriu")
+    requireShown(inApp().text("Detalhes da tarefa"), "browseTasks: o detalhe da tarefa não abriu")
     // Detalhe sem "Salvar" (v1.9.0): edita o título (com o mesmo texto) e volta; a gravação é na hora.
     editAndLeave(SAMPLE_TASKS.first(), TASKS_FAB, "browseTasks: detalhe")
     openTab(Tab.TASKS)
@@ -350,7 +374,7 @@ private val KEYBOARD_SHOWN_MARKERS = listOf("mInputShown=true", "isInputViewShow
 
 /** A faixa da semana da Hoje: a área rolável mais baixa (a lista principal é a mais alta). */
 private fun MacrobenchmarkScope.weekStrip(): UiObject2? =
-    device.findObjects(By.scrollable(true))
+    device.findObjects(inApp().scrollable(true))
         .filter { runCatching { it.visibleBounds.width() > it.visibleBounds.height() }.getOrDefault(false) }
         .minByOrNull { runCatching { it.visibleBounds.height() }.getOrDefault(Int.MAX_VALUE) }
         ?.takeIf { it != mainList() }
@@ -394,7 +418,7 @@ fun MacrobenchmarkScope.browseRoutines() {
     requireClick(ALL_ROUTINES_MARKER, "browseRoutines: sem o botão 'Nova rotina' em 'Todas as rotinas'")
     // Marcador do editor novo: o "Criar rotina" (rodapé ou barra do topo); o título "Nova rotina" é
     // também o texto do FAB da lista.
-    requireShown(By.text("Criar rotina"), "browseRoutines: o editor de rotina nova não abriu")
+    requireShown(inApp().text("Criar rotina"), "browseRoutines: o editor de rotina nova não abriu")
     if (sampleExists) {
         hideKeyboard()
         backTo(listOf(ALL_ROUTINES_MARKER), "browseRoutines: o Voltar do editor novo não voltou a 'Todas as rotinas'")
@@ -405,11 +429,11 @@ fun MacrobenchmarkScope.browseRoutines() {
 
     // EDIÇÃO
     if (!clickInList(SAMPLE_ROUTINE)) fail("browseRoutines: sem a rotina '$SAMPLE_ROUTINE' na lista")
-    requireShown(By.text("Editar rotina"), "browseRoutines: o editor da rotina não abriu")
+    requireShown(inApp().text("Editar rotina"), "browseRoutines: o editor da rotina não abriu")
     toggleMoreOptions()
     editAndLeave(SAMPLE_ROUTINE, ALL_ROUTINES_MARKER, "browseRoutines: editor")
 
-    backTo(Tab.TODAY.markers + By.text(Tab.TODAY.label), "browseRoutines: o Voltar de 'Todas as rotinas' não voltou à Hoje")
+    backTo(Tab.TODAY.markers, "browseRoutines: o Voltar de 'Todas as rotinas' não voltou à Hoje")
     openTab(Tab.TODAY)
 }
 
@@ -418,10 +442,10 @@ fun MacrobenchmarkScope.browseRoutines() {
  * cair numa recomposição e o menu não abrir, tenta mais uma vez.
  */
 private fun MacrobenchmarkScope.openAllRoutines() {
-    val item = By.text("Todas as rotinas")
+    val item = inApp().text("Todas as rotinas")
     var menuOpen = false
     for (attempt in 1..2) {
-        requireClick(By.desc("Mais opções"), "browseRoutines: sem o menu 'Mais opções' na Hoje")
+        requireClick(inApp().desc("Mais opções"), "browseRoutines: sem o menu 'Mais opções' na Hoje")
         menuOpen = device.wait(Until.hasObject(item), TIMEOUT_MS)
         if (menuOpen) break
     }
@@ -437,7 +461,7 @@ private fun MacrobenchmarkScope.openAllRoutines() {
  * mudar o estado de antes. Termina com a lista de volta ao topo (o título).
  */
 private fun MacrobenchmarkScope.toggleMoreOptions() {
-    val header = By.text("Mais opções")
+    val header = inApp().text("Mais opções")
     findInList("Mais opções") ?: fail("browseRoutines: sem a seção 'Mais opções' no editor")
     repeat(2) {
         if (!actOnFresh(header) { it.click() }) fail("browseRoutines: não tocou em 'Mais opções'")
@@ -454,13 +478,13 @@ fun MacrobenchmarkScope.browseLists() {
     openTab(Tab.LISTS)
     if (!clickInList(SAMPLE_LIST)) {
         // Criar pela aba já abre a lista nova.
-        requireClick(By.desc("Nova lista"), "browseLists: sem o botão 'Nova lista'")
+        requireClick(inApp().desc("Nova lista"), "browseLists: sem o botão 'Nova lista'")
         typeAndConfirm(SAMPLE_LIST, "browseLists: criar '$SAMPLE_LIST'")
     }
     // Tela da lista (v1.7.0): o campo de adição rápida no rodapé, com a dica "Adicionar item", no
     // lugar do FAB. Não adiciona nada: a jornada não pode criar itens a cada rodada.
-    requireShown(By.text("Adicionar item"), "browseLists: a tela da lista não abriu")
-    device.pressBack()
+    requireShown(inApp().text("Adicionar item"), "browseLists: a tela da lista não abriu")
+    backTo(Tab.LISTS.markers, "browseLists: o Voltar da lista não voltou à aba Listas")
     openTab(Tab.LISTS)
 }
 
@@ -468,11 +492,11 @@ fun MacrobenchmarkScope.browseLists() {
 fun MacrobenchmarkScope.browseCalendar() {
     openTab(Tab.CALENDAR)
     repeat(2) {
-        requireClick(By.desc("Próximo mês"), "browseCalendar: sem 'Próximo mês'")
+        requireClick(inApp().desc("Próximo mês"), "browseCalendar: sem 'Próximo mês'")
         device.waitForIdle()
     }
     repeat(2) {
-        requireClick(By.desc("Mês anterior"), "browseCalendar: sem 'Mês anterior'")
+        requireClick(inApp().desc("Mês anterior"), "browseCalendar: sem 'Mês anterior'")
         device.waitForIdle()
     }
 }
@@ -480,9 +504,9 @@ fun MacrobenchmarkScope.browseCalendar() {
 /** Abre as configurações pela Hoje e volta. */
 fun MacrobenchmarkScope.browseSettings() {
     openTab(Tab.TODAY)
-    requireClick(By.desc("Configurações"), "browseSettings: sem o botão 'Configurações' na Hoje")
+    requireClick(inApp().desc("Configurações"), "browseSettings: sem o botão 'Configurações' na Hoje")
     // O título da tela (TEXTO; na Hoje é só a descrição do ícone) ou a primeira seção.
-    if (!waitForAny(listOf(By.text("Configurações"), By.text("Resumo diário")))) fail("browseSettings: as configurações não abriram")
-    device.pressBack()
+    if (!waitForAny(listOf(inApp().text("Configurações"), inApp().text("Resumo diário")))) fail("browseSettings: as configurações não abriram")
+    backTo(Tab.TODAY.markers, "browseSettings: o Voltar não voltou à Hoje")
     openTab(Tab.TODAY)
 }
