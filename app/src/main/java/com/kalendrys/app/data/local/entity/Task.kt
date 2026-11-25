@@ -2,6 +2,7 @@ package com.kalendrys.app.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
@@ -10,7 +11,11 @@ import com.kalendrys.app.domain.ReminderRepeat
  * Tarefa. Sem repetição, ela é feita uma vez: concluída, sai das pendentes de vez. Com
  * repetição, cada dia em que ela acontece tem a própria conclusão.
  */
-@Entity(tableName = "tasks")
+/*
+ * Índice ÚNICO no vínculo de lista (v1.10.0, ADR-0002 16.10.3 passo 7): a lista é de uma tarefa só e o
+ * banco recusa duas na mesma. NULL não conta (várias tarefas sem lista).
+ */
+@Entity(tableName = "tasks", indices = [Index(value = ["shoppingListId"], unique = true)])
 data class Task(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,

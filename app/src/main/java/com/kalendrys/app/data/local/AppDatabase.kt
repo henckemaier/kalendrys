@@ -14,6 +14,7 @@ import com.kalendrys.app.data.local.dao.RoutineCategoryDao
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
+import com.kalendrys.app.data.local.dao.SavedExerciseDao
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.ShoppingListDao
 import com.kalendrys.app.data.local.dao.TaskDao
@@ -23,6 +24,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
@@ -41,8 +43,9 @@ import java.time.ZoneId
         ShoppingItem::class,
         ExerciseItem::class,
         ShoppingList::class,
+        SavedExercise::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
     // v4: rotinas (só tabelas novas). v5: data e local das tarefas. v6: recorrência custom
     // (intervalEvery/intervalUnit/byWeekdays em tasks — aditivo com default). v7: fundação de
@@ -53,6 +56,9 @@ import java.time.ZoneId
     // manual). v10: listas de compras independentes (ADR-0001) — MIGRATION_9_10 manual, com backfill.
     // v11: conclusão adiantada no próprio registro (completion_log ganha previousDueDate,
     // previousReminderAt e rewrittenDueDate, anuláveis) — automática, sem SQL manual.
+    // v12 (v1.10.0, ADR-0002 16.10.3): rotina com tipo e sem lista, exercícios salvos, lista de UMA
+    // tarefa só (índice único em tasks.shoppingListId) — [Migration11To12] manual, com as regras do
+    // ListOwnership.
     // O Room confere o SQL gerado contra os arquivos de schemas/.
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
@@ -83,6 +89,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shoppingListDao(): ShoppingListDao
 
     abstract fun exerciseItemDao(): ExerciseItemDao
+
+    abstract fun savedExerciseDao(): SavedExerciseDao
 
     /**
      * v5: antes a tarefa só tinha o lembrete. A que tinha lembrete ganha como data o dia dele;
@@ -186,7 +194,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "kalendrys.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_9_10)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_9_10, Migration11To12)
                 .build()
     }
 }

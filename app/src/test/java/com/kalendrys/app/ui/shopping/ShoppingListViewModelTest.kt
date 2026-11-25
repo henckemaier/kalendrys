@@ -328,9 +328,9 @@ class ShoppingListViewModelTest {
     }
 
     @Test
-    fun `tarefa de origem tem prioridade quando ha mais de uma pendente`() = runTest {
+    fun `aberta pela tarefa de origem, a oferta e dela`() = runTest {
+        // v1.10.0: a lista é de UMA tarefa (o banco recusa duas); o caso de duas pendentes não existe mais.
         val listId = listMissingOne("Arroz", "Feijão")
-        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId, createdAt = TEST_CREATED_AT))
         val origin = db.taskDao().insert(Task(title = "Mercado do mês", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = viewModel(listId, taskId = origin)
@@ -341,11 +341,8 @@ class ShoppingListViewModelTest {
     }
 
     @Test
-    fun `sem oferta com duas pendentes e sem origem, sem tarefa ou com lista incompleta`() = runTest {
-        // Duas pendentes, sem origem: ambígua.
-        val twoTasks = listMissingOne("Arroz", "Feijão")
-        db.taskDao().insert(Task(title = "Feira", shoppingListId = twoTasks, createdAt = TEST_CREATED_AT))
-        db.taskDao().insert(Task(title = "Mercado", shoppingListId = twoTasks, createdAt = TEST_CREATED_AT))
+    fun `sem oferta sem tarefa ou com lista incompleta`() = runTest {
+        // (v1.10.0: o caso "duas pendentes sem origem" saiu; a lista é de uma tarefa só.)
         // Só rotina vinculada: rotinas não recebem oferta.
         val routineOnly = listMissingOne("Leite")
         db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = routineOnly, createdAt = TEST_CREATED_AT))
@@ -355,8 +352,8 @@ class ShoppingListViewModelTest {
         db.taskDao().insert(Task(title = "Padaria", shoppingListId = incomplete, createdAt = TEST_CREATED_AT))
         val firstUnpicked = repository.observeItems(incomplete).first().first { !it.picked }
 
-        val vms = listOf(viewModel(twoTasks), viewModel(routineOnly), viewModel(incomplete))
-        vms.zip(listOf(lastUnpicked(twoTasks), lastUnpicked(routineOnly), firstUnpicked)).forEach { (vm, item) ->
+        val vms = listOf(viewModel(routineOnly), viewModel(incomplete))
+        vms.zip(listOf(lastUnpicked(routineOnly), firstUnpicked)).forEach { (vm, item) ->
             vm.events.test {
                 vm.togglePicked(item).join()
                 expectNoEvents()
