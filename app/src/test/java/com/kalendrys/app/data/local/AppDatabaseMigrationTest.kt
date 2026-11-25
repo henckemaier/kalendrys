@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kalendrys.app.data.repository.BackupManager
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.legacyBackup
 import com.kalendrys.app.data.repository.legacyItem
 import com.kalendrys.app.data.repository.legacyRoutine
@@ -350,7 +351,7 @@ class AppDatabaseMigrationTest {
             val settings = SettingsRepository(
                 PreferenceDataStoreFactory.create { File(context.cacheDir, "migration-vs-backup-${System.nanoTime()}.preferences_pb") },
             )
-            BackupManager(db, context.contentResolver, settings).restore(backup.toString())
+            BackupManager(db, context.contentResolver, settings, clock = SystemAppClock).restore(backup.toString())
 
             val restoredLists = db.shoppingListDao().all().map { listOf(it.id.toString(), it.name, it.createdAt.toString(), it.lastResetKey) }
             val restoredItems = db.shoppingItemDao().all().sortedBy { it.id }.map {

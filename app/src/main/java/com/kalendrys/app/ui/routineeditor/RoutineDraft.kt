@@ -73,7 +73,8 @@ data class RoutineDraft(
             shoppingListId = shoppingListId,
         )
 
-    fun toNewRoutine(now: Long = System.currentTimeMillis()): Routine =
+    /** [now]: o instante de criação, do relógio do app (v1.10.0, 16.3). */
+    fun toNewRoutine(now: Long): Routine =
         applyTo(Routine(title = "", startMinute = startMinute, createdAt = now))
 
     companion object {

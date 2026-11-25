@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 
 /** [RoutineRepository] de teste sobre [db], com alarmes, avisos e marca de catch-up falsos. */
@@ -18,6 +19,7 @@ fun testRoutineRepository(db: AppDatabase, alarms: FakeRoutineAlarms? = null): R
         FakeRoutineNotifications(context),
         db.shoppingItemDao(),
         InMemoryRoutineCatchUpMark(),
+        clock = SystemAppClock,
     )
 }
 
@@ -32,10 +34,10 @@ fun testUndoOffers(
     routines: RoutineRepository = testRoutineRepository(testDb.db),
     clock: () -> Long = { System.currentTimeMillis() },
     tasks: TaskRepository = testTaskRepository(testDb.db),
-): UndoOffers = UndoOffers(tasks, routines, testDb.appScope(), clock)
+): UndoOffers = UndoOffers(tasks, routines, testDb.appScope(), clockOf(now = clock))
 
 /** [TaskRepository] de teste sobre [db], com agendador falso. */
 fun testTaskRepository(db: AppDatabase): TaskRepository {
     val context = ApplicationProvider.getApplicationContext<Context>()
-    return TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+    return TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
 }

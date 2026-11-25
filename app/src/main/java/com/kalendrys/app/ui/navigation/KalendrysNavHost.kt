@@ -52,8 +52,10 @@ import com.kalendrys.app.NewTaskPanel
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
 import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.ui.calendar.CalendarScreen
 import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.diagnostics.AlarmDiagnosticsScreen
 import com.kalendrys.app.ui.routineeditor.ROUTINE_EDITOR_ROUTE
@@ -109,6 +111,7 @@ fun KalendrysNavHost(
     newTaskPanel: NewTaskPanel = (LocalContext.current.applicationContext as KalendrysApp).newTaskPanel,
 ) {
     val navController = rememberNavController()
+    val clock = LocalAppClock.current
     // Mensagens do app (Desfazer das exclusões de tarefa e rotina): o único coletor; quem desenha é o
     // AppScaffold da tela à frente, que lê o estado pelo LocalAppSnackbarHostState.
     val appSnackbar = remember { SnackbarHostState() }
@@ -302,13 +305,13 @@ fun KalendrysNavHost(
             is LaunchRequest.OpenTask -> openTask(launchRequest.taskId)
             // Widget e atalho: o painel abre POR CIMA do que estiver na tela, sem trocar de aba (O-2 da
             // v1.7.0); com o app frio, sobre a aba inicial (Hoje).
-            LaunchRequest.NewTask -> openNewTask(LocalDate.now())
+            LaunchRequest.NewTask -> openNewTask(clock.today())
             // Se o editor de rotina estava aberto, a aba volta com ele (restoreState) e o dia
             // pedido só vale ao sair do editor.
             LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)
             is LaunchRequest.OpenRoutines -> {
                 navController.openTab(AppTab.Today)
-                routinesDateRequested = launchRequest.date
+                routinesDateRequested = launchRequest.date ?: clock.today()
             }
             // ADR-0002, E-1: aba Listas e, sobre ela, SÓ a lista pedida (voltar cai na aba). O openTab
             // restaura a pilha salva da aba, que pode já ter uma lista aberta: desempilha até a aba

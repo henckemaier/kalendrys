@@ -11,10 +11,11 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun rememberCurrentMinute(): Long {
-    val now by produceState(System.currentTimeMillis()) {
+    val clock = LocalAppClock.current
+    val now by produceState(clock.nowMillis(), clock) {
         while (true) {
-            delay(60_000 - System.currentTimeMillis() % 60_000)
-            value = System.currentTimeMillis()
+            delay(60_000 - clock.nowMillis() % 60_000)
+            value = clock.nowMillis()
         }
     }
     return now

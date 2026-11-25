@@ -10,11 +10,13 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import java.time.LocalDate
@@ -74,8 +76,8 @@ class TaskDetailViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        shoppingRepository = ShoppingRepository(db)
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
+        shoppingRepository = ShoppingRepository(db, clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, tasks = taskRepository)
         editScope = testDb.appScope()
     }
@@ -97,6 +99,7 @@ class TaskDetailViewModelTest {
             shoppingRepository,
             undoOffers,
             editScope,
+            clock = SystemAppClock,
         ),
     ).also { viewModels += it }
 
@@ -461,7 +464,7 @@ class TaskDetailViewModelTest {
     fun `tarefa com lista mostra o resumo sem contar como alteracao`() = runBlocking {
         val listId = shoppingRepository.createList("Feira")
         shoppingRepository.add(listId, "Arroz", quantity = 2, priceCents = 500)
-        val id = db.taskDao().insert(Task(title = "Feira", shoppingListId = listId))
+        val id = db.taskDao().insert(Task(title = "Feira", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val state = viewModel(id).awaitUi { it.shoppingList?.progress?.total == 1 }
         assertEquals("Feira", state.shoppingList?.name)
@@ -474,7 +477,7 @@ class TaskDetailViewModelTest {
     fun `usar lista existente e desvincular gravam na hora e a lista fica`() = runBlocking {
         val listId = shoppingRepository.createList("Mercado")
         shoppingRepository.add(listId, "Café", quantity = 1, priceCents = 0)
-        val id = db.taskDao().insert(Task(title = "Mercado"))
+        val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
         val vm = viewModel(id)
         vm.awaitUi { it.task != null }
 
@@ -491,7 +494,7 @@ class TaskDetailViewModelTest {
 
     @Test
     fun `criar nova vincula numa transacao e reverter deixa a lista avulsa`() = runBlocking {
-        val id = db.taskDao().insert(Task(title = "Churrasco"))
+        val id = db.taskDao().insert(Task(title = "Churrasco", createdAt = TEST_CREATED_AT))
         val vm = viewModel(id)
         vm.awaitUi { it.task != null }
 
@@ -508,7 +511,7 @@ class TaskDetailViewModelTest {
 
     @Test
     fun `vinculo orfao equivale a sem lista`() = runBlocking {
-        val id = db.taskDao().insert(Task(title = "Órfã", shoppingListId = 999))
+        val id = db.taskDao().insert(Task(title = "Órfã", shoppingListId = 999, createdAt = TEST_CREATED_AT))
         val state = viewModel(id).awaitUi { it.task != null }
         assertNull(state.shoppingList)
     }

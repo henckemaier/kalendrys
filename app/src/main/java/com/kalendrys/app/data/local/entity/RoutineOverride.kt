@@ -24,5 +24,5 @@ data class RoutineOverride(
     val type: String,
     val newStartMinute: Int? = null,
     val newEpochDay: Long? = null,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
 )

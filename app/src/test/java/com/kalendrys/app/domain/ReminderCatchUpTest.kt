@@ -1,6 +1,7 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -43,6 +44,7 @@ class ReminderCatchUpTest {
         intervalEvery = every,
         intervalUnit = unit,
         byWeekdays = byWeekdays,
+        createdAt = TEST_CREATED_AT,
     )
 
     private fun plan(
@@ -106,7 +108,7 @@ class ReminderCatchUpTest {
 
     @Test
     fun `tarefa sem lembrete e ignorada`() {
-        val noReminder = Task(id = 1, title = "sem", dueDate = wed.toEpochDay(), reminderAt = null)
+        val noReminder = Task(id = 1, title = "sem", dueDate = wed.toEpochDay(), reminderAt = null, createdAt = TEST_CREATED_AT)
         assertTrue(plan(listOf(noReminder), millis(wed.minusDays(1)), millis(wed.plusDays(1))).isEmpty)
     }
 

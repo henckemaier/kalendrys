@@ -7,6 +7,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
@@ -14,7 +15,9 @@ import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +60,7 @@ class UndoOffersTest {
         val db = testDb.db
         scheduler = FakeReminderScheduler(context)
         alarms = FakeRoutineAlarms(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
         routines = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
@@ -66,15 +69,16 @@ class UndoOffersTest {
             FakeRoutineNotifications(context),
             db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        shopping = ShoppingRepository(db)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
     fun tearDown() = testDb.close()
 
     private fun offers(scope: CoroutineScope, clock: () -> Long = { System.currentTimeMillis() }) =
-        UndoOffers(repository, routines, scope, clock)
+        UndoOffers(repository, routines, scope, clockOf(now = clock))
 
     private fun deletedTask(task: Task) = UndoTarget.DeletedTask(task)
 
@@ -132,7 +136,7 @@ class UndoOffersTest {
     fun `oferta de rotina substitui a de tarefa e limpar a antiga nao apaga a nova`() = runTest {
         val offers = offers(backgroundScope)
         val task = repository.addTask("A")
-        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT))
 
         offers.offer(deletedTask(task))
         val taskOffer = offers.pending.value!!
@@ -186,7 +190,7 @@ class UndoOffersTest {
     @Test
     fun `Desfazer da rotina excluida a desarquiva e reagenda os alarmes`() = runTest {
         val offers = offers(this)
-        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT))
         routines.archive(routine)
         alarms.reset()
 
@@ -203,7 +207,7 @@ class UndoOffersTest {
         val offers = offers(this)
         val task = repository.addTask("Pagar conta")
         repository.deleteTask(task)
-        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT))
         routines.archive(routine)
 
         offers.offer(deletedTask(task))
@@ -219,7 +223,7 @@ class UndoOffersTest {
     fun `oferta vale o prazo a partir da criacao, para os dois tipos`() = runTest {
         var now = 1_000L
         val offers = offers(backgroundScope) { now }
-        listOf(deletedTask(Task(id = 1, title = "T")), UndoTarget.DeletedRoutine(7)).forEach { target ->
+        listOf(deletedTask(Task(id = 1, title = "T", createdAt = TEST_CREATED_AT)), UndoTarget.DeletedRoutine(7)).forEach { target ->
             now = 1_000L
             offers.offer(target)
             val offer = offers.pending.value!!
@@ -271,7 +275,7 @@ class UndoOffersTest {
     @Test
     fun `excluir rotina e fechar a tela na hora ainda arquiva e publica a oferta`() = runTest {
         val offers = offers(this)
-        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT))
 
         fromScreenThenClose { offers.deleteRoutine(routine) }.join()
 
@@ -288,7 +292,7 @@ class UndoOffersTest {
         fromScreenThenClose { offers.undo(taskOffer) }.join()
         assertEquals(task.id, repository.observeTask(task.id).first()?.id)
 
-        val routine = routines.add(Routine(title = "Treino", startMinute = 420))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT))
         offers.deleteRoutine(routine).join()
         val routineOffer = offers.pending.value!!
         fromScreenThenClose { offers.undo(routineOffer) }.join()
@@ -356,7 +360,7 @@ class UndoOffersTest {
     fun `concluir rotina oferece e o Desfazer desfaz a conclusao do dia`() = runTest {
         val offers = offers(this)
         val today = LocalDate.now()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
 
         offers.completeRoutine(routine.id, today, today).join()
 
@@ -371,7 +375,7 @@ class UndoOffersTest {
         // Um segundo toque (widget e Hoje juntos) não gera um Desfazer que apagaria a conclusão do primeiro.
         val offers = offers(this)
         val today = LocalDate.now()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         routines.complete(routine.id, today, today)
 
         offers.completeRoutine(routine.id, today, today).join()
@@ -386,7 +390,7 @@ class UndoOffersTest {
         val offers = offers(this)
         val today = LocalDate.now()
         val epochDay = today.toEpochDay()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
 
         offers.completeRoutine(routine.id, today, today).join()
         offers.discardRoutineCompletion(routine.id, epochDay)
@@ -401,7 +405,7 @@ class UndoOffersTest {
     fun `descartar so tira a oferta do mesmo bloco e dia`() = runTest {
         val offers = offers(this)
         val today = LocalDate.now()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         offers.completeRoutine(routine.id, today, today).join()
 
         offers.discardRoutineCompletion(routine.id, today.minusDays(1).toEpochDay())
@@ -415,7 +419,7 @@ class UndoOffersTest {
         val offers = offers(this)
         val today = LocalDate.now()
         val epochDay = today.toEpochDay()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         routines.rescheduleOccurrence(routine.id, epochDay, newStartMinute = 930, newEpochDay = null)
 
         offers.skipRoutine(routine.id, today).join()
@@ -427,10 +431,32 @@ class UndoOffersTest {
     }
 
     @Test
+    fun `pular rotina que nao existe mais nao oferece Desfazer`() = runTest {
+        // N2 da E4 da v1.9.0 (v1.10.0, E0): a oferta cujo Desfazer não faria nada não aparece.
+        val offers = offers(this)
+
+        offers.skipRoutine(999, LocalDate.now()).join()
+
+        assertNull(offers.pending.value)
+    }
+
+    @Test
+    fun `pular rotina que nao existe mais nao derruba a oferta pendente`() = runTest {
+        val offers = offers(this)
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
+        offers.skipRoutine(routine.id, LocalDate.now()).join()
+        val pending = offers.pending.value
+
+        offers.skipRoutine(999, LocalDate.now()).join()
+
+        assertEquals(pending, offers.pending.value)
+    }
+
+    @Test
     fun `desfazer pular do bloco descarta a oferta do pular`() = runTest {
         val offers = offers(this)
         val today = LocalDate.now()
-        val routine = routines.add(Routine(title = "Treino", startMinute = 600))
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
         offers.skipRoutine(routine.id, today).join()
 
         offers.discardRoutineSkip(routine.id, today.toEpochDay())

@@ -25,9 +25,11 @@ import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
@@ -72,12 +74,12 @@ class ShoppingProgressTagFitTest {
         testDb = ViewModelTestDatabase(context)
         runBlocking {
             val db = testDb.db
-            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado"))
+            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado", createdAt = TEST_CREATED_AT))
             db.shoppingItemDao().insertAll(
                 listOf(
-                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0),
-                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1),
-                    ShoppingItem(listId = listId, name = "Café", position = 2),
+                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Café", position = 2, createdAt = TEST_CREATED_AT),
                 ),
             )
             db.routineDao().insert(
@@ -95,6 +97,7 @@ class ShoppingProgressTagFitTest {
                     title = "Passar no mercado e conferir a lista inteira de compras",
                     location = "Supermercado do bairro, perto da praça",
                     shoppingListId = listId,
+                    createdAt = TEST_CREATED_AT,
                 ),
             )
         }
@@ -104,14 +107,14 @@ class ShoppingProgressTagFitTest {
     fun tearDown() = testDb.close()
 
     private fun taskRepository() = testDb.db.let { db ->
-        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     private fun routinesViewModel(): TodayViewModel =
         testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), testUndoOffers(testDb)))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb), clock = SystemAppClock))
 
     private var fontScale by mutableFloatStateOf(1f)
 

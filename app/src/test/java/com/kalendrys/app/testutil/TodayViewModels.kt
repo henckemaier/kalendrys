@@ -1,5 +1,6 @@
 package com.kalendrys.app.testutil
 
+import com.kalendrys.app.data.repository.SystemAppClock
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -31,16 +32,17 @@ class TodayRepositories(
         FakeRoutineNotifications(context),
         db.shoppingItemDao(),
         InMemoryRoutineCatchUpMark(),
+        clock = SystemAppClock,
     )
-    val tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-    val shopping = ShoppingRepository(db)
+    val tasks = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
+    val shopping = ShoppingRepository(db, clock = SystemAppClock)
 
     /** O mesmo retrato do widget Resumo (fonte única das pendências da Hoje). */
-    val today = TodayRepository(tasks, routines, shopping)
+    val today = TodayRepository(tasks, routines, shopping, clock = SystemAppClock)
 
     /** A oferta de Desfazer do app (concluir e pular pela Hoje, v1.9.0 E4). */
-    val undoOffers = UndoOffers(tasks, routines, appScope)
+    val undoOffers = UndoOffers(tasks, routines, appScope, clock = SystemAppClock)
 
     fun viewModel(firstDayOfWeek: DayOfWeek = DayOfWeek.SUNDAY) =
-        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, today, undoOffers)
+        TodayViewModel(routines, tasks, firstDayOfWeek, shopping, today, undoOffers, clock = SystemAppClock)
 }

@@ -8,6 +8,7 @@ import app.cash.turbine.test
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import java.time.DayOfWeek
@@ -82,8 +83,8 @@ class TodayContentViewModelTest {
         tasks.logCompletion(tasks.addTask("Regar as plantas", timing = TaskTiming(date = today)).id)
         tasks.logCompletion(tasks.addTask("Reunião", timing = TaskTiming(date = today, time = LocalTime.of(23, 0))).id)
         tasks.logCompletion(tasks.addTask("Ler o capítulo").id)
-        val treino = repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
-        repos.routines.add(Routine(title = "Leitura", startMinute = 21 * 60, durationMinutes = 30))
+        val treino = repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT))
+        repos.routines.add(Routine(title = "Leitura", startMinute = 21 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT))
         repos.routines.complete(treino.id, today)
     }
 
@@ -201,6 +202,7 @@ class TodayContentViewModelTest {
                 title = "Lembrete solto",
                 dueDate = null,
                 reminderAt = millisAt(today, LocalTime.of(23, 0)),
+                createdAt = TEST_CREATED_AT,
             ),
         )
         val vm = viewModel()

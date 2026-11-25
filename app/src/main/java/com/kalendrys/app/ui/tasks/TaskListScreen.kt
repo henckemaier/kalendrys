@@ -115,7 +115,7 @@ fun TaskListScreen(
             CollapsingFab(
                 text = stringResource(R.string.new_task),
                 expanded = fabExpanded,
-                onClick = { onNewTask(LocalDate.now()) },
+                onClick = { onNewTask(state.today) },
             )
         },
         hasFab = true,
@@ -128,7 +128,7 @@ fun TaskListScreen(
                 title = stringResource(R.string.empty_tasks_title),
                 message = stringResource(R.string.empty_tasks_message),
                 actionLabel = stringResource(R.string.new_task),
-                onAction = { onNewTask(LocalDate.now()) },
+                onAction = { onNewTask(state.today) },
                 contentPadding = padding,
             )
             // E5 (14.6): busca, chips e o vazio da busca são ITENS da lista e rolam junto com as tarefas

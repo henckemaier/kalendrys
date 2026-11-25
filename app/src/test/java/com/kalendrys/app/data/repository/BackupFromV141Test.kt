@@ -128,7 +128,7 @@ class BackupFromV141Test {
             PreferenceDataStoreFactory.create { File(context.cacheDir, "v141-${System.nanoTime()}.preferences_pb") },
         )
 
-        val stats = BackupManager(db, context.contentResolver, settings).restore(backupV141())
+        val stats = BackupManager(db, context.contentResolver, settings, clock = SystemAppClock).restore(backupV141())
 
         // Tarefas: recorrência personalizada e nulos preservados.
         val pagar = db.taskDao().byId(1)!!

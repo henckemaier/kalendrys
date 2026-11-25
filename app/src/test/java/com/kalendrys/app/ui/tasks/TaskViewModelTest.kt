@@ -1,5 +1,7 @@
 package com.kalendrys.app.ui.tasks
 
+import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.ZoneId
 import com.kalendrys.app.domain.TodayOverview
 import com.kalendrys.app.domain.TaskChange
@@ -62,8 +64,8 @@ class TaskViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         db = testDb.db
-        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        shoppingRepository = ShoppingRepository(db)
+        taskRepository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
+        shoppingRepository = ShoppingRepository(db, clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, tasks = taskRepository)
     }
 
@@ -73,7 +75,7 @@ class TaskViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers))
+    private fun viewModel() = testDb.track(TaskViewModel(taskRepository, shoppingRepository, undoOffers, clock = SystemAppClock))
 
     private suspend fun ReceiveTurbine<TaskViewModel.UiState>.awaitState(
         predicate: (TaskViewModel.UiState) -> Boolean,
@@ -91,7 +93,7 @@ class TaskViewModelTest {
         val listId = shoppingRepository.createList("Feira")
         shoppingRepository.add(listId, "Arroz", quantity = 1, priceCents = null)
         shoppingRepository.add(listId, "Feijão", quantity = 1, priceCents = null)
-        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId))
+        db.taskDao().insert(Task(title = "Feira", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         viewModel().uiState.test {
             awaitState { it.isLoaded && it.item("Feira").listProgress == ShoppingProgress(0, 2) }
@@ -105,9 +107,9 @@ class TaskViewModelTest {
     @Test
     fun `sem lista, lista vazia ou vinculo orfao nao mostram progresso`() = runTest {
         val empty = shoppingRepository.createList("Vazia")
-        db.taskDao().insert(Task(title = "Sem lista"))
-        db.taskDao().insert(Task(title = "Lista vazia", shoppingListId = empty))
-        db.taskDao().insert(Task(title = "Órfã", shoppingListId = 999))
+        db.taskDao().insert(Task(title = "Sem lista", createdAt = TEST_CREATED_AT))
+        db.taskDao().insert(Task(title = "Lista vazia", shoppingListId = empty, createdAt = TEST_CREATED_AT))
+        db.taskDao().insert(Task(title = "Órfã", shoppingListId = 999, createdAt = TEST_CREATED_AT))
 
         viewModel().uiState.test {
             val state = awaitState { it.isLoaded && it.noDate.size == 3 }

@@ -21,8 +21,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -61,7 +63,7 @@ class TaskDetailShellTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     @After
@@ -73,7 +75,7 @@ class TaskDetailShellTest {
         testDb.close()
     }
 
-    private fun show(task: Task = Task(title = "Comprar pão"), completed: Boolean = false): Long {
+    private fun show(task: Task = Task(title = "Comprar pão", createdAt = TEST_CREATED_AT), completed: Boolean = false): Long {
         val db = testDb.db
         val id = runBlocking {
             db.taskDao().insert(task).also { if (completed) repository.logCompletion(it) }
@@ -82,9 +84,10 @@ class TaskDetailShellTest {
             TaskDetailViewModel(
                 SavedStateHandle(mapOf(TASK_ID_ARG to id)),
                 repository,
-                ShoppingRepository(db),
+                ShoppingRepository(db, clock = SystemAppClock),
                 testUndoOffers(testDb, tasks = repository),
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         viewModel = vm

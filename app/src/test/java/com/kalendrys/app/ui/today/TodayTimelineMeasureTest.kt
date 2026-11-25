@@ -27,6 +27,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.LocalDate
@@ -97,6 +98,7 @@ class TodayTimelineMeasureTest {
             durationMinutes = minutes,
             remind = remind,
             shoppingListId = if (withList) LIST_ID else null,
+            createdAt = TEST_CREATED_AT,
         )
         val state = TodayViewModel.UiState(
             isLoaded = true,
@@ -236,7 +238,7 @@ class TodayTimelineMeasureTest {
     /** Vários blocos de título CURTO na mesma trilha (fonte em vigor); devolve a altura de cada um, em px. */
     private fun shortTitleHeights(fontScale: Float, durations: List<Int>): List<Float> {
         val blocks = durations.mapIndexed { i, minutes ->
-            val routine = Routine(id = i + 1L, title = "Bloco $minutes", startMinute = (6 + i * 3) * 60, durationMinutes = minutes)
+            val routine = Routine(id = i + 1L, title = "Bloco $minutes", startMinute = (6 + i * 3) * 60, durationMinutes = minutes, createdAt = TEST_CREATED_AT)
             DayTimeline.Block(
                 routine,
                 done = false,

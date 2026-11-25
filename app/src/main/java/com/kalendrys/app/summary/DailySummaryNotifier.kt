@@ -22,7 +22,7 @@ object DailySummaryNotifier {
     private const val MAX_LINES = 5
     private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-    fun show(context: Context, overview: TodayOverview, now: LocalTime = LocalTime.now()) {
+    fun show(context: Context, overview: TodayOverview, now: LocalTime) {
         // O resumo é um retrato do momento: blocos de rotina que já terminaram ficam de fora.
         val routinesAhead = overview.pendingRoutines.filterNot { it.isOver(now) }
         // Dia sem pendências: não há o que resumir.

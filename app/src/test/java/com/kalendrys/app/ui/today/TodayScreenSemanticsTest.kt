@@ -23,6 +23,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -64,7 +65,7 @@ class TodayScreenSemanticsTest {
         val repos = TodayRepositories(context, testDb.db)
         val today = LocalDate.now()
         runBlocking {
-            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
+            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT))
             repos.tasks.addTask("Ligar para o banco", timing = TaskTiming(date = today, time = LocalTime.of(23, 0)))
             repos.tasks.addTask("Comprar pão", timing = TaskTiming(date = today))
         }

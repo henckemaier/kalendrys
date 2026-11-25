@@ -55,8 +55,9 @@ class TaskRepositoryEditTest {
             scheduler,
             db.shoppingItemDao(),
             beforeReminderChange = { windowsClosed++ },
+            clock = SystemAppClock,
         )
-        shopping = ShoppingRepository(db)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
@@ -141,7 +142,7 @@ class TaskRepositoryEditTest {
                 release.await(5, TimeUnit.SECONDS)
             }
         }
-        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), gated, db.shoppingItemDao())
+        val repo = TaskRepository(db.taskDao(), db.completionLogDao(), gated, db.shoppingItemDao(), clock = SystemAppClock)
         val saved = repo.addTask("Tarefa", timing = futureTiming(1))
         gated.reset()
         val timing = futureTiming(3)

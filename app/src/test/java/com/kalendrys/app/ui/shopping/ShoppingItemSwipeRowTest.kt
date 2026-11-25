@@ -17,6 +17,7 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,7 +35,7 @@ class ShoppingItemSwipeRowTest {
     val compose = createComposeRule()
 
     private val calls = mutableListOf<String>()
-    private var item by mutableStateOf(ShoppingItem(id = 1, listId = 1, name = "Arroz", quantity = 2, position = 0))
+    private var item by mutableStateOf(ShoppingItem(id = 1, listId = 1, name = "Arroz", quantity = 2, position = 0, createdAt = TEST_CREATED_AT))
 
     private fun setRow() {
         compose.setContent {

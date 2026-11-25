@@ -155,7 +155,7 @@ private fun ShoppingItemSwipeRowPreview() {
         Surface {
             Column(modifier = Modifier.padding(Spacing.l)) {
                 ShoppingItemSwipeRow(
-                    item = ShoppingItem(id = 1, listId = 1, name = "Arroz integral", quantity = 2, priceCents = 1290, position = 0),
+                    item = ShoppingItem(id = 1, listId = 1, name = "Arroz integral", quantity = 2, priceCents = 1290, position = 0, createdAt = 0L),
                     index = 0,
                     count = 2,
                     onToggle = {},
@@ -163,7 +163,7 @@ private fun ShoppingItemSwipeRowPreview() {
                     onEdit = {},
                 )
                 ShoppingItemSwipeRow(
-                    item = ShoppingItem(id = 2, listId = 1, name = "Feijão", quantity = 1, picked = true, position = 1),
+                    item = ShoppingItem(id = 2, listId = 1, name = "Feijão", quantity = 1, picked = true, position = 1, createdAt = 0L),
                     index = 1,
                     count = 2,
                     onToggle = {},

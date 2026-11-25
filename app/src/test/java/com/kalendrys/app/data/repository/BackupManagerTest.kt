@@ -20,6 +20,7 @@ import com.kalendrys.app.data.settings.ThemeMode
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.io.File
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
@@ -70,15 +71,15 @@ class BackupManagerTest {
 
         // Banco de origem com ids explícitos e relações tarefa↔log e rotina↔conclusão.
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Comprar pão", notes = "integral", dueDate = 20_000, reminderAt = 123_456_789, repeat = ReminderRepeat.DAILY, location = "Padaria"),
+            Task(id = 1, title = "Comprar pão", notes = "integral", dueDate = 20_000, reminderAt = 123_456_789, repeat = ReminderRepeat.DAILY, location = "Padaria", createdAt = TEST_CREATED_AT),
         )
-        sourceDb.taskDao().insert(Task(id = 2, title = "Sem data"))
+        sourceDb.taskDao().insert(Task(id = 2, title = "Sem data", createdAt = TEST_CREATED_AT))
         // Recorrência custom: os campos novos (intervalEvery/intervalUnit/byWeekdays) têm que sobreviver ao round-trip.
         sourceDb.taskDao().insert(
-            Task(id = 3, title = "A cada 3 dias", dueDate = 20_000, reminderAt = 555, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+            Task(id = 3, title = "A cada 3 dias", dueDate = 20_000, reminderAt = 555, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS, createdAt = TEST_CREATED_AT),
         )
         sourceDb.taskDao().insert(
-            Task(id = 4, title = "Seg/qua/sex", dueDate = 20_000, reminderAt = 666, repeat = ReminderRepeat.CUSTOM, byWeekdays = 0b0010101),
+            Task(id = 4, title = "Seg/qua/sex", dueDate = 20_000, reminderAt = 666, repeat = ReminderRepeat.CUSTOM, byWeekdays = 0b0010101, createdAt = TEST_CREATED_AT),
         )
         sourceDb.completionLogDao().insert(CompletionLog(id = 1, taskId = 1, completedAt = 111))
         sourceDb.completionLogDao().insert(CompletionLog(id = 2, taskId = 1, completedAt = 222))
@@ -94,13 +95,14 @@ class BackupManagerTest {
             Routine(
                 id = 5, title = "Treino", startMinute = 1040, durationMinutes = 15, remind = true, archivedAt = 999,
                 categoryId = 10, pausedAt = 4242, weekInterval = 2, startEpochDay = 19_000, endEpochDay = 21_000,
+                createdAt = TEST_CREATED_AT,
             ),
         )
         sourceDb.routineCompletionDao().insert(RoutineCompletion(id = 7, routineId = 5, epochDay = 20_000, completedAt = 333))
         // Exceções de rotina (v7): um SKIP e um RESCHEDULE com os campos opcionais.
         sourceDb.routineOverrideDao().insertAll(
             listOf(
-                RoutineOverride(id = 20, routineId = 5, epochDay = 20_010, type = "SKIP"),
+                RoutineOverride(id = 20, routineId = 5, epochDay = 20_010, type = "SKIP", createdAt = TEST_CREATED_AT),
                 RoutineOverride(
                     id = 21, routineId = 5, epochDay = 20_011, type = "RESCHEDULE",
                     newStartMinute = 600, newEpochDay = 20_012, createdAt = 444,
@@ -119,21 +121,21 @@ class BackupManagerTest {
         // Itens de compras: preço nullable, picked, position e pickedBeforeReset têm que sobreviver.
         sourceDb.shoppingItemDao().insertAll(
             listOf(
-                ShoppingItem(id = 30, listId = 50, name = "Leite", quantity = 2, priceCents = 499, position = 0, pickedBeforeReset = true),
+                ShoppingItem(id = 30, listId = 50, name = "Leite", quantity = 2, priceCents = 499, position = 0, pickedBeforeReset = true, createdAt = TEST_CREATED_AT),
                 ShoppingItem(id = 31, listId = 50, name = "Pão", priceCents = null, picked = true, position = 1, createdAt = 777),
-                ShoppingItem(id = 32, listId = 51, name = "Dipirona", position = 0),
+                ShoppingItem(id = 32, listId = 51, name = "Dipirona", position = 0, createdAt = TEST_CREATED_AT),
             ),
         )
         // Exercícios (v9/schema v5): carga em texto livre (nullable) e descanso em segundos (nullable)
         // têm que sobreviver — inclusive quando ausentes (um exercício sem carga/descanso).
         sourceDb.exerciseItemDao().insertAll(
             listOf(
-                ExerciseItem(id = 40, routineId = 5, name = "Agachamento", sets = 3, reps = 12, load = "20kg", restSeconds = 90, position = 0),
+                ExerciseItem(id = 40, routineId = 5, name = "Agachamento", sets = 3, reps = 12, load = "20kg", restSeconds = 90, position = 0, createdAt = TEST_CREATED_AT),
                 ExerciseItem(id = 41, routineId = 5, name = "Flexão", sets = 4, reps = 15, load = null, restSeconds = null, position = 1, createdAt = 888),
             ),
         )
 
-        val (json, stats) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, stats) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
         assertEquals(
             BackupManager.Stats(
                 tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
@@ -145,8 +147,8 @@ class BackupManagerTest {
 
         // Destino com dado "sujo" que o restauro deve apagar antes de reinserir.
         val dest = settingsRepo("dest")
-        destDb.taskDao().insert(Task(id = 99, title = "Lixo a ser apagado"))
-        val restoredStats = BackupManager(destDb, context.contentResolver, dest).restore(json)
+        destDb.taskDao().insert(Task(id = 99, title = "Lixo a ser apagado", createdAt = TEST_CREATED_AT))
+        val restoredStats = BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(json)
 
         assertEquals(stats, restoredStats)
         assertEquals(sourceDb.taskDao().all().sortedBy { it.id }, destDb.taskDao().all().sortedBy { it.id })
@@ -171,9 +173,9 @@ class BackupManagerTest {
         val source = settingsRepo("source-v1")
         // v1 só tinha repetições simples (sem CUSTOM); DAILY é o caso realista de um backup antigo.
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY),
+            Task(id = 1, title = "Antiga", dueDate = 20_000, reminderAt = 123, repeat = ReminderRepeat.DAILY, createdAt = TEST_CREATED_AT),
         )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         // Simula um backup do formato v1: marca schemaVersion=1 e remove os campos custom das tarefas.
         val root = JSONObject(json).put("schemaVersion", 1)
@@ -185,7 +187,7 @@ class BackupManagerTest {
         }
 
         val dest = settingsRepo("dest-v1")
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         val restored = destDb.taskDao().all().single()
         // Campos ausentes caem nos defaults, sem quebrar o restauro (compat com o T5).
@@ -201,9 +203,9 @@ class BackupManagerTest {
     fun `restaura CUSTOM sem config utilizavel normalizando para NONE`() = runTest {
         val source = settingsRepo("source-inert")
         sourceDb.taskDao().insert(
-            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS),
+            Task(id = 1, title = "Inerte", dueDate = 20_000, reminderAt = 1, repeat = ReminderRepeat.CUSTOM, intervalEvery = 3, intervalUnit = RecurrenceUnit.DAYS, createdAt = TEST_CREATED_AT),
         )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         // Corrompe o JSON: CUSTOM sem unidade e sem dias-da-semana (tarefa que nunca ocorreria).
         val root = JSONObject(json)
@@ -213,7 +215,7 @@ class BackupManagerTest {
         }
 
         val dest = settingsRepo("dest-inert")
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         // Normalizado para NONE em vez de restaurar uma tarefa silenciosamente inerte.
         assertEquals(ReminderRepeat.NONE, destDb.taskDao().all().single().repeat)
@@ -223,9 +225,9 @@ class BackupManagerTest {
     fun `restaura backup v2 sem os campos e tabelas de rotina caindo nos defaults e vazio`() = runTest {
         val source = settingsRepo("source-v2")
         sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Antiga", startMinute = 600, durationMinutes = 30, remind = true),
+            Routine(id = 1, title = "Antiga", startMinute = 600, durationMinutes = 30, remind = true, createdAt = TEST_CREATED_AT),
         )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         // Simula um backup do formato v2: schemaVersion=2, sem as arrays novas e sem os campos novos
         // de routines (categoryId/pausedAt/weekInterval/startEpochDay/endEpochDay).
@@ -241,7 +243,7 @@ class BackupManagerTest {
         }
 
         val dest = settingsRepo("dest-v2")
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         val restored = destDb.routineDao().all().single()
         assertEquals("Antiga", restored.title)
@@ -261,7 +263,7 @@ class BackupManagerTest {
         // Formato v3 real: sem shoppingItems/exerciseItems/shoppingLists e sem shoppingListId.
         val root = legacyBackup(3, routines = listOf(legacyRoutine(1, "Mercado")))
 
-        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v3")).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v3"), clock = SystemAppClock).restore(root.toString())
 
         // A rotina é preservada e a lista de compras fica vazia, sem quebrar o restauro de um v3.
         assertEquals("Mercado", destDb.routineDao().all().single().title)
@@ -277,7 +279,7 @@ class BackupManagerTest {
         // Formato v4 real: com shoppingItems (vazia aqui), sem exerciseItems.
         val root = legacyBackup(4, routines = listOf(legacyRoutine(1, "Treino")), shoppingItems = emptyList())
 
-        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4")).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4"), clock = SystemAppClock).restore(root.toString())
 
         // A rotina é preservada e a lista de exercícios fica vazia, sem quebrar o restauro de um v4.
         assertEquals("Treino", destDb.routineDao().all().single().title)
@@ -296,7 +298,7 @@ class BackupManagerTest {
             ),
         )
 
-        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4-items")).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4-items"), clock = SystemAppClock).restore(root.toString())
 
         assertEquals(listOf(ShoppingList(id = 1, name = "Mercado", createdAt = 200)), destDb.shoppingListDao().all())
         assertEquals(1L, destDb.routineDao().byId(2)!!.shoppingListId)
@@ -324,7 +326,7 @@ class BackupManagerTest {
             exerciseItems = emptyList(),
         )
 
-        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v5")).restore(root.toString())
+        val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v5"), clock = SystemAppClock).restore(root.toString())
 
         // Uma lista por routineId em ordem crescente: 3 → 1, 7 → 2, 99 (inexistente) → 3 avulsa.
         assertEquals(
@@ -354,7 +356,7 @@ class BackupManagerTest {
         val source = settingsRepo("source-theme")
         source.setThemeMode(ThemeMode.LIGHT)
         source.setDynamicColor(true)
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         val saved = JSONObject(json).getJSONObject("settings")
         assertEquals("LIGHT", saved.getString("themeMode"))
@@ -362,7 +364,7 @@ class BackupManagerTest {
         assertEquals(6, JSONObject(json).getInt("schemaVersion"))
 
         val dest = settingsRepo("dest-theme")
-        BackupManager(destDb, context.contentResolver, dest).restore(json)
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(json)
 
         val restored = dest.settings.first()
         assertEquals(ThemeMode.LIGHT, restored.themeMode)
@@ -373,14 +375,14 @@ class BackupManagerTest {
     fun `backup antigo sem os campos de aparencia mantem a aparencia atual do aparelho`() = runTest {
         val source = settingsRepo("source-no-theme")
         source.setSummaryTime(LocalTime.of(7, 0))
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
         val root = JSONObject(json)
         root.getJSONObject("settings").apply { remove("themeMode"); remove("dynamicColor") }
 
         val dest = settingsRepo("dest-no-theme")
         dest.setThemeMode(ThemeMode.DARK)
         dest.setDynamicColor(true)
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         val restored = dest.settings.first()
         assertEquals(ThemeMode.DARK, restored.themeMode)
@@ -391,14 +393,14 @@ class BackupManagerTest {
 
     @Test
     fun `aparencia invalida ou nula no backup mantem a atual`() = runTest {
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("source-bad-theme")).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("source-bad-theme"), clock = SystemAppClock).serialize()
         val root = JSONObject(json)
         root.getJSONObject("settings").put("themeMode", "SEPIA").put("dynamicColor", JSONObject.NULL)
 
         val dest = settingsRepo("dest-bad-theme")
         dest.setThemeMode(ThemeMode.DARK)
         dest.setDynamicColor(true)
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         val restored = dest.settings.first()
         assertEquals(ThemeMode.DARK, restored.themeMode)
@@ -409,7 +411,7 @@ class BackupManagerTest {
     fun `aparencia com tipo errado ou nome em minusculas no backup mantem a atual e o resto restaura`() = runTest {
         val source = settingsRepo("source-wrong-type-theme")
         source.setSummaryTime(LocalTime.of(6, 30))
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
         val root = JSONObject(json)
         // "dark" em minúsculas, número no lugar do nome e texto no lugar do booleano.
         root.getJSONObject("settings").put("themeMode", "dark").put("dynamicColor", "true")
@@ -419,7 +421,7 @@ class BackupManagerTest {
             val dest = settingsRepo("dest-wrong-type-theme-$i")
             dest.setThemeMode(ThemeMode.LIGHT)
             dest.setDynamicColor(false)
-            BackupManager(destDb, context.contentResolver, dest).restore(backup.toString())
+            BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(backup.toString())
 
             val restored = dest.settings.first()
             assertEquals("backup $i", ThemeMode.LIGHT, restored.themeMode)
@@ -430,10 +432,10 @@ class BackupManagerTest {
 
     @Test
     fun `rejeita backup de versao mais nova`() = runTest {
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("src-new")).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settingsRepo("src-new"), clock = SystemAppClock).serialize()
         val root = JSONObject(json).put("schemaVersion", BackupManager.SCHEMA_VERSION + 1)
         val error = runCatching {
-            BackupManager(destDb, context.contentResolver, settingsRepo("dest-new")).restore(root.toString())
+            BackupManager(destDb, context.contentResolver, settingsRepo("dest-new"), clock = SystemAppClock).restore(root.toString())
         }.exceptionOrNull()
         assertTrue(error is java.io.IOException)
         assertEquals(6, BackupManager.SCHEMA_VERSION)
@@ -443,12 +445,12 @@ class BackupManagerTest {
     fun `restaura exercicio sem sets reps caindo em 1 e nao 0`() = runTest {
         val source = settingsRepo("source-ex-defaults")
         sourceDb.routineDao().insert(
-            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true),
+            Routine(id = 1, title = "Treino", startMinute = 1040, durationMinutes = 45, remind = true, createdAt = TEST_CREATED_AT),
         )
         sourceDb.exerciseItemDao().insert(
-            ExerciseItem(id = 40, routineId = 1, name = "Agachamento", sets = 3, reps = 12, position = 0),
+            ExerciseItem(id = 40, routineId = 1, name = "Agachamento", sets = 3, reps = 12, position = 0, createdAt = TEST_CREATED_AT),
         )
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         // Backup parcial/hand-edited: um exercício SEM os campos sets/reps no JSON.
         val root = JSONObject(json)
@@ -458,7 +460,7 @@ class BackupManagerTest {
         }
 
         val dest = settingsRepo("dest-ex-defaults")
-        BackupManager(destDb, context.contentResolver, dest).restore(root.toString())
+        BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(root.toString())
 
         // Default alinhado ao invariante da entidade (>= 1): restaura 1/1, não 0/0 (evita "0x0").
         val restored = destDb.exerciseItemDao().all().single()
@@ -479,19 +481,19 @@ class BackupManagerTest {
     fun `dica dos gestos da lista nao vai no backup e o restauro nao mexe nela`() = runTest {
         val source = settingsRepo("source-hint")
         source.setShoppingGestureHintSeen()
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, source).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, source, clock = SystemAppClock).serialize()
 
         assertFalse("o backup não pode levar a dica: $json", json.contains("hint", ignoreCase = true))
         assertEquals(setOf("summaryEnabled", "summaryMinuteOfDay", "themeMode", "dynamicColor"),
             JSONObject(json).getJSONObject("settings").keys().asSequence().toSet())
 
         val fresh = settingsRepo("dest-hint-fresh")
-        BackupManager(destDb, context.contentResolver, fresh).restore(json)
+        BackupManager(destDb, context.contentResolver, fresh, clock = SystemAppClock).restore(json)
         assertFalse("aparelho novo continua sem ter visto a dica", fresh.shoppingGestureHintSeen.first())
 
         val seen = settingsRepo("dest-hint-seen")
         seen.setShoppingGestureHintSeen()
-        BackupManager(destDb, context.contentResolver, seen).restore(json)
+        BackupManager(destDb, context.contentResolver, seen, clock = SystemAppClock).restore(json)
         assertTrue("quem já dispensou a dica não a vê de novo depois do restauro", seen.shoppingGestureHintSeen.first())
     }
 

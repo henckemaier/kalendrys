@@ -2,6 +2,7 @@ package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -87,7 +88,7 @@ class RoutineCatchUpTest {
 
     @Test
     fun `ocorrencia pulada nao e avisada`() {
-        val skip = RoutineOverride(routineId = 1, epochDay = day.toEpochDay(), type = RoutineOverrideType.SKIP)
+        val skip = RoutineOverride(routineId = 1, epochDay = day.toEpochDay(), type = RoutineOverrideType.SKIP, createdAt = TEST_CREATED_AT)
 
         assertTrue(plan(listOf(block(1, 9 * 60)), at(day, 8, 0), at(day, 9, 3), overrides = mapOf(1L to listOf(skip))).isEmpty())
     }
@@ -99,6 +100,7 @@ class RoutineCatchUpTest {
             epochDay = day.toEpochDay(),
             type = RoutineOverrideType.RESCHEDULE,
             newStartMinute = 11 * 60,
+            createdAt = TEST_CREATED_AT,
         )
         val overrides = mapOf(1L to listOf(moved))
         val routines = listOf(block(1, 9 * 60))
@@ -116,6 +118,7 @@ class RoutineCatchUpTest {
             type = RoutineOverrideType.RESCHEDULE,
             newEpochDay = tomorrow.toEpochDay(),
             newStartMinute = 8 * 60,
+            createdAt = TEST_CREATED_AT,
         )
         // Só um bloco que ocorre na segunda: na terça, só a ocorrência remarcada.
         val routines = listOf(block(1, 9 * 60).copy(daysOfWeek = RoutineDays.bit(DayOfWeek.MONDAY)))

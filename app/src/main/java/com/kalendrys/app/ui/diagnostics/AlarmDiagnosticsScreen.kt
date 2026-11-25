@@ -51,6 +51,7 @@ import com.kalendrys.app.reminder.isIgnoringBatteryOptimizations
 import com.kalendrys.app.reminder.requestExactAlarmPermissionIntent
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.plus
@@ -336,7 +337,7 @@ private fun nextAlarmStatus(state: AlarmDiagnosticsViewModel.NextAlarmState, exa
             } else {
                 val line = stringResource(
                     R.string.diagnostics_next_alarm_at,
-                    formatTrigger(next.atMillis),
+                    formatTrigger(next.atMillis, LocalAppClock.current.zone()),
                     stringResource(next.kind.labelRes),
                 )
                 if (exactAllowed) line else line + "\n" + stringResource(R.string.diagnostics_next_alarm_may_delay)
@@ -354,5 +355,5 @@ private val AppAlarmKind.labelRes: Int
 private val TRIGGER_FORMAT: DateTimeFormatter =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(AppLocale.LOCALE)
 
-private fun formatTrigger(millis: Long): String =
-    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(TRIGGER_FORMAT)
+private fun formatTrigger(millis: Long, zone: ZoneId): String =
+    Instant.ofEpochMilli(millis).atZone(zone).format(TRIGGER_FORMAT)

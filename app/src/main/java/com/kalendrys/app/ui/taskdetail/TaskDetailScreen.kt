@@ -58,10 +58,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.repository.ShoppingListOwner
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
@@ -490,7 +492,7 @@ private fun HistoryRow(
 /** "Hoje", "Ontem", "Quinta-feira, 22 de outubro" ou, em outro ano, "22 de outubro de 2025". */
 @Composable
 private fun historyDayLabel(date: LocalDate): String {
-    val today = LocalDate.now()
+    val today = LocalAppClock.current.today()
     return when {
         date == today -> stringResource(R.string.reminder_today)
         date == today.minusDays(1) -> stringResource(R.string.yesterday)

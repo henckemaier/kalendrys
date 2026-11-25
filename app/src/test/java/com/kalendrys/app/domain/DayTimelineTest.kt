@@ -7,6 +7,7 @@ import com.kalendrys.app.domain.DayTimeline.Block
 import com.kalendrys.app.domain.DayTimeline.Gap
 import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DayTimeline.TaskItem
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -41,14 +42,14 @@ class DayTimelineTest {
             val (h, m) = it.split(":").map(String::toInt)
             date.atTime(h, m).atZone(zone).toInstant().toEpochMilli()
         }
-        return Task(id = id, title = "T$id", dueDate = date.toEpochDay(), reminderAt = reminderAt)
+        return Task(id = id, title = "T$id", dueDate = date.toEpochDay(), reminderAt = reminderAt, createdAt = TEST_CREATED_AT)
     }
 
     private fun overrides(vararg ov: RoutineOverride): Map<Long, List<RoutineOverride>> =
         ov.toList().groupBy { it.routineId }
 
     private fun skip(routineId: Long, date: LocalDate = day) =
-        RoutineOverride(routineId = routineId, epochDay = date.toEpochDay(), type = RoutineOverrideType.SKIP)
+        RoutineOverride(routineId = routineId, epochDay = date.toEpochDay(), type = RoutineOverrideType.SKIP, createdAt = TEST_CREATED_AT)
 
     private fun reschedule(routineId: Long, date: LocalDate = day, newStart: String? = null, newDate: LocalDate? = null): RoutineOverride {
         val minute = newStart?.let { val (h, m) = it.split(":").map(String::toInt); h * 60 + m }
@@ -58,6 +59,7 @@ class DayTimelineTest {
             type = RoutineOverrideType.RESCHEDULE,
             newStartMinute = minute,
             newEpochDay = newDate?.toEpochDay(),
+            createdAt = TEST_CREATED_AT,
         )
     }
 

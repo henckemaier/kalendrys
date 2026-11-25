@@ -3,6 +3,7 @@ package com.kalendrys.app.reminder
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.RoutineOverrideType
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -15,7 +16,7 @@ class RoutineNotificationsTest {
 
     private val date = LocalDate.of(2026, 11, 10)
 
-    private fun treino() = Routine(id = 1, title = "Treino", startMinute = 18 * 60, durationMinutes = 30)
+    private fun treino() = Routine(id = 1, title = "Treino", startMinute = 18 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT)
 
     private fun reschedule(newStartMinute: Int?, newEpochDay: Long? = null) = RoutineOverride(
         routineId = 1,
@@ -23,6 +24,7 @@ class RoutineNotificationsTest {
         type = RoutineOverrideType.RESCHEDULE,
         newStartMinute = newStartMinute,
         newEpochDay = newEpochDay,
+        createdAt = TEST_CREATED_AT,
     )
 
     @Test
@@ -41,7 +43,7 @@ class RoutineNotificationsTest {
 
     @Test
     fun `marco sem duracao mostra so o horario efetivo`() {
-        val marco = Routine(id = 1, title = "Remédio", startMinute = 8 * 60, durationMinutes = 0)
+        val marco = Routine(id = 1, title = "Remédio", startMinute = 8 * 60, durationMinutes = 0, createdAt = TEST_CREATED_AT)
         assertEquals(
             "09:00",
             RoutineNotifications.timeLabel(marco, date, listOf(reschedule(newStartMinute = 9 * 60))),

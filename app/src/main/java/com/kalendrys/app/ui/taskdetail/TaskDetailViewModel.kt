@@ -12,6 +12,7 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -70,10 +71,13 @@ class TaskDetailViewModel(
     private val undoOffers: UndoOffers,
     /** Escopo das gravações, o do app ([KalendrysApp.editScope]): sobrevive à tela. */
     private val editScope: CoroutineScope,
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
-    private val zone: ZoneId = ZoneId.systemDefault()
+    /** O fuso da sessão da tela, lido do relógio do app ao abrir (como até a v1.9.x). */
+    private val zone: ZoneId = clock.zone()
 
     /** Campos do detalhe que o Reverter conhece. */
     enum class Field { TITLE, NOTES, LOCATION, TIMING, SHOPPING_LIST }
@@ -102,7 +106,7 @@ class TaskDetailViewModel(
         val doneAt: Long? = null,
         /** O registro da conclusão de [doneAt], o que "Desfazer conclusão" apaga (P6). */
         val doneLogId: Long? = null,
-        val zone: ZoneId = ZoneId.systemDefault(),
+        val zone: ZoneId,
         /** Lista anexada (do banco); null sem lista ou com vínculo órfão (ADR-0001 4.1). */
         val shoppingList: ShoppingListSummary? = null,
         /** Todas as listas, para o "Usar lista existente" do seletor. */
@@ -193,7 +197,7 @@ class TaskDetailViewModel(
         combine(task, repository.observeCompletions(taskId), lists, texts, session) {
                 task, logs, (linked, available), (title, notes, location), session ->
             val snap = session.snapshot
-            val today = LocalDate.now(zone)
+            val today = Instant.ofEpochMilli(clock.nowMillis()).atZone(zone).toLocalDate()
             val latest = logs.firstOrNull()
             val doneAt = when {
                 latest == null -> null
@@ -220,7 +224,7 @@ class TaskDetailViewModel(
                 canRevert = snap != null && session.touched.isNotEmpty(),
                 reminderChanged = snap != null && timing != null && !timing.keepsReminderOf(snap.task, zone),
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(zone = zone))
 
     init {
         viewModelScope.launch {
@@ -410,6 +414,7 @@ class TaskDetailViewModel(
                     app.shoppingRepository,
                     app.undoOffers,
                     app.editScope,
+                    app.clock,
                 )
             }
         }

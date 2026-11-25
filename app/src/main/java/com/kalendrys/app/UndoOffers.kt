@@ -3,6 +3,7 @@ package com.kalendrys.app
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import java.time.LocalDate
@@ -84,7 +85,8 @@ class UndoOffers(
     private val tasks: TaskRepository,
     private val routines: RoutineRepository,
     private val scope: CoroutineScope,
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3): validade das ofertas e instante das conclusões. */
+    private val clock: AppClock,
 ) {
     private val nextId = AtomicLong()
     private val _pending = MutableStateFlow<UndoOffer?>(null)
@@ -94,7 +96,7 @@ class UndoOffers(
 
     /** [target] acabou de acontecer; substitui a pendente, de qualquer tipo. */
     fun offer(target: UndoTarget) {
-        _pending.value = UndoOffer(nextId.incrementAndGet(), target, createdAt = clock())
+        _pending.value = UndoOffer(nextId.incrementAndGet(), target, createdAt = clock.nowMillis())
     }
 
     /**
@@ -124,8 +126,8 @@ class UndoOffers(
     fun completeTask(
         task: Task,
         /** Instante da conclusão; a Hoje passa o do dia mostrado (conclusão retroativa, 14.4). */
-        completedAt: Long = clock(),
-        now: Long = clock(),
+        completedAt: Long = clock.nowMillis(),
+        now: Long = clock.nowMillis(),
     ): Job = scope.launch {
         val logId = tasks.logCompletion(task.id, completedAt, now)
         offer(UndoTarget.CompletedTask(logId))
@@ -141,8 +143,9 @@ class UndoOffers(
 
     /** PULAR E OFERECER a ocorrência de [routineId] em [date] (v1.9.0, E4: a Hoje só pede). */
     fun skipRoutine(routineId: Long, date: LocalDate): Job = scope.launch {
-        val previous = routines.skipOccurrence(routineId, date.toEpochDay())
-        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), previous))
+        // Rotina que não existe mais: nada foi pulado, então não há o que desfazer (v1.10.0, E0).
+        val skipped = routines.skipOccurrence(routineId, date.toEpochDay()) ?: return@launch
+        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), skipped.previous))
     }
 
     /**
@@ -181,7 +184,7 @@ class UndoOffers(
     fun isExpired(offer: UndoOffer): Boolean = remainingMs(offer) == 0L
 
     /** Quanto ainda resta do prazo de [offer], em ms (0 se já venceu): o limite da espera da mensagem. */
-    fun remainingMs(offer: UndoOffer): Long = (VALIDITY_MS - (clock() - offer.createdAt)).coerceAtLeast(0L)
+    fun remainingMs(offer: UndoOffer): Long = (VALIDITY_MS - (clock.nowMillis() - offer.createdAt)).coerceAtLeast(0L)
 
     /**
      * A mensagem de [offer] terminou sem Desfazer (tempo esgotado ou dispensada): fica como está. Só
