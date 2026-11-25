@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +51,11 @@ import org.robolectric.shadows.ShadowAlarmManager
  * (b) Resumo: CORRIGIDO (4.3.2). O início do processo passa pelo
  * [com.kalendrys.app.summary.DailySummaryCatchUp], que entrega o resumo atrasado antes de trocar
  * o alarme pendente pelo de amanhã.
+ *
+ * (c) v1.9.1 (E5-B): DOIS alarmes de rotina. O do AVISO (o mesmo PendingIntent da v1.9.0) é sempre
+ * o próximo início que avisa, mesmo com um bloco sem aviso antes; o silencioso dos widgets
+ * ([RoutineAlarmReceiver.ACTION_REFRESH]) só existe nesse caso. Até a v1.9.0 o alarme único ficava no
+ * bloco sem aviso (RTC, não acorda) e o aviso só era agendado quando ele disparava.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -111,10 +117,11 @@ class ProcessStartAlarmReplacementTest {
         assertEquals("o bloco das 9:00 é avisado na hora", listOf("Bloco 9h"), delivered)
         // Só depois da entrega o alarme é trocado pelo próximo início: substituir já não perde nada.
         val after = pendingRoutineAlarm()
-        assertEquals("um único alarme de rotina (mesmo PendingIntent)", 1, routineAlarms().size)
+        assertEquals("um único alarme de aviso (mesmo PendingIntent)", 1, routineAlarms().size)
         assertEquals(millis(day.atTime(10, 0)), after.triggerAtMs)
         assertEquals(10 * 60, after.minute)
         assertEquals(day.toEpochDay(), after.epochDay)
+        assertTrue("o próximo início já é o do aviso: sem o silencioso", refreshAlarms().isEmpty())
     }
 
     @Test
@@ -139,6 +146,50 @@ class ProcessStartAlarmReplacementTest {
         routineRepository.catchUp(nowOverride = millis(day.atTime(9, 4)))
 
         assertEquals(listOf("Bloco 9h"), delivered)
+    }
+
+    // --- (c) E5-B: bloco sem aviso antes do aviso -------------------------------------------------
+
+    @Test
+    fun `E5-B - bloco sem aviso antes do aviso agenda o aviso no horario dele e o silencioso no bloco`() = runTest {
+        insertSilentThenReminding()
+
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 0)))
+
+        // O aviso das 9:00 já está no AlarmManager: não depende do alarme silencioso das 8:30.
+        val remind = pendingRoutineAlarm()
+        assertEquals(millis(day.atTime(9, 0)), remind.triggerAtMs)
+        assertEquals(9 * 60, remind.minute)
+        val refresh = refreshAlarms().single()
+        assertEquals(millis(day.atTime(8, 30)), refresh.triggerAtMs)
+        assertEquals("o dos widgets não acorda o aparelho", AlarmManager.RTC, refresh.type)
+    }
+
+    @Test
+    fun `E5-B - com o aparelho dormindo o silencioso nao toca e o aviso das 9h sai pelo proprio alarme`() = runTest {
+        insertSilentThenReminding()
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 0)))
+
+        // 8:30 passa sem nada (RTC não acorda); às 9:00 o despertador do aviso acorda o app.
+        routineRepository.catchUp(nowOverride = millis(day.atTime(9, 0)))
+
+        assertEquals(listOf("Aviso 9h"), delivered)
+        // Reagendados os dois, para amanhã: o silencioso de novo antes do aviso.
+        assertEquals(millis(day.plusDays(1).atTime(9, 0)), pendingRoutineAlarm().triggerAtMs)
+        assertEquals(millis(day.plusDays(1).atTime(8, 30)), refreshAlarms().single().triggerAtMs)
+    }
+
+    @Test
+    fun `E5-B - o alarme silencioso, quando toca, so redesenha e mantem o aviso`() = runTest {
+        insertSilentThenReminding()
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 0)))
+
+        // O silencioso das 8:30 tocou (aparelho acordado): nada a avisar, o aviso das 9:00 continua.
+        routineRepository.catchUp(nowOverride = millis(day.atTime(8, 30)))
+
+        assertTrue(delivered.isEmpty())
+        assertEquals(millis(day.atTime(9, 0)), pendingRoutineAlarm().triggerAtMs)
+        assertTrue("sem outro bloco sem aviso antes das 9:00", refreshAlarms().isEmpty())
     }
 
     // --- (b) Resumo diário -----------------------------------------------------------------------
@@ -189,10 +240,19 @@ class ProcessStartAlarmReplacementTest {
         routineRepository.add(Routine(title = "Bloco 10h", startMinute = 10 * 60, createdAt = 0L))
     }
 
+    /** Um bloco que não avisa às 8:30 antes do que avisa às 9:00 (o cenário da E5-B). */
+    private suspend fun insertSilentThenReminding() {
+        routineRepository.add(Routine(title = "Leitura 8h30", startMinute = 8 * 60 + 30, remind = false, createdAt = 0L))
+        routineRepository.add(Routine(title = "Aviso 9h", startMinute = 9 * 60, createdAt = 0L))
+    }
+
     private data class RoutineAlarm(val triggerAtMs: Long, val epochDay: Long, val minute: Int)
 
     private fun routineAlarms(): List<ShadowAlarmManager.ScheduledAlarm> =
         alarmsWithAction(RoutineAlarmReceiver.ACTION_START)
+
+    private fun refreshAlarms(): List<ShadowAlarmManager.ScheduledAlarm> =
+        alarmsWithAction(RoutineAlarmReceiver.ACTION_REFRESH)
 
     private fun pendingRoutineAlarm(): RoutineAlarm {
         val alarm = routineAlarms().single()

@@ -40,11 +40,11 @@ interface RoutineCatchUpMark {
 }
 
 /**
- * Fonte única das rotinas: banco, alarme do próximo início e notificações sempre em sincronia.
+ * Fonte única das rotinas: banco, os dois alarmes ([RoutineAlarms]: aviso e widgets) e notificações sempre em sincronia.
  *
  * O aviso de início de bloco é entregue pelo [catchUp] (ADR-0003, 4.3.1); o alarme só acorda o app.
  * Toda alteração de rotina roda o catch-up ANTES de gravar (fecha a janela com a configuração
- * antiga) e só agenda depois, tudo sob o mesmo [mutex]. Assim nenhum `alarms.scheduleNext` substitui
+ * antiga) e só agenda depois, tudo sob o mesmo [mutex]. Assim nenhum `alarms.schedule` substitui
  * um aviso pendente ainda não entregue, e criar ou mover um bloco para um horário já passado não o
  * avisa como atrasado.
  *
@@ -65,7 +65,7 @@ class RoutineRepository(
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
 
-    /** Uma execução por vez: catch-up, alteração + agendamento e todo `alarms.scheduleNext`. Não é reentrante. */
+    /** Uma execução por vez: catch-up, alteração + agendamento e todo `alarms.schedule`. Não é reentrante. */
     private val mutex = Mutex()
 
     /** Todas as rotinas, inclusive as excluídas; quem decide o que aparece em cada dia é o [RoutineSchedule]. */
@@ -400,39 +400,59 @@ class RoutineRepository(
     }
 
     /**
-     * Agenda o próximo início estritamente depois de [now], com os dados lidos agora (dentro do Mutex).
-     * Passa as rotinas concluídas no dia desse início: com todas as que avisam concluídas, o alarme fica
-     * silencioso (ainda redesenha os widgets), a mesma regra da entrega (ADR-0002, 14.3).
+     * Agenda os dois alarmes das rotinas (v1.9.1, E5-B) a partir de [now], com os dados lidos agora
+     * (dentro do Mutex), e cancela o que não tiver horário:
+     * - AVISO: o próximo início que avisa ([nextReminding], a mesma regra do [nextRemindingStart]);
+     * - WIDGETS: o próximo início de qualquer bloco, só se vem ANTES do aviso (ou não há aviso). Se o
+     *   próximo início já é o do aviso, ele não existe: o aviso também redesenha os widgets.
+     * Com o limite de [MAX_DISCARDED_STARTS] esgotado não há aviso, e o dos widgets segue a corrente
+     * (cada um agenda o seguinte), como até a v1.9.0.
      */
     private suspend fun scheduleLocked(now: Long) {
+        val zone = zone()
         val routines = routineDao.active()
-        val after = startingPoint(now)
         val overrides = overridesByRoutine()
-        val next = RoutineSchedule.nextStart(routines, after, zone(), overrides)
-        val done = next?.let { completionDao.doneOn(it.at.toLocalDate().toEpochDay()).toSet() }.orEmpty()
-        alarms.scheduleNext(routines, after, overrides, done)
+        val after = startingPoint(now)
+        val remindAt = nextReminding(routines, overrides, after, zone)
+        val refreshAt = RoutineSchedule.nextStart(routines, after, zone, overrides)?.at
+            ?.takeIf { remindAt == null || it < remindAt }
+        alarms.schedule(remindAt = remindAt, refreshAt = refreshAt)
     }
 
     /**
-     * Próximo início de bloco que AVISA (rotina com `remind`) estritamente depois de [now], em epoch
-     * millis; `null` sem nenhum. É o próximo aviso previsto, não uma leitura do sistema: o
-     * agendamento é em cadeia (cada alarme agenda o seguinte, e um início sem aviso é só um alarme
-     * silencioso que redesenha os widgets), então este horário pode ainda não estar no AlarmManager.
-     * Pula o início em que todas as rotinas que avisam já estão concluídas no dia: o catch-up o
-     * descartaria ([RoutineCatchUp.isDiscarded]), então nada chegaria. Avança no máximo
-     * [MAX_DISCARDED_STARTS] inícios; além disso, `null`.
+     * Próximo início de bloco que AVISA (rotina com `remind`, não concluída no dia) estritamente depois
+     * de [now], em epoch millis; `null` sem nenhum. É o mesmo horário que o [scheduleLocked] dá ao
+     * alarme do AVISO (o despertador, desde a v1.9.1 independente do alarme silencioso dos widgets),
+     * calculado pela mesma função ([nextReminding]) com os dados lidos agora. Pula o início em que
+     * todas as rotinas que avisam já estão concluídas no dia: o catch-up o descartaria
+     * ([RoutineCatchUp.isDiscarded]), então nada chegaria. Avança no máximo [MAX_DISCARDED_STARTS]
+     * inícios; além disso, `null`.
      * Só leitura: não passa pelo Mutex, não agenda nada e não mexe na marca do catch-up.
      */
     suspend fun nextRemindingStart(now: Long = clock()): Long? {
         val zone = zone()
-        val reminding = routineDao.active().filter { it.remind }
-        val overrides = overridesByRoutine()
-        var after = startingPoint(now)
+        return nextReminding(routineDao.active(), overridesByRoutine(), startingPoint(now), zone)
+            ?.atZone(zone)?.toInstant()?.toEpochMilli()
+    }
+
+    /**
+     * O laço do próximo início que avisa, sobre as rotinas ativas e as exceções JÁ LIDAS: usado pelo
+     * agendamento (dentro do Mutex) e pelo diagnóstico (fora). Só as conclusões do dia de cada início
+     * candidato são lidas aqui.
+     */
+    private suspend fun nextReminding(
+        active: List<Routine>,
+        overrides: Map<Long, List<RoutineOverride>>,
+        after: LocalDateTime,
+        zone: ZoneId,
+    ): LocalDateTime? {
+        val reminding = active.filter { it.remind }
+        var from = after
         repeat(MAX_DISCARDED_STARTS) {
-            val start = RoutineSchedule.nextStart(reminding, after, zone, overrides) ?: return null
+            val start = RoutineSchedule.nextStart(reminding, from, zone, overrides) ?: return null
             val done = completionDao.doneOn(start.at.toLocalDate().toEpochDay()).toSet()
-            if (start.routines.any { !RoutineCatchUp.isDiscarded(it, done) }) return start.at.atZone(zone).toInstant().toEpochMilli()
-            after = start.at
+            if (start.routines.any { !RoutineCatchUp.isDiscarded(it, done) }) return start.at
+            from = start.at
         }
         return null
     }
@@ -447,7 +467,7 @@ class RoutineRepository(
     private companion object {
         const val TAG = "RoutineRepository"
 
-        /** Limite de inícios pulados no [nextRemindingStart] (concluídos no dia); folga para um dia cheio de blocos. */
+        /** Limite de inícios pulados no [nextReminding] (concluídos no dia); folga para um dia cheio de blocos. */
         const val MAX_DISCARDED_STARTS = 64
     }
 }

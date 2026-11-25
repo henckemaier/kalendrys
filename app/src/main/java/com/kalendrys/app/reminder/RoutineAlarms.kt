@@ -4,60 +4,74 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineOverride
-import com.kalendrys.app.domain.RoutineCatchUp
-import com.kalendrys.app.domain.RoutineSchedule
 import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * Um único alarme para todas as rotinas: o próximo horário em que algum bloco começa. Reagendar
- * é idempotente (mesmo PendingIntent), como no [com.kalendrys.app.summary.DailyScheduler].
+ * Os dois alarmes das rotinas (v1.9.1, E5-B), independentes, calculados juntos no
+ * [com.kalendrys.app.data.repository.RoutineRepository]; aqui só se agenda ou cancela cada um:
  *
- * Se algum bloco daquele horário AVISA e ainda não foi concluído no dia, o alarme é exato e acorda o
- * aparelho; senão (sem aviso, ou todos os que avisam já concluídos) ele não é pulado, só fica
- * silencioso: serve para redesenhar os widgets ("a seguir") e espera o aparelho acordar. A regra de
- * "concluída não avisa" é a mesma do catch-up ([RoutineCatchUp.isDiscarded]; ADR-0002, 14.3).
+ * - AVISO ([RoutineAlarmReceiver.ACTION_START]): o próximo início em que alguma rotina avisa e não
+ *   foi concluída no dia. Despertador (exato, acorda o aparelho): o aviso não depende de nenhum
+ *   alarme silencioso antes dele.
+ * - WIDGETS ([RoutineAlarmReceiver.ACTION_REFRESH]): o próximo início de qualquer bloco, só quando
+ *   vem ANTES do aviso (ou não há aviso). Silencioso (RTC, não acorda): redesenha o "a seguir" dos
+ *   widgets quando o aparelho acordar.
+ *
+ * Até a v1.9.0 era um alarme só; um início silencioso antes do aviso virava RTC e o aviso só era
+ * agendado quando ele disparava, então com o aparelho dormindo o aviso podia se perder.
+ *
+ * Reagendar é idempotente (cada alarme tem o seu PendingIntent, como no
+ * [com.kalendrys.app.summary.DailyScheduler]); horário nulo cancela o alarme.
  */
 open class RoutineAlarms(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    open fun scheduleNext(
-        routines: List<Routine>,
-        after: LocalDateTime,
-        overridesByRoutine: Map<Long, List<RoutineOverride>>,
-        /** Ids das rotinas concluídas no dia do próximo início (o repositório lê e passa). */
-        doneOnStartDay: Set<Long>,
-    ) {
+    /** [remindAt]: o AVISO; [refreshAt]: o dos WIDGETS. Cada um nulo cancela o seu alarme. */
+    open fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) {
         val zone = ZoneId.systemDefault()
-        val next = RoutineSchedule.nextStart(routines, after, zone, overridesByRoutine)
-        if (next == null) {
-            alarmManager.cancel(pendingIntent(epochDay = 0, minute = 0))
-            return
-        }
-        val triggerAt = next.at.atZone(zone).toInstant().toEpochMilli()
-        val operation = pendingIntent(
-            epochDay = next.at.toLocalDate().toEpochDay(),
-            minute = next.at.hour * 60 + next.at.minute,
-        )
-        if (next.routines.any { !RoutineCatchUp.isDiscarded(it, doneOnStartDay) }) {
+        place(RoutineAlarmReceiver.ACTION_START, REMIND_REQUEST_CODE, remindAt, zone) { triggerAt, operation ->
             alarmManager.setAlarmClockOrInexact(context, triggerAt, operation)
-        } else {
+        }
+        place(RoutineAlarmReceiver.ACTION_REFRESH, REFRESH_REQUEST_CODE, refreshAt, zone) { triggerAt, operation ->
             alarmManager.set(AlarmManager.RTC, triggerAt, operation)
         }
     }
 
-    // Extras não diferenciam PendingIntents: sempre o mesmo alarme, com o horário atualizado.
-    private fun pendingIntent(epochDay: Long, minute: Int): PendingIntent =
+    private inline fun place(
+        action: String,
+        requestCode: Int,
+        at: LocalDateTime?,
+        zone: ZoneId,
+        set: (Long, PendingIntent) -> Unit,
+    ) {
+        if (at == null) {
+            alarmManager.cancel(pendingIntent(action, requestCode, epochDay = 0, minute = 0))
+            return
+        }
+        set(
+            at.atZone(zone).toInstant().toEpochMilli(),
+            pendingIntent(action, requestCode, epochDay = at.toLocalDate().toEpochDay(), minute = at.hour * 60 + at.minute),
+        )
+    }
+
+    // Extras não diferenciam PendingIntents; a ação e o requestCode, sim. Cada alarme é sempre o mesmo,
+    // com o horário atualizado.
+    private fun pendingIntent(action: String, requestCode: Int, epochDay: Long, minute: Int): PendingIntent =
         PendingIntent.getBroadcast(
             context,
-            0,
+            requestCode,
             Intent(context, RoutineAlarmReceiver::class.java)
-                .setAction(RoutineAlarmReceiver.ACTION_START)
+                .setAction(action)
                 .putExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, epochDay)
                 .putExtra(RoutineAlarmReceiver.EXTRA_MINUTE, minute),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+    private companion object {
+        /** O do alarme único até a v1.9.0: quem atualiza não fica com um alarme órfão. */
+        const val REMIND_REQUEST_CODE = 0
+        const val REFRESH_REQUEST_CODE = 1
+    }
 }

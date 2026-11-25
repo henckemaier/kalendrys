@@ -8,7 +8,6 @@ import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.data.local.entity.RoutineCompletion
-import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -120,7 +119,8 @@ class RoutineRepositoryCatchUpTest {
 
         assertEquals(listOf(day to saved.id), delivered)
         assertEquals(1, alarms.calls.size)
-        assertEquals(dateTime(10, 30), alarms.calls.single().after)
+        // Agendado a partir de agora (10:30): o aviso é o de amanhã; sem início silencioso antes dele.
+        assertEquals(FakeRoutineAlarms.Call(remindAt = dateTime(10, 0).plusDays(1), refreshAt = null), alarms.calls.single())
         assertEquals(at(10, 30), mark.get())
     }
 
@@ -136,7 +136,7 @@ class RoutineRepositoryCatchUpTest {
         repository.catchUp(nowOverride = at(9, 5))
 
         assertEquals(listOf(day to nine.id), delivered)
-        assertEquals(dateTime(9, 5), alarms.calls.last().after)
+        assertEquals(dateTime(10, 0), alarms.calls.last().remindAt)
     }
 
     @Test
@@ -205,7 +205,8 @@ class RoutineRepositoryCatchUpTest {
         repository.catchUp(nowOverride = at(9, 5))
 
         assertTrue(delivered.isEmpty())
-        assertEquals(dateTime(9, 3), alarms.calls.first().after)
+        // A partir das 9:03: o bloco das 9:00 já passou, o próximo aviso é o de amanhã.
+        assertEquals(dateTime(9, 0).plusDays(1), alarms.calls.first().remindAt)
     }
 
     // --- Alterações com horário já passado não avisam -------------------------------------------
@@ -278,13 +279,15 @@ class RoutineRepositoryCatchUpTest {
         val saved = addAt(block("Treino", 10), 8, 0)
         clockMillis = at(9, 0)
         repository.skipOccurrence(saved.id, day.toEpochDay())
+        repository.skipOccurrence(saved.id, day.plusDays(1).toEpochDay())
         alarms.reset()
 
         repository.catchUp(nowOverride = at(10, 30))
 
         assertTrue("a ocorrência pulada não é devida", delivered.isEmpty())
         assertEquals(1, alarms.calls.size)
-        assertEquals(RoutineOverrideType.SKIP, alarms.calls.single().overridesByRoutine[saved.id]?.single()?.type)
+        // O agendamento honra as exceções: amanhã também foi pulado, o aviso é o de depois de amanhã.
+        assertEquals(dateTime(10, 0).plusDays(2), alarms.calls.single().remindAt)
     }
 
     @Test
@@ -385,7 +388,8 @@ class RoutineRepositoryCatchUpTest {
         }
         assertEquals(12 * 60, db.routineDao().byId(other.id)?.startMinute)
         assertEquals(1, alarms.calls.size)
-        assertEquals(12 * 60, alarms.calls.single().routines.single { it.id == other.id }.startMinute)
+        // O agendamento já vê a linha nova: o próximo aviso é o das 12:00.
+        assertEquals(dateTime(12, 0), alarms.calls.single().remindAt)
     }
 
     @Test

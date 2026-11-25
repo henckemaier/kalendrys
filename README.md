@@ -71,7 +71,7 @@ app/src/main/java/com/kalendrys/app/
 │   ├── ReminderScheduler.kt # AlarmManager (setAlarmClock), só a próxima ocorrência
 │   ├── ReminderReceiver.kt  # Alarme de lembrete: só acorda o catch-up
 │   ├── ReminderCatchUpRunner.kt + AndroidCatchUpNotifier.kt # entrega atrasados, "N perdidos", reagenda
-│   ├── RoutineAlarms.kt     # Um único alarme: o próximo início de bloco de rotina
+│   ├── RoutineAlarms.kt     # Dois alarmes de rotina: o do próximo aviso e o silencioso dos widgets
 │   ├── RoutineAlarmReceiver.kt + RoutineNotifications.kt # aviso de início e "Concluir"
 │   └── BootReceiver.kt      # Catch-up e reagenda após reiniciar, atualizar o app ou mudar relógio/fuso
 ├── summary/                 # Resumo diário (alarme, horário das configurações, catch-up) + virada do dia
@@ -144,7 +144,9 @@ continua abrindo a Hoje na data):
   nem agendado antes de "Criar rotina", e a tela fecha depois dele.
 - **Aviso no início** pelo canal "Rotinas", com os botões **Concluir**, **Pular** e **Adiar**
   (funcionam com o app fechado). Em bloco com lista, **Pular** dá lugar a **Abrir lista** e o
-  título mostra o progresso. Um único alarme no `AlarmManager` cobre todas as rotinas: o próximo início. Bloco
+  título mostra o progresso. Desde a v1.9.1 são dois alarmes no `AlarmManager` para todas as rotinas: o de despertador no
+  próximo início que avisa (e ainda não foi concluído no dia) e, só se vier antes, um silencioso
+  no próximo início de qualquer bloco, para redesenhar os widgets (ADR-0003, seção 8). Bloco
   já feito não avisa. As rotinas seguem o relógio local (inclusive no horário de verão).
 - **Excluir arquiva**: a rotina some de hoje em diante, mas os dias passados mantêm o bloco e
   as conclusões. Desde a v1.8.0 "Excluir rotina" não pede confirmação e oferece Desfazer na tela

@@ -33,9 +33,11 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 when (action) {
-                    // O alarme só acorda o app (ADR-0003, 4.3.1): quem decide e entrega os avisos é o
-                    // catch-up. Os extras de dia/minuto seguem no intent só por compatibilidade.
-                    ACTION_START -> app.routineRepository.catchUp()
+                    // Os dois alarmes de rotina (v1.9.1, E5-B: o do aviso e o silencioso dos widgets) só
+                    // acordam o app (ADR-0003, 4.3.1): quem decide e entrega os avisos é o catch-up,
+                    // idempotente e serializado, que no fim reagenda os dois. Os extras de dia/minuto
+                    // seguem no intent só por compatibilidade.
+                    ACTION_START, ACTION_REFRESH -> app.routineRepository.catchUp()
                     ACTION_COMPLETE -> {
                         app.routineRepository.complete(routineId, LocalDate.ofEpochDay(epochDay))
                         app.routineNotifications.cancel(routineId)
@@ -88,7 +90,11 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        /** Alarme do AVISO de início de bloco (o mesmo da v1.9.0). */
         const val ACTION_START = "com.kalendrys.app.action.ROUTINE_START"
+
+        /** Alarme silencioso dos widgets, num início sem aviso antes do próximo aviso (v1.9.1). */
+        const val ACTION_REFRESH = "com.kalendrys.app.action.ROUTINE_REFRESH"
         const val ACTION_COMPLETE = "com.kalendrys.app.action.ROUTINE_COMPLETE"
         const val ACTION_SKIP = "com.kalendrys.app.action.ROUTINE_SKIP"
         const val ACTION_SNOOZE = "com.kalendrys.app.action.ROUTINE_SNOOZE"
