@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testTaskRepository
@@ -17,7 +18,9 @@ import kotlinx.coroutines.plus
 import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,8 +29,8 @@ import org.robolectric.annotation.Config
 /**
  * Casos extras da lista de UMA tarefa (v1.10.0, ADR-0002 16.10.3 e 16.10.4), além do
  * [TaskRepositoryTest] e do UndoOffersTest: Desfazer duas vezes a mesma exclusão, excluir e desfazer
- * em ciclo, tarefa com vínculo órfão, e o A1 com lista cujo dono foi excluído e com duas criações
- * disputando a mesma lista livre.
+ * em ciclo, tarefa com vínculo órfão, e o A1 da T3 (Adicionar lista com toque duplo,
+ * concorrente, sobre vínculo órfão e em tarefa já excluída).
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -122,34 +125,50 @@ class TaskListOwnershipExtrasTest {
         assertEquals(emptyList<Any>(), testDb.db.shoppingListDao().all())
     }
 
+    // A1 da T3 (ADR-0002 16.10.4): "Adicionar lista" cria na hora; não há mais lista existente.
+
     @Test
-    fun `A1 - lista cujo dono foi excluido nao existe mais - a tarefa nova nasce sem lista`() = runBlocking {
-        val (id, listId) = taskWithList()
-        tasks.deleteTask(tasks.observeTask(id).first()!!)
+    fun `A1 - Adicionar lista duas vezes seguidas cria uma lista so`() = runBlocking {
+        val task = tasks.addTask("Feira")
 
-        val created = tasks.addTask("Nova", shoppingListId = listId)
+        assertTrue(tasks.edit(task.id, TaskChange.NewShoppingList("Feira")))
+        val first = testDb.db.taskDao().byId(task.id)!!.shoppingListId
+        assertFalse("o segundo toque não cria", tasks.edit(task.id, TaskChange.NewShoppingList("Feira")))
 
-        assertNull(created.shoppingListId)
-        assertNull(testDb.db.taskDao().byId(created.id)!!.shoppingListId)
+        assertEquals(first, testDb.db.taskDao().byId(task.id)!!.shoppingListId)
+        assertEquals(listOf(first), testDb.db.shoppingListDao().all().map { it.id })
     }
 
     @Test
-    fun `A1 - lista livre usada por uma tarefa nova fica com ela`() = runBlocking {
-        val listId = shopping.createList("Livre")
-        val created = tasks.addTask("Nova", shoppingListId = listId)
-        assertEquals(listId, created.shoppingListId)
-    }
+    fun `A1 - seis Adicionar lista ao mesmo tempo na mesma tarefa - uma lista, nenhuma sem tarefa, nenhuma falha`() = runBlocking {
+        val task = tasks.addTask("Feira")
 
-    @Test
-    fun `A1 - duas criacoes ao mesmo tempo com a mesma lista livre - uma fica com ela, a outra nasce sem, nenhuma falha`() = runBlocking {
-        val listId = shopping.createList("Disputada")
-
-        val created = withContext(Dispatchers.Default) {
-            (1..6).map { n -> async { tasks.addTask("T$n", shoppingListId = listId) } }.awaitAll()
+        val results = withContext(Dispatchers.Default) {
+            (1..6).map { async { tasks.edit(task.id, TaskChange.NewShoppingList("Feira")) } }.awaitAll()
         }
 
-        assertEquals(6, testDb.db.taskDao().all().size)
-        assertEquals(1, created.count { it.shoppingListId == listId })
-        assertEquals(1, testDb.db.taskDao().all().count { it.shoppingListId == listId })
+        assertEquals(1, results.count { it })
+        val lists = testDb.db.shoppingListDao().all()
+        assertEquals(1, lists.size)
+        assertEquals(lists.single().id, testDb.db.taskDao().byId(task.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `A1 - vinculo orfao e substituido pela lista nova`() = runBlocking {
+        val id = testDb.db.taskDao().insert(com.kalendrys.app.data.local.entity.Task(title = "Órfã", createdAt = 1, shoppingListId = 404))
+
+        assertTrue(tasks.edit(id, TaskChange.NewShoppingList("Órfã")))
+
+        val listId = testDb.db.taskDao().byId(id)!!.shoppingListId
+        assertEquals(listOf(listId), testDb.db.shoppingListDao().all().map { it.id })
+    }
+
+    @Test
+    fun `A1 - Adicionar lista em tarefa ja excluida nao cria lista sem tarefa`() = runBlocking {
+        val task = tasks.addTask("Feira")
+        tasks.deleteTask(task)
+
+        assertFalse(tasks.edit(task.id, TaskChange.NewShoppingList("Feira")))
+        assertEquals(emptyList<Any>(), testDb.db.shoppingListDao().all())
     }
 }
