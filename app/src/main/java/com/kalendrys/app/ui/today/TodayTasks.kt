@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -48,9 +50,11 @@ import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
+import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
 import com.kalendrys.app.ui.today.TodayViewModel.DayTask
@@ -196,7 +200,15 @@ internal fun TaskRow(
     val time = minuteOfDayLabel(item.startMinute)
     // Leitura (v1.10.0, 16.10.8 item 6): tipo, hora, título; o estado vem do stateDescription e o
     // progresso da lista, se houver, do próprio selo. O título visível fica fora para não ler duas vezes.
-    val description = stringResource(R.string.today_task_row_description, time, task.title)
+    // Dentro de um bloco (item 7): "..., dentro de <rotina>".
+    val container = item.container
+    val description = if (container == null) {
+        stringResource(R.string.today_task_row_description, time, task.title)
+    } else {
+        stringResource(R.string.today_task_row_description_inside, time, task.title, container.title)
+    }
+    // A faixa do bloco que contém a tarefa passa por trás do losango, sem recuo a mais na linha.
+    val band = container?.let { routineTone(RoutineColor.fromKey(it.color)).fill }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -226,7 +238,14 @@ internal fun TaskRow(
                 .fillMaxHeight()
                 // Mesma trilha dos blocos: a linha (cheia/tracejada) continua pela tarefa, sem duplicar —
                 // o losango só abre a folga no meio. Vazia (Link.NONE) quando a tarefa fica solta.
-                .drawBehind { drawLinks(item.linkAbove, item.linkBelow, DiamondTrackGap.toPx(), lineColor) },
+                .drawBehind {
+                    if (band != null) {
+                        val w = PillWidth.toPx()
+                        drawRect(band, topLeft = Offset((size.width - w) / 2f, 0f), size = Size(w, size.height))
+                    } else {
+                        drawLinks(item.linkAbove, item.linkBelow, DiamondTrackGap.toPx(), lineColor)
+                    }
+                },
         ) {
             Diamond(filled = item.done, color = accent)
         }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.CheckCircle
@@ -87,9 +88,12 @@ internal val RowPadding = 6.dp
 private val TimeColumnWidth = 44.dp
 private val TimeColumnEndGap = 4.dp
 internal val TrackWidth = 64.dp
-private val PillWidth = 48.dp
+internal val PillWidth = 48.dp
 // Pílula: CircleShape é o arredondamento total (50%) também em formas não quadradas.
 private val PillShape = CircleShape
+// Bloco com tarefas dentro (v1.10.0, 16.10.8): a pílula abre para baixo e continua pelas tarefas.
+private val PillTopShape = RoundedCornerShape(topStartPercent = 50, topEndPercent = 50)
+private val PillBottomShape = RoundedCornerShape(bottomStartPercent = 50, bottomEndPercent = 50)
 // O losango (16.dp girado 45°) ocupa ~22.6.dp na diagonal; a trilha abre essa folga para a linha.
 internal val DiamondTrackGap = 24.dp
 /** Bloco pulado (P5): esmaecido, mas o controle de desfazer fica com a cor cheia. */
@@ -131,6 +135,7 @@ internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: T
         contentType = {
             when (it) {
                 is DayTimeline.Block -> "block"
+                is DayTimeline.BlockEnd -> "block_end"
                 is DayTimeline.Gap -> "gap"
                 is DayTimeline.TaskItem -> "task"
             }
@@ -157,6 +162,7 @@ internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: T
                     onUnskip = { actions.onUnskip(item) },
                 )
             }
+            is DayTimeline.BlockEnd -> BlockEndRow(item)
             is DayTimeline.Gap -> GapRow(item)
             is DayTimeline.TaskItem -> TaskRow(
                 item = item,
@@ -220,6 +226,9 @@ private fun BlockRow(
     val tone = routineTone(RoutineColor.fromKey(routine.color))
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val hasDuration = routine.durationMinutes > 0
+    // Com tarefas dentro, a hora de fim vai para baixo delas ([BlockEndRow]); pulado mostra só o início.
+    val nested = block.nestedTasks > 0
+    val showsEnd = hasDuration && !nested && !skipped
     val timeColumnWidth = timeColumnWidth()
     var menuOpen by rememberSaveable(block.key) { mutableStateOf(false) }
     val hasMenu = onSkip != null || onReschedule != null
@@ -263,7 +272,7 @@ private fun BlockRow(
                 ),
         ) {
             Column(
-                verticalArrangement = if (hasDuration) Arrangement.SpaceBetween else Arrangement.Center,
+                verticalArrangement = if (showsEnd) Arrangement.SpaceBetween else if (nested) Arrangement.Top else Arrangement.Center,
                 modifier = Modifier
                     .width(timeColumnWidth)
                     .fillMaxHeight()
@@ -272,7 +281,7 @@ private fun BlockRow(
                     .clearAndSetSemantics {},
             ) {
                 TimeLabel(minuteOfDayLabel(block.startMinute))
-                if (hasDuration) {
+                if (showsEnd) {
                     TimeLabel(minuteOfDayLabel(block.endMinute))
                 }
             }
@@ -283,21 +292,24 @@ private fun BlockRow(
                     .fillMaxHeight()
                     // A pílula ocupa a altura do bloco menos o respiro: as ligações vão só no respiro.
                     .drawBehind {
-                        drawLinks(block.linkAbove, block.linkBelow, size.height - 2 * RowPadding.toPx(), lineColor)
+                        // Com tarefas dentro, embaixo não há ligação: a faixa continua na linha seguinte.
+                        val below = if (nested) DayTimeline.Link.NONE else block.linkBelow
+                        drawLinks(block.linkAbove, below, size.height - 2 * RowPadding.toPx(), lineColor)
                     },
             ) {
+                val shape = if (nested) PillTopShape else PillShape
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .padding(vertical = RowPadding)
+                        .padding(top = RowPadding, bottom = if (nested) 0.dp else RowPadding)
                         .width(PillWidth)
-                        .heightIn(min = pillMinHeight(routine.durationMinutes))
+                        .heightIn(min = if (nested) 48.dp else pillMinHeight(routine.durationMinutes))
                         .fillMaxHeight()
                         .then(contentAlpha)
-                        .clip(PillShape)
+                        .clip(shape)
                         .background(tone.fill)
                         .then(
-                            if (inProgress) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, PillShape) else Modifier,
+                            if (inProgress) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier,
                         ),
                 ) {
                     Icon(
@@ -419,6 +431,48 @@ private fun BlockRow(
                     },
                 )
             }
+        }
+    }
+}
+
+/**
+ * Fim de um bloco com tarefas dentro (v1.10.0, 16.10.8): a faixa do bloco fecha embaixo das tarefas e a
+ * hora de fim fica aqui, na coluna (lê 07:00, 07:00, 07:30, 08:00). Só desenho: o leitor lê o bloco e
+ * cada tarefa (com "dentro de"), não este fim.
+ */
+@Composable
+private fun BlockEndRow(end: DayTimeline.BlockEnd) {
+    val tone = routineTone(RoutineColor.fromKey(end.routine.color))
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clearAndSetSemantics {},
+    ) {
+        Box(
+            contentAlignment = Alignment.BottomCenter,
+            modifier = Modifier
+                .width(timeColumnWidth())
+                .padding(bottom = RowPadding),
+        ) {
+            TimeLabel(minuteOfDayLabel(end.startMinute))
+        }
+        Box(
+            contentAlignment = Alignment.TopCenter,
+            modifier = Modifier
+                .width(TrackWidth)
+                .fillMaxHeight()
+                .drawBehind { drawLinks(DayTimeline.Link.NONE, end.linkBelow, size.height - RowPadding.toPx(), lineColor) },
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(bottom = RowPadding)
+                    .width(PillWidth)
+                    .fillMaxHeight()
+                    .clip(PillBottomShape)
+                    .background(tone.fill),
+            )
         }
     }
 }
