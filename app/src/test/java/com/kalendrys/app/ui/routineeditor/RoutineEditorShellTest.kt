@@ -230,6 +230,35 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `salvos - aplicar fecha o painel e o exercicio novo fica visivel, mesmo no fim de uma lista longa`() {
+        // Condição do Esquadro no achado 2: um toque repetido não duplica sem ninguém notar.
+        val routineId = runBlocking {
+            val routine = routines.add(Routine(title = "Força", startMinute = 420, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+            val exercises = ExerciseRepository(testDb.db.exerciseItemDao(), clock = SystemAppClock)
+            (1..12).forEach { n -> exercises.add(routine.id, "Exercício $n", sets = 3, reps = 10, load = null, restSeconds = null) }
+            testDb.db.savedExerciseDao().insert(SavedExercise(name = "Agachamento", sets = 4, reps = 6, createdAt = TEST_CREATED_AT))
+            routine.id
+        }
+        show(routineId)
+        waitFor { viewModel!!.uiState.value.exerciseItems.size == 12 }
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
+        // Volta ao topo: o exercício novo, no fim da lista, fica fora da tela até o editor rolar.
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("title")
+
+        compose.onNode(hasText("Agachamento") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
+        waitFor { viewModel!!.uiState.value.exerciseItems.lastOrNull()?.name == "Agachamento" }
+        waitFor {
+            compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes()
+                .any { it.config.getOrNull(SemanticsActions.OnClick)?.label == "Editar Agachamento" }
+        }
+        compose.onNode(hasText("Agachamento") and hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test
     fun `salvos - painel vazio mostra o estado vazio`() {
         // Achado 3 da Coruja: o painel sem salvos diz o que fazer.
         show(NEW_ROUTINE_ID)
