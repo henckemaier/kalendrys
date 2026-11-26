@@ -2101,11 +2101,12 @@ T2 corre em paralelo com T1 e T3. Primeiro corte: os exercícios salvos.
 | Barra mexida agora e de novo na v1.12.0 | Aceito pelo usuário ao tirar a aba agora |
 | Dado parado no banco (coluna e tabela sem uso) | Registrado; limpeza só com parecer próprio |
 
+**Confirmado pelo usuário em 2026-11-25**, depois da primeira redação desta subseção: a cópia da
+lista compartilhada para as outras tarefas (P44, passo 4 da 16.10.3), a confirmação ao excluir
+lista, sem Desfazer (P45), e o nome da lista nova igual ao da tarefa (P46). A emenda está
+aprovada.
+
 Pendente na data desta emenda:
 
-- **Três detalhes propostos pelo arquiteto e ainda não confirmados pelo usuário:** a cópia da
-  lista compartilhada para as outras tarefas (P44, passo 4 da 16.10.3; a alternativa é só a mais
-  antiga ficar com a lista), a confirmação ao excluir lista (P45) e o nome da lista nova igual ao
-  da tarefa (P46). Se a resposta for outra, esta subseção é corrigida.
 - O resultado da conferência visual da Hoje com tarefas entre rotinas, pedida pelo usuário; se
   trouxer ajuste, entra na T3.
