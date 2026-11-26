@@ -2000,7 +2000,8 @@ a 16.6 e a 16.7. Corrige também o ADR-0001 (seção 9 de lá). As decisões sã
   próprio; isso já existia desde a v1.8.0 (14.5) e não muda. Tarefa não ganha duração.
 - **Lista:** pertence a **uma tarefa só**. Lista sem tarefa não existe. Excluir a tarefa exclui a
   lista e os itens.
-- **Não há aba Listas.** A barra fica com Tarefas, Hoje e Calendário.
+- **Não há aba Listas.** A barra fica com Hoje, Tarefas e Calendário, nessa ordem (a ordem que
+  já existia, sem a quarta aba).
 
 #### 16.10.2 Divisão das versões
 
@@ -2197,3 +2198,84 @@ do bloco, as tarefas marcadas com a rotina que as contém, e uma linha de fim do
 última, que não é lida nem conta no dia. Limite conhecido: como a ordem é pelo início, uma rotina
 curta inteira dentro da janela de outra, ou um bloco pulado, pode cair entre o cabeçalho e as
 tarefas de dentro; a faixa do bloco de fora fica interrompida nessa linha e retoma na tarefa.
+
+#### 16.10.9 Fechamento da v1.10.0 (2026-11-26)
+
+Commit final `0b30fe8` (versionCode 11000). CI verde nesse commit: 161 suítes, 1232 testes, 0
+falhas; lint sem erro. Banco 12, backup versão 7.
+
+**O que entrou.** E0 (base técnica), T1 (dados), T2 (rotina com tipo e exercícios salvos) e T3
+(três abas, lista dentro da tarefa, leitura da tarefa na trilha e tarefa aninhada no bloco). Nada
+foi cortado: nem a tarefa aninhada nem os exercícios salvos, que eram os dois primeiros cortes.
+
+**Migração conferida no emulador,** por cima da v1.9.1, com um caso de cada linha da 16.10.3:
+listas avulsas e listas só de rotina apagadas; lista de duas tarefas virou duas, com cópia dos
+itens; tipos certos; exercícios escondidos de volta com o tipo; índice único criado; alarmes
+iguais. Restaurar um backup da versão 6 deu um banco idêntico ao da migração.
+
+**Baseline Profile: não regerado.** Três tentativas falharam, cada uma numa jornada diferente:
+a aba Tarefas tem uma seção chamada "Hoje" e o seletor da aba pegou a seção; o diálogo de
+descartar apareceu na criação da rotina por um Voltar sem teclado aberto; e, na terceira, a
+criação passou e a edição caiu com o título fora da tela depois de "Mais opções". Fica o perfil
+da v1.9.0. Consequências: `ui/routines` e `ui/routineeditor` continuam fora do perfil pela
+**terceira versão seguida**, justamente na versão que reescreveu o editor; e o perfil aponta para
+classes que saíram (aba Listas, categorias), o que não faz mal e não aquece nada. As jornadas
+corrigidas estão no repositório. **Primeiro item da v1.11.0:** gerar o perfil, com o aceite por
+linhas por pacote da 15.12.
+
+Regra que sai daqui, somada às da 15.12: jornada não escolhe elemento só pelo texto quando o
+texto se repete na tela (aba e seção com o mesmo nome), e trata o diálogo que pode aparecer em
+vez de supor o estado do teclado.
+
+**APK de release com R8.** 3.360.179 B, contra 3.372.207 B da v1.9.1: 12.028 B a menos.
+Verificação do R8 sem erro. Medido de novo no versionCode final (11000), com o mesmo resultado.
+
+**Abertura a frio: NÃO MEDIDA,** pela terceira versão seguida (14.14, 15.12, 16.9). O aparelho do
+usuário não foi liberado (P10) e no emulador não se tenta.
+
+**Condição da release (P43).** O usuário exporta o backup pela v1.9.1 antes de atualizar o
+aparelho dele. A migração apaga listas avulsas, listas de rotina e o vínculo de lista das
+rotinas, com autorização dele, e não tem volta sem o backup. O CHANGELOG avisa.
+
+**Limites aceitos nesta versão:**
+
+- Entre duas rotinas sobrepostas a coluna de horas recua (o fim da primeira antes do início da
+  segunda), com ou sem tarefa aninhada. Sobreposição parcial com tarefa nas duas mostra o fim da
+  primeira logo depois da última tarefa dela, não pela hora. Há teste afirmando esse
+  comportamento, para ele não mudar sem decisão.
+- Uma rotina curta inteira dentro da janela de outra, ou um bloco pulado, interrompe a faixa do
+  bloco de fora (16.10.8).
+- Atualizar com a antiga aba Listas aberta reabre na Hoje: o sistema descarta o estado salvo. Sem
+  erro.
+- A lista de uma tarefa sem repetição já concluída continua com ela e fica fora de alcance.
+- Reordenar exercícios custa dois toques por movimento (menu da linha). Arrastar continua no
+  "Depois" do roteiro.
+- Marcar "Salvar para reutilizar" ao editar um exercício cria um salvo novo a cada vez.
+- Quebra no meio da palavra em 320dp com fonte 2.0 (14.13).
+- No banco ficam, sem uso, a coluna antiga do vínculo de lista na rotina e a tabela de
+  categorias.
+
+**Registrado para depois:**
+
+- **v1.11.0:** perfil (acima); regra das tarefas repetidas (16.4, 16.5; ADR-0003, seção 9);
+  indicador de repetição na tarefa da trilha e data e hora na linha das atrasadas (P52).
+- **v1.12.0:** adaptativo, calendário, busca e target 36 (16.2); trilha curta em paisagem com
+  fonte 2.0; rótulo "Calendário" menor na barra e "Adicionar lista" abaixo da dobra com teclado,
+  os dois em 320dp com fonte 2.0; se a aba Listas volta de alguma forma, só se o usuário pedir.
+- **Sem versão:** o widget intercalar tarefas e rotinas por horário (P51, decidir depois de usar
+  esta versão); como desenhar rotinas sobrepostas; limpeza do dado parado no banco.
+
+**Matriz manual final: aprovada,** no release do commit final (versionCode 11000), no emulador.
+Sem falha fatal, ANR nem erro de classe ou método ausente em toda a sessão; dados do emulador
+restaurados e conferidos no fim.
+
+- **Atualização de verdade,** do release da v1.9.1 para o release da v1.10.0, com os casos da
+  migração: sem erro, três abas, tarefa aninhada lida com a rotina que a contém, alarmes iguais,
+  e o resultado da migração igual ao conferido na T1.
+- **No release com R8:** rotina do tipo Exercício com exercício salvo; tarefa com lista; excluir
+  lista; excluir tarefa e desfazer; abrir a lista pela notificação e voltar; restauro de backup da
+  versão 6 idêntico à migração; exportação na versão 7 com banco 12.
+- **A v1.9.1 recusa um backup da versão 7** sem tocar nos dados. Quem voltar de versão precisa do
+  backup exportado **antes** de atualizar, que é o da P43.
+- Atalho antigo fixado abre a aba Tarefas; a aba Listas aberta antes da atualização reabre na
+  Hoje, sem erro.

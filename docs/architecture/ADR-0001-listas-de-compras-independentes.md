@@ -357,7 +357,10 @@ Decisão do usuário, registrada com o desenho no ADR-0002, 16.10. Deixam de val
 - **O vínculo em rotina** (seção 3, "qualquer rotina pode anexar uma lista"). Rotina não tem
   lista; o tipo da rotina é Nenhum ou Exercício.
 - **Vários donos para a mesma lista** e a escolha de uma lista existente ao anexar.
-- **A aba Listas e o atalho "Listas"** (4.5). A lista só é alcançada pela tarefa dona.
+- **A aba Listas** (4.5). A lista só é alcançada pela tarefa dona. O atalho do app que abria a aba
+  **não sai**: fica com o mesmo identificador, o rótulo "Tarefas" e abrindo a aba Tarefas, porque
+  o sistema desativa um atalho já fixado na tela inicial quando o atalho correspondente some do
+  app (ADR-0002, 16.10.4).
 - **A regra de pilha do link de lista** (emenda E-1 do ADR-0002): a lista abre sobre o detalhe da
   tarefa dona.
 
