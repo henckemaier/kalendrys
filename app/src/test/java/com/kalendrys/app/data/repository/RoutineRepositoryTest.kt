@@ -316,6 +316,18 @@ class RoutineRepositoryTest {
     }
 
     @Test
+    fun `pular rotina arquivada nao grava nada e devolve null`() = runTest {
+        // O-3 do Lince (v1.10.0): "Excluir" tira a rotina de hoje em diante; pular não tem efeito.
+        val saved = repository.add(routine())
+        repository.archive(saved)
+        val epochDay = LocalDate.now().toEpochDay()
+
+        assertNull(repository.skipOccurrence(saved.id, epochDay))
+
+        assertNull(repository.occurrenceOverride(saved.id, epochDay))
+    }
+
+    @Test
     fun `pular rotina que nao existe mais nao grava nada e devolve null`() = runTest {
         val epochDay = LocalDate.now().toEpochDay()
 

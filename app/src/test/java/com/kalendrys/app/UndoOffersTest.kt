@@ -456,6 +456,17 @@ class UndoOffersTest {
     }
 
     @Test
+    fun `pular rotina arquivada nao oferece Desfazer`() = runTest {
+        val offers = offers(this)
+        val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))
+        routines.archive(routine)
+
+        offers.skipRoutine(routine.id, LocalDate.now()).join()
+
+        assertNull(offers.pending.value)
+    }
+
+    @Test
     fun `pular rotina que nao existe mais nao derruba a oferta pendente`() = runTest {
         val offers = offers(this)
         val routine = routines.add(Routine(title = "Treino", startMinute = 600, createdAt = TEST_CREATED_AT))

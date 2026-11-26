@@ -252,11 +252,13 @@ class RoutineRepository(
      * remarcação; `null` se não havia), lida no mesmo [change], para o Desfazer da mensagem recolocá-la
      * ([restoreOccurrenceException]). Mesmo caminho para a tela de exceção, a notificação e a Hoje.
      *
-     * Rotina que não existe mais (excluída de vez, notificação ou tela antiga): nada é gravado e devolve
-     * `null`, como o [complete]; quem oferece Desfazer não oferece (v1.10.0, E0; N2 da E4 da v1.9.0).
+     * Rotina que não existe mais (excluída de vez, notificação ou tela antiga) ou ARQUIVADA ("Excluir":
+     * some de hoje em diante): nada é gravado e devolve `null`; quem oferece Desfazer não oferece
+     * (v1.10.0, E0; N2 da E4 da v1.9.0 e O-3 do Lince).
      */
     suspend fun skipOccurrence(routineId: Long, epochDay: Long): SkippedOccurrence? = change {
-        routineDao.byId(routineId) ?: return@change null
+        val routine = routineDao.byId(routineId) ?: return@change null
+        if (routine.archivedAt != null) return@change null
         val previous = occurrenceOverride(routineId, epochDay)
         overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP, createdAt = clock.nowMillis()))
         if (epochDay == clock.today().toEpochDay()) notifications.cancel(routineId)
