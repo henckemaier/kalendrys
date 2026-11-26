@@ -3,8 +3,10 @@
 package com.kalendrys.app.ui.routineeditor
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,13 +47,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +69,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,11 +80,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.repository.today
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.ExerciseFormat
 import com.kalendrys.app.domain.RoutineColor
-import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.components.AppScaffold
@@ -119,12 +126,7 @@ internal fun ExerciseItemRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // Legenda: séries×reps · carga (se houver) · descanso (se houver).
-    val subtitle = buildList {
-        add(ExerciseFormat.setsReps(item.sets, item.reps))
-        item.load?.let { add(it) }
-        item.restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
-    }.joinToString(" · ")
+    val subtitle = exerciseSubtitle(item.sets, item.reps, item.load, item.restSeconds)
     Surface(
         shape = groupedItemShape(index, count),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -167,25 +169,32 @@ internal fun ExerciseItemRow(
     }
 }
 
+/**
+ * Diálogo dos campos de um exercício: novo ou editado, da rotina ou salvo. [stateKey] identifica o que
+ * está sendo editado (os campos digitados sobrevivem a girar a tela). Com [offerSaveForReuse] mostra
+ * "Salvar para reutilizar" (v1.10.0, 16.10.5: os salvos nascem daqui), desmarcado a cada abertura.
+ */
 @Composable
 internal fun ExerciseItemDialog(
-    existing: ExerciseItem?,
-    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) -> Unit,
+    initial: ExerciseFields?,
+    stateKey: String,
+    @StringRes titleRes: Int,
+    offerSaveForReuse: Boolean,
+    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?, saveForReuse: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var setsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.sets?.toString() ?: "3") }
-    var repsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.reps?.toString() ?: "10") }
-    var loadText by rememberSaveable(existing?.id) { mutableStateOf(existing?.load ?: "") }
-    var restText by rememberSaveable(existing?.id) { mutableStateOf(existing?.restSeconds?.toString() ?: "") }
+    var name by rememberSaveable(stateKey) { mutableStateOf(initial?.name ?: "") }
+    var setsText by rememberSaveable(stateKey) { mutableStateOf(initial?.sets?.toString() ?: "3") }
+    var repsText by rememberSaveable(stateKey) { mutableStateOf(initial?.reps?.toString() ?: "10") }
+    var loadText by rememberSaveable(stateKey) { mutableStateOf(initial?.load ?: "") }
+    var restText by rememberSaveable(stateKey) { mutableStateOf(initial?.restSeconds?.toString() ?: "") }
+    var saveForReuse by rememberSaveable(stateKey) { mutableStateOf(false) }
     // Séries/reps caem no mínimo 1 quando em branco; carga e descanso em branco = sem valor (null).
     val sets = setsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
     val reps = repsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (existing == null) R.string.exercise_add_title else R.string.exercise_edit_title))
-        },
+        title = { Text(stringResource(titleRes)) },
         text = {
             Column {
                 OutlinedTextField(
@@ -235,6 +244,21 @@ internal fun ExerciseItemDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (offerSaveForReuse) {
+                    // A linha inteira é o alvo (um nó só, papel de caixa de seleção).
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .heightIn(min = 48.dp)
+                            .toggleable(value = saveForReuse, role = Role.Checkbox, onValueChange = { saveForReuse = it }),
+                    ) {
+                        Checkbox(checked = saveForReuse, onCheckedChange = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.exercise_save_for_reuse), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -242,7 +266,7 @@ internal fun ExerciseItemDialog(
                 onClick = {
                     val load = loadText.trim().takeIf { it.isNotEmpty() }
                     val rest = restText.toIntOrNull()
-                    onConfirm(name.trim(), sets, reps, load, rest)
+                    onConfirm(name.trim(), sets, reps, load, rest, offerSaveForReuse && saveForReuse)
                 },
                 enabled = name.isNotBlank(),
             ) { Text(stringResource(R.string.save)) }
@@ -252,6 +276,98 @@ internal fun ExerciseItemDialog(
         },
     )
 }
+
+/**
+ * Painel "Dos salvos" (v1.10.0, 16.10.5): os exercícios salvos, por nome. Tocar na linha aplica uma
+ * CÓPIA na rotina (e fecha); editar abre o diálogo dos campos; excluir não pede confirmação. As cópias
+ * já aplicadas nunca mudam com o salvo.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SavedExercisesSheet(
+    saved: List<SavedExercise>,
+    onApply: (SavedExercise) -> Unit,
+    onEdit: (SavedExercise) -> Unit,
+    onDelete: (SavedExercise) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Text(
+                text = stringResource(R.string.saved_exercises_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp).semantics { heading() },
+            )
+            if (saved.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.saved_exercises_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            } else {
+                LazyColumn {
+                    itemsIndexed(saved, key = { _, it -> it.id }) { index, item ->
+                        SavedExerciseRow(
+                            item = item,
+                            index = index,
+                            count = saved.size,
+                            onApply = { onApply(item) },
+                            onEdit = { onEdit(item) },
+                            onDelete = { onDelete(item) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedExerciseRow(
+    item: SavedExercise,
+    index: Int,
+    count: Int,
+    onApply: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val subtitle = exerciseSubtitle(item.sets, item.reps, item.load, item.restSeconds)
+    val applyLabel = stringResource(R.string.saved_exercise_apply, item.name)
+    Surface(
+        shape = groupedItemShape(index, count),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp)
+                    .clickable(onClickLabel = applyLabel, role = Role.Button, onClick = onApply)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(text = item.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.saved_exercise_edit, item.name))
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.saved_exercise_delete, item.name))
+            }
+        }
+    }
+}
+
+/** Legenda de um exercício: séries×reps · carga (se houver) · descanso (se houver). */
+internal fun exerciseSubtitle(sets: Int, reps: Int, load: String?, restSeconds: Int?): String = buildList {
+    add(ExerciseFormat.setsReps(sets, reps))
+    load?.let { add(it) }
+    restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
+}.joinToString(" · ")
 
 internal fun timeOf(minute: Int): LocalTime = LocalTime.of(minute % 1440 / 60, minute % 60)
 

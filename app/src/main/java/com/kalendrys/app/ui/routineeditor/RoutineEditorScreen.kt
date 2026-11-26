@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -42,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.EmptyState
@@ -49,8 +51,8 @@ import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.bottomBarInsets
 import com.kalendrys.app.ui.components.isCompactHeight
-import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.components.plus
+import com.kalendrys.app.ui.components.windowHeightDp
 import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.theme.Spacing
@@ -199,6 +201,9 @@ private fun EditorContent(
     // Diálogo de add/editar exercício. editingExerciseId null + diálogo aberto = novo item; senão, edição.
     var showExerciseDialog by rememberSaveable { mutableStateOf(false) }
     var editingExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // Painel "Dos salvos" e o salvo em edição nele (v1.10.0, 16.10.5).
+    var showSavedSheet by rememberSaveable { mutableStateOf(false) }
+    var editingSavedId by rememberSaveable { mutableStateOf<Long?>(null) }
     // "Mais opções" (Vigência e Observações): aberto se a rotina já tem vigência ou observações, decidido
     // UMA vez, na abertura (vigência escondida é armadilha, (c) da revisão da E3); depois só pelo toque.
     var moreOptions by rememberSaveable {
@@ -284,6 +289,13 @@ private fun EditorContent(
                     Text(stringResource(R.string.exercise_add_item))
                 }
             }
+            item(key = "exercise-from-saved") {
+                TextButton(onClick = { showSavedSheet = true }) {
+                    Icon(Icons.Outlined.Bookmarks, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.exercise_from_saved))
+                }
+            }
         }
         item(key = "appearance") {
             AppearanceSection(fields = fields, onIcon = viewModel::updateIcon, onColor = viewModel::updateColor)
@@ -353,12 +365,15 @@ private fun EditorContent(
     if (showExerciseDialog) {
         val editing = editingExerciseId?.let { id -> exerciseItems.firstOrNull { it.id == id } }
         ExerciseItemDialog(
-            existing = editing,
-            onConfirm = { name, sets, reps, load, restSeconds ->
+            initial = editing?.let(ExerciseFields::of),
+            stateKey = "exercise-${editing?.id}",
+            titleRes = if (editing == null) R.string.exercise_add_title else R.string.exercise_edit_title,
+            offerSaveForReuse = true,
+            onConfirm = { name, sets, reps, load, restSeconds, saveForReuse ->
                 if (editing == null) {
-                    viewModel.addExerciseItem(name, sets, reps, load, restSeconds)
+                    viewModel.addExerciseItem(name, sets, reps, load, restSeconds, saveForReuse)
                 } else {
-                    viewModel.updateExerciseItem(editing, name, sets, reps, load, restSeconds)
+                    viewModel.updateExerciseItem(editing, name, sets, reps, load, restSeconds, saveForReuse)
                 }
                 showExerciseDialog = false
                 editingExerciseId = null
@@ -367,6 +382,32 @@ private fun EditorContent(
                 showExerciseDialog = false
                 editingExerciseId = null
             },
+        )
+    }
+    if (showSavedSheet) {
+        SavedExercisesSheet(
+            saved = state.savedExercises,
+            onApply = { saved ->
+                viewModel.applySavedExercise(saved)
+                showSavedSheet = false
+            },
+            onEdit = { saved -> editingSavedId = saved.id },
+            onDelete = viewModel::deleteSavedExercise,
+            onDismiss = { showSavedSheet = false },
+        )
+    }
+    val editingSaved = editingSavedId?.let { id -> state.savedExercises.firstOrNull { it.id == id } }
+    if (editingSaved != null) {
+        ExerciseItemDialog(
+            initial = ExerciseFields(editingSaved.name, editingSaved.sets, editingSaved.reps, editingSaved.load, editingSaved.restSeconds),
+            stateKey = "saved-${editingSaved.id}",
+            titleRes = R.string.saved_exercise_edit_title,
+            offerSaveForReuse = false,
+            onConfirm = { name, sets, reps, load, restSeconds, _ ->
+                viewModel.updateSavedExercise(editingSaved, name, sets, reps, load, restSeconds)
+                editingSavedId = null
+            },
+            onDismiss = { editingSavedId = null },
         )
     }
 }

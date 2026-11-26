@@ -11,6 +11,7 @@ import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineCatchUpMark
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
@@ -116,6 +117,11 @@ class KalendrysApp : Application() {
     /** Lista de exercícios das rotinas do tipo EXERCICIO (módulo T33/T34). */
     val exerciseRepository: ExerciseRepository by lazy {
         ExerciseRepository(database.exerciseItemDao(), clock)
+    }
+
+    /** Exercícios salvos para reutilizar no editor de rotina (v1.10.0, ADR-0002 16.10.5). */
+    val savedExerciseRepository: SavedExerciseRepository by lazy {
+        SavedExerciseRepository(database.savedExerciseDao(), clock)
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */

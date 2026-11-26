@@ -8,32 +8,35 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.SystemAppClock
-import com.kalendrys.app.domain.RoutineKind
-import com.kalendrys.app.reminder.RoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
-import com.kalendrys.app.testutil.TEST_CREATED_AT
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
+import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineAlarms
+import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testUndoOffers
 import java.time.DayOfWeek
 import java.time.LocalTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -42,7 +45,6 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -73,6 +75,7 @@ class RoutineEditorViewModelTest {
     private lateinit var routines: RoutineRepository
     private lateinit var shopping: ShoppingRepository
     private lateinit var exercises: ExerciseRepository
+    private lateinit var saved: SavedExerciseRepository
     private lateinit var undoOffers: UndoOffers
     private val viewModels = mutableListOf<RoutineEditorViewModel>()
 
@@ -86,6 +89,7 @@ class RoutineEditorViewModelTest {
         routines = testRoutineRepository(db, alarms)
         shopping = ShoppingRepository(db, clock = SystemAppClock)
         exercises = ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock)
+        saved = SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, routines)
     }
 
@@ -107,6 +111,7 @@ class RoutineEditorViewModelTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 repository,
                 exercises,
+                saved,
                 undoOffers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -810,6 +815,72 @@ class RoutineEditorViewModelTest {
         assertEquals(listOf("20kg", null), copied.map { it.load })
         assertTrue(copied.none { c -> originals.any { it.id == c.id } })
         assertEquals("o original fica como estava", originals, db.exerciseItemDao().byRoutine(routine.id))
+    }
+
+    // --- Exercícios salvos (v1.10.0, T2, C4; ADR-0002 16.10.5) ---------------------------------------
+
+    @Test
+    fun `salvos - Salvar para reutilizar grava uma copia como salvo, alem do exercicio`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.addExerciseItem(" Supino ", sets = 3, reps = 8, load = "40kg", restSeconds = 90, saveForReuse = true)
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = null, restSeconds = null)
+        vm.awaitPendingWrites()
+
+        val stored = db.savedExerciseDao().all()
+        assertEquals("só o marcado vira salvo", listOf("Supino"), stored.map { it.name })
+        assertEquals(ExerciseFields("Supino", 3, 8, "40kg", 90), stored.single().let { ExerciseFields(it.name, it.sets, it.reps, it.load, it.restSeconds) })
+        assertTrue(stored.single().createdAt > 0)
+        assertEquals(listOf("Supino", "Remada"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+        assertEquals(listOf("Supino"), vm.awaitUi { it.savedExercises.size == 1 }.savedExercises.map { it.name })
+    }
+
+    @Test
+    fun `salvos - aplicar copia, sem vinculo - editar ou excluir o salvo nao muda a rotina`() = runTest {
+        val savedId = saved.save(ExerciseFields("Agachamento", sets = 4, reps = 6, load = "60kg", restSeconds = 120))!!
+        val routine = routines.add(Routine(title = "Pernas", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        val savedExercise = vm.awaitUi { it.savedExercises.isNotEmpty() }.savedExercises.single()
+
+        vm.applySavedExercise(savedExercise)
+        vm.awaitPendingWrites()
+        val copy = db.exerciseItemDao().byRoutine(routine.id).single()
+        assertEquals(ExerciseFields("Agachamento", 4, 6, "60kg", 120), ExerciseFields.of(copy))
+
+        vm.updateSavedExercise(savedExercise, "Agachamento livre", 5, 5, "70kg", 180)
+        vm.awaitPendingWrites()
+        assertEquals("Agachamento livre", db.savedExerciseDao().byId(savedId)!!.name)
+        assertEquals("a cópia não muda", copy, db.exerciseItemDao().byRoutine(routine.id).single())
+
+        vm.deleteSavedExercise(db.savedExerciseDao().byId(savedId)!!)
+        vm.awaitPendingWrites()
+        assertTrue(db.savedExerciseDao().all().isEmpty())
+        assertEquals("a cópia fica", copy, db.exerciseItemDao().byRoutine(routine.id).single())
+    }
+
+    @Test
+    fun `salvos - na criacao, aplicar vai para o rascunho e Salvar para reutilizar grava ja o salvo`() = runTest {
+        saved.save(ExerciseFields("Prancha", sets = 3, reps = 1, restSeconds = 30))
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateKind(RoutineKind.EXERCISE)
+        vm.updateTitle("Core")
+        val prancha = vm.awaitUi { it.savedExercises.isNotEmpty() }.savedExercises.single()
+
+        vm.applySavedExercise(prancha)
+        vm.addExerciseItem("Abdominal", sets = 3, reps = 20, load = null, restSeconds = null, saveForReuse = true)
+        vm.awaitUi { it.exerciseItems.size == 2 }
+        vm.awaitPendingWrites()
+        assertTrue("nada da rotina antes do Criar", db.exerciseItemDao().all().isEmpty())
+        assertEquals(listOf("Abdominal", "Prancha"), db.savedExerciseDao().all().map { it.name }.sorted())
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("Prancha", "Abdominal"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
     }
 
     private companion object {

@@ -29,8 +29,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.testutil.TEST_CREATED_AT
@@ -90,6 +92,7 @@ class RoutineEditorShellTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 routines,
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 offers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -169,6 +172,27 @@ class RoutineEditorShellTest {
         compose.onNode(hasText("Exercício") and hasClickAction()).assertIsSelected()
         compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsNotSelected()
         compose.onNodeWithText("Adicionar exercício").assertExists()
+    }
+
+    @Test
+    fun `criacao - Dos salvos abre o painel e tocar no salvo aplica uma copia e fecha`() {
+        runBlocking {
+            testDb.db.savedExerciseDao().insert(
+                SavedExercise(name = "Agachamento", sets = 4, reps = 6, load = "60kg", restSeconds = 120, createdAt = TEST_CREATED_AT),
+            )
+        }
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodesWithText("Agachamento").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Agachamento") and hasClickAction()).performClick()
+
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
+        waitFor { viewModel!!.uiState.value.exerciseItems.map { it.name } == listOf("Agachamento") }
+        assertEquals("o salvo fica", 1, runBlocking { testDb.db.savedExerciseDao().all() }.size)
     }
 
     @Test

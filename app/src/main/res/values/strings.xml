@@ -215,6 +215,15 @@
     <string name="exercise_section_title">Lista de exercícios</string>
     <string name="exercise_empty">Nenhum exercício ainda. Toque em \"Adicionar exercício\".</string>
     <string name="exercise_add_item">Adicionar exercício</string>
+    <!-- Exercícios salvos (v1.10.0) -->
+    <string name="exercise_save_for_reuse">Salvar para reutilizar</string>
+    <string name="exercise_from_saved">Dos salvos</string>
+    <string name="saved_exercises_title">Exercícios salvos</string>
+    <string name="saved_exercises_empty">Nenhum exercício salvo. Ao adicionar um exercício, marque \"Salvar para reutilizar\".</string>
+    <string name="saved_exercise_apply">Adicionar %1$s à rotina</string>
+    <string name="saved_exercise_edit_title">Editar exercício salvo</string>
+    <string name="saved_exercise_edit">Editar %1$s</string>
+    <string name="saved_exercise_delete">Excluir %1$s dos salvos</string>
     <string name="exercise_add_title">Novo exercício</string>
     <string name="exercise_edit_title">Editar exercício</string>
     <string name="exercise_item_name_label">Exercício</string>

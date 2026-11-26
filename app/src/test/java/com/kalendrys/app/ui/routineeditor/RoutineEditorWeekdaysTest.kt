@@ -15,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -27,8 +28,8 @@ import com.kalendrys.app.ui.components.weekdayPillWidthsPx
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Test
 import org.junit.Rule
+import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -70,6 +71,7 @@ class RoutineEditorWeekdaysTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
                 routineRepository,
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),
                 clock = SystemAppClock,

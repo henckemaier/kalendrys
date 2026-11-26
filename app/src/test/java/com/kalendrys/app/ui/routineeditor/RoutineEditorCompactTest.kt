@@ -13,6 +13,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ExerciseRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
@@ -52,6 +53,7 @@ class RoutineEditorCompactTest {
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to NEW_ROUTINE_ID)),
                 routines,
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routines),
                 testDb.appScope(),
                 clock = SystemAppClock,

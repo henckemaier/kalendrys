@@ -15,9 +15,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.ExerciseItem
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ExerciseRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.nowLocal
 import com.kalendrys.app.domain.ExerciseFields
@@ -34,6 +36,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +74,8 @@ class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: RoutineRepository,
     private val exerciseRepository: ExerciseRepository,
+    /** Exercícios salvos para reutilizar (v1.10.0, 16.10.5): o painel "Dos salvos" e o "Salvar para reutilizar". */
+    private val savedExerciseRepository: SavedExerciseRepository,
     /** Oferta de Desfazer do app (P8): "Excluir rotina" oferece aqui e a mensagem aparece na origem. */
     private val undoOffers: UndoOffers,
     /** Escopo das gravações ([KalendrysApp.editScope]): sobrevive ao fechar a tela. */
@@ -109,6 +114,8 @@ class RoutineEditorViewModel(
          * da T2). [exerciseItems] é o que a tela mostra.
          */
         val allExercises: List<ExerciseItem> = emptyList(),
+        /** Os exercícios salvos (painel "Dos salvos"), por nome. */
+        val savedExercises: List<SavedExercise> = emptyList(),
         /** Edição: campos mexidos na sessão (o Reverter só manda esses de volta). */
         val touched: Set<Field> = emptySet(),
         /** Criação: o "Criar rotina" já foi tocado e a gravação está em curso (botão e descarte desligados). */
@@ -236,7 +243,7 @@ class RoutineEditorViewModel(
         ) { (r, l, f), initial, t, c -> EditorState(r, l, f, initial, t, c) }
 
     val uiState: StateFlow<UiState> =
-        combine(editorState, moduleItems) { editor, module ->
+        combine(editorState, moduleItems, savedExerciseRepository.saved) { editor, module, saved ->
             UiState(
                 isNew = isNew,
                 notFound = !isNew && editor.loaded && editor.routine == null,
@@ -249,6 +256,7 @@ class RoutineEditorViewModel(
                 allExercises = module.all,
                 touched = editor.touched,
                 creating = editor.creating,
+                savedExercises = saved,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
 
@@ -280,8 +288,22 @@ class RoutineEditorViewModel(
     /** Enfileira uma ação qualquer sobre a linha MAIS RECENTE, na ordem dos toques. */
     private fun enqueueAction(action: suspend (Routine) -> Unit): Job = writes.enqueue(action)
 
-    /** Espera as gravações já enfileiradas terminarem (barreira; o duplicar usa, e os testes também). */
-    internal suspend fun awaitPendingWrites() = writes.awaitIdle()
+    /**
+     * Espera as gravações já enfileiradas terminarem (barreira; o duplicar usa, e os testes também),
+     * e as dos exercícios salvos, que não são da rotina e correm fora da fila.
+     */
+    internal suspend fun awaitPendingWrites() {
+        writes.awaitIdle()
+        savedWrites.toList().joinAll()
+    }
+
+    /** Gravações dos exercícios salvos em curso (no escopo do app; não dependem da linha da rotina). */
+    private val savedWrites = mutableListOf<Job>()
+
+    private fun launchSavedWrite(write: suspend () -> Unit) {
+        savedWrites.removeAll { it.isCompleted }
+        savedWrites += editScope.launch { write() }
+    }
 
     /** Edição: marca o campo como mexido e enfileira a mudança. */
     private fun send(field: Field, change: (Routine) -> RoutineChange?) {
@@ -421,8 +443,13 @@ class RoutineEditorViewModel(
     // Edição: cada mexida grava na hora, pela fila. Criação: só o rascunho em memória ([newExercises]),
     // gravado junto com a rotina no "Criar rotina"; voltar e descartar não grava nada.
 
-    fun addExerciseItem(name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
+    /**
+     * Novo exercício na rotina (ou no rascunho). Com [saveForReuse] ("Salvar para reutilizar" no
+     * diálogo), grava também uma CÓPIA como exercício salvo.
+     */
+    fun addExerciseItem(name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?, saveForReuse: Boolean = false) {
         if (name.isBlank()) return
+        if (saveForReuse) saveForReuse(ExerciseFields(name, sets, reps, load, restSeconds))
         if (isNew) {
             val fields = ExerciseFields(name, sets, reps, load, restSeconds)
             newExercises.update { list ->
@@ -433,8 +460,17 @@ class RoutineEditorViewModel(
         }
     }
 
-    fun updateExerciseItem(item: ExerciseItem, name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
+    fun updateExerciseItem(
+        item: ExerciseItem,
+        name: String,
+        sets: Int,
+        reps: Int,
+        load: String?,
+        restSeconds: Int?,
+        saveForReuse: Boolean = false,
+    ) {
         if (name.isBlank()) return
+        if (saveForReuse) saveForReuse(ExerciseFields(name, sets, reps, load, restSeconds))
         if (isNew) {
             val fields = ExerciseFields(name, sets, reps, load, restSeconds).normalized()
             newExercises.update { list ->
@@ -471,6 +507,23 @@ class RoutineEditorViewModel(
             enqueueAction { exerciseRepository.move(item, up) }
         }
     }
+
+    // --- Exercícios salvos (v1.10.0, 16.10.5): um salvo é UM exercício; aplicar COPIA ---------------
+
+    /** "Dos salvos": aplica uma CÓPIA de [saved] como exercício novo da rotina (ou do rascunho); sem vínculo. */
+    fun applySavedExercise(saved: SavedExercise) =
+        addExerciseItem(saved.name, saved.sets, saved.reps, saved.load, saved.restSeconds)
+
+    /** Edita o salvo no painel; as rotinas que já o copiaram não mudam. */
+    fun updateSavedExercise(saved: SavedExercise, name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) {
+        if (name.isBlank()) return
+        launchSavedWrite { savedExerciseRepository.update(saved.id, ExerciseFields(name, sets, reps, load, restSeconds)) }
+    }
+
+    /** Exclui o salvo no painel (sem confirmação); as cópias nas rotinas ficam. */
+    fun deleteSavedExercise(saved: SavedExercise) = launchSavedWrite { savedExerciseRepository.delete(saved.id) }
+
+    private fun saveForReuse(fields: ExerciseFields) = launchSavedWrite { savedExerciseRepository.save(fields) }
 
     /** Rascunho: a posição de cada exercício é o lugar dele na lista. */
     private fun List<ExerciseItem>.reindexed(): List<ExerciseItem> = mapIndexed { index, item -> item.copy(position = index) }
@@ -641,6 +694,7 @@ class RoutineEditorViewModel(
                     createSavedStateHandle(),
                     app.routineRepository,
                     app.exerciseRepository,
+                    app.savedExerciseRepository,
                     app.undoOffers,
                     app.editScope,
                     app.clock,
