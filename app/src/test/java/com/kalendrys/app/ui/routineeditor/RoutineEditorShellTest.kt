@@ -244,8 +244,12 @@ class RoutineEditorShellTest {
         compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
         compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
         waitFor { compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
-        // Volta ao topo: o exercício novo, no fim da lista, fica fora da tela até o editor rolar.
-        compose.onNode(hasScrollToKeyAction()).performScrollToKey("title")
+        // Volta ao topo: o exercício novo, no fim da lista, fica fora da tela até o editor rolar. A lista
+        // do editor (não a do painel, que também rola): a de muitas linhas.
+        val editorList = hasScrollToKeyAction() and SemanticsMatcher("lista do editor") {
+            (it.config.getOrNull(SemanticsProperties.CollectionInfo)?.rowCount ?: 0) > 10
+        }
+        compose.onNode(editorList).performScrollToKey("title")
 
         compose.onNode(hasText("Agachamento") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
 
