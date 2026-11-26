@@ -16,6 +16,11 @@ import com.kalendrys.app.data.local.entity.ShoppingList
  *
  * Puro: recebe as linhas lidas e devolve o que mudar; quem chama aplica (SQL na migração, entidades
  * no restauro).
+ *
+ * CONGELADAS (A3 da revisão da T1): [kindFromCategory] e [plan] são a regra do banco 12 e do backup 7,
+ * já publicada na migração. Não mudam: uma regra nova é uma função NOVA (e uma migração nova), senão o
+ * aparelho que migrou com a regra antiga e o restauro com a nova divergem. O `Migration11To12Test`,
+ * com bancos fixos de cada caso, não pode ser afrouxado.
  */
 object ListOwnership {
 

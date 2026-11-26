@@ -26,12 +26,14 @@ object Migration11To12 : Migration(11, 12) {
         db.query("SELECT id, kind FROM routine_category").use { c ->
             while (c.moveToNext()) categoryKinds[c.getLong(0)] = c.getString(1)
         }
+        // Lê tudo e fecha o cursor ANTES de gravar na mesma tabela (A2 da revisão da T1).
+        val kinds = mutableMapOf<Long, RoutineKind>()
         db.query("SELECT id, categoryId FROM routines WHERE categoryId IS NOT NULL").use { c ->
-            while (c.moveToNext()) {
-                val kind = ListOwnership.kindFromCategory(categoryKinds[c.getLong(1)])
-                if (kind != RoutineKind.NONE) {
-                    db.execSQL("UPDATE routines SET kind = ? WHERE id = ?", arrayOf<Any>(kind.name, c.getLong(0)))
-                }
+            while (c.moveToNext()) kinds[c.getLong(0)] = ListOwnership.kindFromCategory(categoryKinds[c.getLong(1)])
+        }
+        for ((routineId, kind) in kinds) {
+            if (kind != RoutineKind.NONE) {
+                db.execSQL("UPDATE routines SET kind = ? WHERE id = ?", arrayOf<Any>(kind.name, routineId))
             }
         }
 

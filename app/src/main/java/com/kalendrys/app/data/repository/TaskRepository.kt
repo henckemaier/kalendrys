@@ -78,7 +78,10 @@ class TaskRepository(
         notes: String = "",
         timing: TaskTiming = TaskTiming(date = null),
         location: String = "",
-        /** Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. */
+        /**
+         * Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. Lista que não existe
+         * ou que já é de outra tarefa não é vinculada: a tarefa nasce sem lista (v1.10.0, A1). Sai na T3.
+         */
         shoppingListId: Long? = null,
         /** Nome da lista NOVA a criar junto com a tarefa ("Criar nova" no painel), ou null. */
         newListName: String? = null,
@@ -97,7 +100,8 @@ class TaskRepository(
         )
         return alarmLock.withLock {
             val saved = if (newList == null) {
-                task.copy(id = taskDao.insert(task))
+                // Relê: sem dono livre, a transação grava a tarefa sem a lista pedida.
+                checkNotNull(taskDao.byId(taskDao.insertTaskWithExistingList(task)))
             } else {
                 // A transação troca o vínculo pelo da lista gravada: relê para devolver a tarefa como ficou.
                 checkNotNull(taskDao.byId(taskDao.insertTaskWithNewList(newList, task)))

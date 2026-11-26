@@ -226,6 +226,64 @@ class RoutineTwoAlarmsSystemTest {
         assertEquals(millis(day.plusDays(1).atTime(8, 30)), refresh()!!.triggerAtTime)
     }
 
+    // --- Atualização por cima da v1.9.1 (v1.10.0, OBS-1: alarmes sem extras) ----------------------
+
+    /** Os DOIS alarmes como a v1.9.1 os deixava: mesma ação e requestCode, com os extras de dia e minuto. */
+    private fun placeV191Pair(remindAt: LocalDateTime, refreshAt: LocalDateTime) {
+        fun operation(action: String, requestCode: Int, at: LocalDateTime) = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            Intent(context, RoutineAlarmReceiver::class.java)
+                .setAction(action)
+                .putExtra("extra_epoch_day", at.toLocalDate().toEpochDay())
+                .putExtra("extra_minute", at.hour * 60 + at.minute),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        alarmManager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(millis(remindAt), null),
+            operation(RoutineAlarmReceiver.ACTION_START, 0, remindAt),
+        )
+        alarmManager.set(AlarmManager.RTC, millis(refreshAt), operation(RoutineAlarmReceiver.ACTION_REFRESH, 1, refreshAt))
+    }
+
+    @Test
+    fun `por cima da v1_9_1 - os dois alarmes pendentes com extras sao substituidos, sem orfao`() = runTest {
+        placeV191Pair(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30))
+        db.routineDao().insert(Routine(title = "Leitura", startMinute = 7 * 60 + 30, remind = false, createdAt = 0L))
+        db.routineDao().insert(Routine(title = "Treino", startMinute = 10 * 60, createdAt = 0L))
+
+        repository.catchUp(nowOverride = millis(day.atTime(7, 0)))
+
+        assertEquals("um de cada, os da v1.9.1 trocados", 2, scheduled().size)
+        assertEquals(millis(day.atTime(10, 0)), remind()!!.triggerAtTime)
+        assertNotNull(remind()!!.alarmClockInfo)
+        assertEquals(millis(day.atTime(7, 30)), refresh()!!.triggerAtTime)
+        // Os extras antigos não entram na igualdade do PendingIntent, e o receiver não os lê em
+        // ROUTINE_START/ROUTINE_REFRESH (só chama o catch-up). O Robolectric guarda o Intent da primeira
+        // criação, então aqui não dá para afirmar que eles sumiram.
+    }
+
+    @Test
+    fun `por cima da v1_9_1 - o silencioso pendente e cancelado quando ja nao ha bloco sem aviso antes`() = runTest {
+        placeV191Pair(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30))
+        db.routineDao().insert(Routine(title = "Treino", startMinute = 9 * 60, createdAt = 0L))
+
+        repository.catchUp(nowOverride = millis(day.atTime(8, 0)))
+
+        assertNull("o ROUTINE_REFRESH da v1.9.1 não fica órfão", refresh())
+        assertEquals(millis(day.atTime(9, 0)), remind()!!.triggerAtTime)
+        assertEquals(1, scheduled().size)
+    }
+
+    @Test
+    fun `por cima da v1_9_1 sem rotina nenhuma - os dois sao cancelados`() = runTest {
+        placeV191Pair(remindAt = day.atTime(9, 0), refreshAt = day.atTime(8, 30))
+
+        repository.catchUp(nowOverride = millis(day.atTime(8, 0)))
+
+        assertTrue(scheduled().isEmpty())
+    }
+
     // --- Troca de fuso do sistema ---------------------------------------------------------------
 
     @Test

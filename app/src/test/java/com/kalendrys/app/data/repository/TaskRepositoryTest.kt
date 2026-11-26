@@ -260,6 +260,27 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `criar tarefa com lista de outra tarefa nasce sem lista, sem derrubar a gravacao`() = runTest {
+        // A1 da revisão da T1: com o índice único, inserir direto derrubaria o app.
+        val listId = listWithPickedItems()
+        val owner = repository.addTask("Feira", timing = todayTiming(), shoppingListId = listId)
+        assertEquals(listId, db.taskDao().byId(owner.id)!!.shoppingListId)
+
+        val second = repository.addTask("Mercado", timing = todayTiming(), shoppingListId = listId)
+
+        assertNull(second.shoppingListId)
+        assertNull(db.taskDao().byId(second.id)!!.shoppingListId)
+        assertEquals("a dona continua com a lista", listId, db.taskDao().byId(owner.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `criar tarefa com lista que nao existe nasce sem lista`() = runTest {
+        val task = repository.addTask("Feira", timing = todayTiming(), shoppingListId = 404)
+
+        assertNull(db.taskDao().byId(task.id)!!.shoppingListId)
+    }
+
+    @Test
     fun `lista de outra tarefa nao e vinculada (lista de uma tarefa so)`() = runTest {
         val listId = listWithPickedItems()
         val first = repository.addTask("Feira", timing = todayTiming())
