@@ -332,7 +332,14 @@ private fun MacrobenchmarkScope.editAndLeave(title: String, backMarker: BySelect
 
 /** Fecha o teclado, se aberto (o Voltar com ele aberto só o fecha; sem ele, sairia da tela). */
 private fun MacrobenchmarkScope.hideKeyboard() {
-    if (isKeyboardShown()) pressBackInApp("hideKeyboard")
+    if (!isKeyboardShown()) return
+    pressBackInApp("hideKeyboard")
+    // Se o Voltar passou do teclado para a tela (editor com rascunho), volta a editar: o passo seguinte
+    // é o do editor. Derruba se o diálogo não fechar.
+    if (device.wait(Until.hasObject(DISCARD_DIALOG), 600)) {
+        requireClick(inApp().text("Continuar editando"), "hideKeyboard: sem 'Continuar editando' no 'Descartar alterações?'")
+        if (!device.wait(Until.gone(DISCARD_DIALOG), TIMEOUT_MS)) fail("hideKeyboard: o 'Descartar alterações?' não fechou")
+    }
 }
 
 /**
@@ -375,12 +382,20 @@ fun MacrobenchmarkScope.browseTasks() {
  * Na dúvida (dump sem o campo esperado), diz que não está, e a jornada não aperta Voltar.
  */
 private fun MacrobenchmarkScope.isKeyboardShown(): Boolean {
+    // T4 da v1.10.0: no emulador (API 37) o mIsInputViewShown=true fica ligado COM O TECLADO FECHADO, e
+    // o Voltar "de fechar o teclado" caía no editor ("Descartar alterações?"). Só conta como aberto com a
+    // janela do teclado VISÍVEL na tela, e o serviço de entrada dizendo que mostrou.
+    val window = runCatching { device.executeShellCommand("dumpsys window InputMethod") }.getOrDefault("")
+    if ("isVisible=true" !in window || "isOnScreen=true" !in window) return false
     val dump = runCatching { device.executeShellCommand("dumpsys input_method") }.getOrDefault("")
     return KEYBOARD_SHOWN_MARKERS.any { it in dump }
 }
 
 /** Como o dumpsys do input_method diz que o teclado está aberto, conforme a versão do Android. */
 private val KEYBOARD_SHOWN_MARKERS = listOf("mInputShown=true", "isInputViewShown=true", "mIsInputViewShown=true")
+
+/** O diálogo do editor de rotina ao sair com alteração não gravada. */
+private val DISCARD_DIALOG: BySelector = inApp().text("Descartar alterações?")
 
 /** A faixa da semana da Hoje: a área rolável mais baixa (a lista principal é a mais alta). */
 private fun MacrobenchmarkScope.weekStrip(): UiObject2? =
