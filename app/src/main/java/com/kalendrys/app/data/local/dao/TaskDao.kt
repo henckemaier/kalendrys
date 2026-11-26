@@ -58,6 +58,19 @@ interface TaskDao {
         return insert(task.copy(shoppingListId = listId))
     }
 
+    /**
+     * Tarefa nova com uma lista EXISTENTE (o painel ainda oferece "usar lista existente" até a T3 da
+     * v1.10.0). Confere na MESMA transação que a lista existe e não é de outra tarefa (índice único):
+     * se não for o caso, grava a tarefa SEM lista em vez de derrubar a gravação (A1 da revisão da T1).
+     * Devolve o id da tarefa.
+     */
+    @Transaction
+    suspend fun insertTaskWithExistingList(task: Task): Long {
+        val listId = task.shoppingListId ?: return insert(task)
+        val usable = listExists(listId) && !listOwnedByAnother(listId, taskId = task.id)
+        return insert(if (usable) task else task.copy(shoppingListId = null))
+    }
+
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(tasks: List<Task>)
