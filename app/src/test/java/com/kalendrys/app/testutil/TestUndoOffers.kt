@@ -17,7 +17,6 @@ fun testRoutineRepository(db: AppDatabase, alarms: FakeRoutineAlarms? = null): R
         db.routineOverrideDao(),
         alarms ?: FakeRoutineAlarms(context),
         FakeRoutineNotifications(context),
-        db.shoppingItemDao(),
         InMemoryRoutineCatchUpMark(),
         clock = SystemAppClock,
     )

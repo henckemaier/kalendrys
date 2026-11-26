@@ -89,7 +89,6 @@ class KalendrysApp : Application() {
             database.routineOverrideDao(),
             RoutineAlarms(this),
             routineNotifications,
-            database.shoppingItemDao(),
             // Entrega do catch-up do aviso de bloco (ADR-0003, 4.3.1): o repositório decide, aqui mostra.
             deliverDueBlocks = { due, date ->
                 due.forEach { routine ->

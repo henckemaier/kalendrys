@@ -83,21 +83,15 @@ class ShoppingRepositoryTest {
         repository.add(listId, "Arroz", quantity = 2, priceCents = 500)
         repository.add(listId, "Sal", quantity = 1, priceCents = null)
         repository.setPicked(items(listId).first(), true)
+        // v1.10.0: rotina não é dona de lista; um vínculo antigo no banco não aparece como dono.
         db.routineDao().insert(Routine(id = 1, title = "Feira", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
-        db.routineDao().insert(Routine(id = 2, title = "Arquivada", startMinute = 600, shoppingListId = listId, archivedAt = 1, createdAt = TEST_CREATED_AT))
         db.taskDao().insert(Task(id = 3, title = "Comprar", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val summaries = repository.observeSummaries().first()
         val main = summaries.first { it.id == listId }
         assertEquals(ShoppingProgress(picked = 1, total = 2), main.progress)
         assertEquals(1000L, main.totalCents)
-        assertEquals(
-            listOf(
-                ShoppingListOwner(ShoppingListOwner.Kind.ROUTINE, 1, "Feira"),
-                ShoppingListOwner(ShoppingListOwner.Kind.TASK, 3, "Comprar"),
-            ),
-            main.owners,
-        )
+        assertEquals(listOf(ShoppingListOwner(ShoppingListOwner.Kind.TASK, 3, "Comprar")), main.owners)
         val empty = summaries.first { it.id == avulsa }
         assertEquals(ShoppingProgress.EMPTY, empty.progress)
         assertTrue(empty.owners.isEmpty())
@@ -105,12 +99,11 @@ class ShoppingRepositoryTest {
     }
 
     @Test
-    fun `excluir lista apaga itens e desvincula tarefas e rotinas`() = runTest {
+    fun `excluir lista apaga itens e desvincula a tarefa`() = runTest {
         val listId = repository.createList("Mercado")
         val other = repository.createList("Outra")
         repository.add(listId, "Arroz", 1, null)
         repository.add(other, "Pão", 1, null)
-        db.routineDao().insert(Routine(id = 1, title = "R", startMinute = 600, shoppingListId = listId, archivedAt = 1, createdAt = TEST_CREATED_AT))
         db.taskDao().insert(Task(id = 2, title = "T", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         repository.deleteList(listId)
@@ -118,7 +111,6 @@ class ShoppingRepositoryTest {
         assertNull(repository.list(listId))
         assertTrue(items(listId).isEmpty())
         assertEquals(1, items(other).size)
-        assertNull(db.routineDao().byId(1)!!.shoppingListId)
         assertNull(db.taskDao().byId(2)!!.shoppingListId)
     }
 

@@ -71,7 +71,6 @@ class RoutineTwoAlarmsSystemTest {
             db.routineOverrideDao(),
             RoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             deliverDueBlocks = { routines, _ -> delivered += routines.map { it.title } },
             mark = InMemoryRoutineCatchUpMark(),
             // Como na produção: o fuso lido a cada chamada, o mesmo que o RoutineAlarms usa.

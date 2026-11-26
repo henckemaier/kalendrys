@@ -30,7 +30,6 @@ class TodayRepositories(
         db.routineOverrideDao(),
         FakeRoutineAlarms(context),
         FakeRoutineNotifications(context),
-        db.shoppingItemDao(),
         InMemoryRoutineCatchUpMark(),
         clock = SystemAppClock,
     )

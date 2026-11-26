@@ -78,7 +78,6 @@ class RoutineRepositoryCatchUpTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             deliverDueBlocks = { routines, date ->
                 deliveryEntered.complete(Unit)
                 deliveryGate?.await()

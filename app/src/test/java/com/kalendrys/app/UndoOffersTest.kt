@@ -68,7 +68,6 @@ class UndoOffersTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )

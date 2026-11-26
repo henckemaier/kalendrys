@@ -69,7 +69,6 @@ class TodayRepositoryRefreshTest {
             db.routineOverrideDao(),
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             mark = InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )

@@ -6,7 +6,6 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.ShoppingList
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -59,23 +58,6 @@ interface RoutineDao {
     @Insert
     suspend fun insertExercises(items: List<ExerciseItem>)
 
-    /**
-     * Rotina nova com lista nova (criação no editor, v1.9.0 15.5): grava a lista e a rotina já
-     * vinculada numa transação só e devolve o id da rotina. [list] vem de [ShoppingList.named].
-     */
-    @Transaction
-    suspend fun insertRoutineWithNewList(list: ShoppingList, routine: Routine): Long {
-        val listId = insertList(list)
-        return insert(routine.copy(shoppingListId = listId))
-    }
-
-    /**
-     * Grava a lista SÓ dentro de [insertRoutineWithNewList] e [linkNewList] (USO RESTRITO). Fora delas
-     * a lista se cria pelo [com.kalendrys.app.data.repository.ShoppingRepository.createList].
-     */
-    @Insert
-    suspend fun insertList(list: ShoppingList): Long
-
     // --- Salvar na hora (v1.9.0, ADR-0002 15.2) e estados de fora: cada gravação mexe SÓ nas suas ---
     // colunas. Quem chama é o RoutineRepository, sob o Mutex dele. Pausar, arquivar e editar não se
     // desfazem uns aos outros mesmo partindo de objetos lidos em momentos diferentes.
@@ -114,45 +96,15 @@ interface RoutineDao {
     @Query("UPDATE routines SET icon = :icon WHERE id = :id")
     suspend fun updateIcon(id: Long, icon: String)
 
-    @Query("UPDATE routines SET shoppingListId = :listId WHERE id = :id")
-    suspend fun updateShoppingList(id: Long, listId: Long?)
-
     @Query("UPDATE routines SET pausedAt = :pausedAt WHERE id = :id")
     suspend fun updatePausedAt(id: Long, pausedAt: Long?)
 
     @Query("UPDATE routines SET archivedAt = :archivedAt WHERE id = :id")
     suspend fun updateArchivedAt(id: Long, archivedAt: Long?)
 
-    @Query("SELECT EXISTS(SELECT 1 FROM shopping_list WHERE id = :listId)")
-    suspend fun listExists(listId: Long): Boolean
-
-    /** Vincula a uma lista EXISTENTE, conferida na mesma transação; devolve se vinculou. */
-    @Transaction
-    suspend fun linkExistingList(routineId: Long, listId: Long): Boolean {
-        if (!listExists(listId)) return false
-        updateShoppingList(routineId, listId)
-        return true
-    }
-
-    /** Cria a lista e vincula a rotina numa transação só; devolve o id da lista. */
-    @Transaction
-    suspend fun linkNewList(routineId: Long, list: ShoppingList): Long {
-        val listId = insertList(list)
-        updateShoppingList(routineId, listId)
-        return listId
-    }
-
     /** Desvincula as rotinas de uma categoria (ao excluí-la); rode dentro de uma transação. */
     @Query("UPDATE routines SET categoryId = NULL WHERE categoryId = :categoryId")
     suspend fun clearCategory(categoryId: Long)
-
-    /** Rotinas não arquivadas com lista anexada (etiqueta de dono na aba Listas e no cartão). */
-    @Query("SELECT id, title, shoppingListId FROM routines WHERE shoppingListId IS NOT NULL AND archivedAt IS NULL ORDER BY title, id")
-    fun observeShoppingListOwners(): Flow<List<ShoppingListOwnerRow>>
-
-    /** Desvincula as rotinas de uma lista (ao excluí-la); rode dentro de uma transação. */
-    @Query("UPDATE routines SET shoppingListId = NULL WHERE shoppingListId = :listId")
-    suspend fun clearShoppingList(listId: Long)
 
     /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM routines")

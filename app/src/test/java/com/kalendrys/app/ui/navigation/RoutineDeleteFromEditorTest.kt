@@ -179,7 +179,7 @@ class RoutineDeleteFromEditorTest {
 
     @Test
     fun `excluir pelo editor aberto a partir de Todas as rotinas mostra a mensagem la e Desfazer devolve`() {
-        val all = testDb.track(AllRoutinesViewModel(routines, RoutineCategoryRepository(testDb.db), offers))
+        val all = testDb.track(AllRoutinesViewModel(routines, offers))
         deleteFromEditorOver { AllRoutinesScreen(onBack = {}, onOpenRoutine = {}, onNewRoutine = {}, viewModel = all) }
     }
 

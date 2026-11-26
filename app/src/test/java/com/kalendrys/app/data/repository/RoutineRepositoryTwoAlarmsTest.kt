@@ -83,7 +83,6 @@ class RoutineRepositoryTwoAlarmsTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             deliverDueBlocks = { routines, date -> synchronized(delivered) { routines.forEach { delivered += date to it.id } } },
             mark = mark,
             clock = clockOf(zone = { zone }) { clock() },

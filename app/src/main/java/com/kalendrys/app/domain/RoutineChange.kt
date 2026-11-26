@@ -110,19 +110,6 @@ sealed interface RoutineChange {
         override fun applyTo(routine: Routine): Routine = routine.copy(icon = icon.name)
     }
 
-    /** Vincula a uma lista EXISTENTE ([listId]) ou desvincula (`null`). */
-    data class ShoppingList(val listId: Long?) : RoutineChange {
-        override fun applyTo(routine: Routine): Routine = routine.copy(shoppingListId = listId)
-    }
-
-    /**
-     * Cria uma lista nova com [name] e vincula a rotina a ela, numa transação só no repositório.
-     * Aqui só a validação: nome em branco não cria lista.
-     */
-    data class NewShoppingList(val name: String) : RoutineChange {
-        override fun applyTo(routine: Routine): Routine? = routine.takeIf { name.isNotBlank() }
-    }
-
     companion object {
         /** Mesmo teto do editor ([com.kalendrys.app.ui.routineeditor.RoutineDraft.MAX_WEEK_INTERVAL]). */
         const val MAX_WEEK_INTERVAL = 12

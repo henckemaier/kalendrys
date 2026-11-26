@@ -54,7 +54,6 @@ class RoutineRepositoryEditTest {
             db.routineOverrideDao(),
             alarms,
             notifications,
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
@@ -72,7 +71,6 @@ class RoutineRepositoryEditTest {
     @Test
     fun `mudancas que nao sao de agenda nao reagendam`() = runTest {
         val routine = saved()
-        val listId = shopping.createList("Mercado")
         alarms.reset()
 
         repository.edit(routine.id, RoutineChange.Title("Corrida"))
@@ -81,8 +79,6 @@ class RoutineRepositoryEditTest {
         repository.edit(routine.id, RoutineChange.Color(RoutineColor.entries.last()))
         repository.edit(routine.id, RoutineChange.Icon(RoutineIcon.entries.last()))
         repository.edit(routine.id, RoutineChange.Category(null))
-        repository.edit(routine.id, RoutineChange.ShoppingList(listId))
-        repository.edit(routine.id, RoutineChange.NewShoppingList("Farmácia"))
 
         assertTrue(alarms.calls.isEmpty())
         val after = row(routine.id)
@@ -218,27 +214,14 @@ class RoutineRepositoryEditTest {
     }
 
     @Test
-    fun `lista excluida por fora - editar nao devolve o vinculo e vincular a ela nao grava`() = runTest {
+    fun `rotina nasce sem lista mesmo que o objeto traga uma`() = runTest {
+        // v1.10.0 (ADR-0002 16.10.1): rotina não tem lista; o add não grava o vínculo.
         val listId = shopping.createList("Mercado")
+
         val routine = repository.add(Routine(title = "Feira", startMinute = 480, shoppingListId = listId, createdAt = TEST_CREATED_AT))
-        shopping.deleteList(listId)
 
-        repository.edit(routine.id, RoutineChange.Title("Feira nova"))
+        assertNull(routine.shoppingListId)
         assertNull(row(routine.id).shoppingListId)
-
-        assertFalse(repository.edit(routine.id, RoutineChange.ShoppingList(listId)))
-        assertNull(row(routine.id).shoppingListId)
-    }
-
-    @Test
-    fun `lista nova cria e vincula numa vez`() = runTest {
-        val routine = saved()
-
-        assertTrue(repository.edit(routine.id, RoutineChange.NewShoppingList(" Feira ")))
-
-        val list = db.shoppingListDao().all().single()
-        assertEquals("Feira", list.name)
-        assertEquals(list.id, row(routine.id).shoppingListId)
     }
 
     @Test

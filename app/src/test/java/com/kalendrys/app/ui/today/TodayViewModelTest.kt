@@ -21,7 +21,6 @@ import com.kalendrys.app.data.repository.TodayRepository
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineOverrideType
-import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskSchedule
 import com.kalendrys.app.domain.ReminderRepeat
@@ -77,7 +76,6 @@ class TodayViewModelTest {
             db.routineOverrideDao(),
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
@@ -124,20 +122,16 @@ class TodayViewModelTest {
         timeline.filterIsInstance<DayTimeline.Block>().single { it.routine.title == title }
 
     @Test
-    fun `bloco com lista mostra o progresso e acompanha as marcacoes`() = runTest {
+    fun `rotina nao ganha lista - o bloco fica sem progresso`() = runTest {
+        // v1.10.0 (ADR-0002 16.10.1): rotina não tem lista; o carrinho vai para a linha da tarefa (T3).
         val listId = shoppingRepository.createList("Feira")
         shoppingRepository.add(listId, "Arroz", quantity = 1, priceCents = null)
-        shoppingRepository.add(listId, "Feijão", quantity = 1, priceCents = null)
         routineRepository.add(Routine(title = "Feira", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         viewModel().uiState.test {
-            var state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
-            assertEquals(ShoppingProgress(0, 2), state.progressFor(state.block("Feira").routine.shoppingListId))
-
-            val arroz = shoppingRepository.observeItems(listId).first().first { it.name == "Arroz" }
-            shoppingRepository.setPicked(arroz, picked = true)
-            state = awaitState { it.progressFor(listId) == ShoppingProgress(1, 2) }
-            assertEquals(ShoppingProgress(1, 2), state.progressFor(state.block("Feira").routine.shoppingListId))
+            val state = awaitState { it.isLoaded && it.timeline.any { item -> item is DayTimeline.Block } }
+            assertNull(state.block("Feira").routine.shoppingListId)
+            assertNull(state.progressFor(state.block("Feira").routine.shoppingListId))
             cancelAndIgnoreRemainingEvents()
         }
     }

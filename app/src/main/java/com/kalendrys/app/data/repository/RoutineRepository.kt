@@ -4,17 +4,14 @@ import android.util.Log
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
-import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
-import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineCatchUp
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.RoutineSchedule
-import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
 import java.time.Instant
@@ -58,7 +55,6 @@ class RoutineRepository(
     private val overrideDao: RoutineOverrideDao,
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
-    private val shoppingItemDao: ShoppingItemDao,
     /** Obrigatória: uma marca esquecida em memória faria o app reavisar a cada início de processo. */
     private val mark: RoutineCatchUpMark,
     private val deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
@@ -101,8 +97,10 @@ class RoutineRepository(
         val createdAt = clock.nowMillis()
         val items = exercises.filter { it.isValid }
             .mapIndexed { position, fields -> fields.toItem(routineId = 0, position = position, createdAt = createdAt) }
-        val id = if (items.isEmpty()) routineDao.insert(routine) else routineDao.insertRoutineWithExercises(routine, items)
-        routine.copy(id = id)
+        // Rotina não tem lista (v1.10.0): o que vier no objeto não é gravado.
+        val saved = routine.copy(shoppingListId = null)
+        val id = if (items.isEmpty()) routineDao.insert(saved) else routineDao.insertRoutineWithExercises(saved, items)
+        saved.copy(id = id)
     }
 
     /**
@@ -132,21 +130,6 @@ class RoutineRepository(
     private suspend fun editLocked(routineId: Long, change: RoutineChange): Boolean {
         val current = routineDao.byId(routineId) ?: return false
         val updated = change.applyTo(current) ?: return false
-        when (change) {
-            is RoutineChange.NewShoppingList -> {
-                routineDao.linkNewList(routineId, ShoppingList.named(change.name, clock.nowMillis()))
-                return true
-            }
-            is RoutineChange.ShoppingList -> {
-                if (updated.shoppingListId == current.shoppingListId) return false
-                val listId = updated.shoppingListId ?: run {
-                    routineDao.updateShoppingList(routineId, null)
-                    return true
-                }
-                return routineDao.linkExistingList(routineId, listId)
-            }
-            else -> Unit
-        }
         if (updated == current) return false
         when (change) {
             is RoutineChange.Title -> routineDao.updateTitle(routineId, updated.title)
@@ -161,7 +144,6 @@ class RoutineRepository(
             is RoutineChange.Category -> routineDao.updateCategory(routineId, updated.categoryId)
             is RoutineChange.Color -> routineDao.updateColor(routineId, updated.color)
             is RoutineChange.Icon -> routineDao.updateIcon(routineId, updated.icon)
-            is RoutineChange.NewShoppingList, is RoutineChange.ShoppingList -> Unit // tratados acima
         }
         return true
     }
@@ -206,33 +188,25 @@ class RoutineRepository(
      * Idempotente: tocar duas vezes em "Concluir" (widget, notificação) não desfaz. Confere se a
      * rotina ainda existe, porque a notificação pode ser de uma rotina já excluída.
      *
-     * Concluir a ocorrência de HOJE de uma rotina (não arquivada) com lista anexada zera as marcações
-     * da lista (ADR-0001, P4), de forma reversível pelo [uncomplete]. Mora aqui, e não na tela, para
-     * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
-     * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
+     * Rotina não tem lista desde a v1.10.0 (ADR-0002 16.10.1): concluir não mexe em lista nenhuma.
      *
      * Devolve se a conclusão foi GRAVADA agora (v1.9.0, E4): falso se já estava feita ou se a rotina não
      * existe. Quem oferece Desfazer só oferece quando gravou: um segundo toque (widget e Hoje juntos) não
      * pode gerar um Desfazer que apagaria a conclusão do primeiro. Widget e notificação ignoram o retorno.
      */
     suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = clock.today()): Boolean = change {
-        val routine = routineDao.byId(routineId) ?: return@change false
+        routineDao.byId(routineId) ?: return@change false
         val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay(), completedAt = clock.nowMillis())) != -1L
         if (date == today) notifications.cancel(routineId)
-        val listId = routine.shoppingListId
-        if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
-            shoppingItemDao.resetPicked(listId, ShoppingReset.routineKey(routineId, date.toEpochDay()))
-        }
         inserted
     }
 
     /**
-     * Desfaz a conclusão e devolve as marcações que ela tinha zerado (se ainda for o último reinício).
-     * O catch-up antes de gravar impede que desfazer às 9:20 a conclusão do bloco das 9:00 o avise.
+     * Desfaz a conclusão. O catch-up antes de gravar impede que desfazer às 9:20 a conclusão do bloco
+     * das 9:00 o avise.
      */
     suspend fun uncomplete(routineId: Long, date: LocalDate): Unit = change {
         completionDao.delete(routineId, date.toEpochDay())
-        shoppingItemDao.restoreReset(ShoppingReset.routineKey(routineId, date.toEpochDay()))
     }
 
     /**

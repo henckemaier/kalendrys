@@ -89,7 +89,6 @@ class ProcessStartAlarmReplacementTest {
             db.routineOverrideDao(),
             RoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             deliverDueBlocks = { routines, _ -> delivered += routines.map { it.title } },
             mark = InMemoryRoutineCatchUpMark(),
             clock = clockOf(zone = { zone }) { millis(day.atTime(8, 0)) },
