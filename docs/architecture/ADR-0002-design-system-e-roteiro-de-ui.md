@@ -2029,8 +2029,14 @@ Nenhuma tabela é recriada. Na ordem:
 6. Lista sem tarefa é **apagada com os itens**: as avulsas e as que só rotinas usavam. Itens sem
    lista também.
 7. Índice único no vínculo de lista da tarefa: o banco passa a recusar duas tarefas na mesma
-   lista. Só é criado depois dos passos 4 a 6. Se a revisão linha a linha achar que o risco de a
-   migração falhar não compensa, o índice sai e a regra fica só no repositório.
+   lista. Só é criado depois dos passos 4 a 6. **Decidido na revisão da T1 (87ac09c): o índice
+   fica.** O banco 11 não tinha índice com esse nome, os passos 4 a 6 garantem a unicidade antes
+   dele, e o restauro de backup passa pelas mesmas regras antes de gravar. Consequência: todo
+   caminho que grava o vínculo de lista numa tarefa confere antes se a lista é de outra, em vez
+   de deixar o banco recusar.
+
+As regras dos passos 4 a 6 e a do tipo estão **congeladas**: uma migração publicada depende
+delas. Regra nova numa versão futura é função nova, não mudança nessas.
 
 A coluna antiga do vínculo na rotina e a tabela de categorias continuam no banco, sem uso:
 tirá-las exige recriar a tabela de rotinas, que é a dos alarmes. Exercícios de rotinas que já
@@ -2061,8 +2067,14 @@ pelas mesmas funções, que não mudam nada em dado já correto.
 - A lista de uma tarefa sem repetição já concluída continua com ela.
 - **Link de lista.** Continua existindo, porque notificações e ofertas abrem a lista por ele. A
   regra de pilha E-1 muda: a lista abre sobre o detalhe da tarefa dona, e esse sobre a aba
-  Tarefas. Lista que não existe mais abre a aba Tarefas. O atalho "Listas" do app sai; um atalho
-  antigo fixado na tela inicial cai na aba Tarefas, sem erro.
+  Tarefas. Lista que não existe mais abre a aba Tarefas.
+- **Atalho do app.** A primeira redação dizia que o atalho "Listas" saía. Está **corrigida**: o
+  Android desativa um atalho fixado na tela inicial quando o atalho estático correspondente
+  some do app. O atalho estático fica, com o **mesmo identificador**, o rótulo "Tarefas" e
+  abrindo a aba Tarefas; quem tinha o antigo fixado continua com um atalho que funciona.
+- **Rota e link antigos da aba.** A rota da aba Listas e o link que a abria redirecionam para a
+  aba Tarefas. Quem atualizar com a aba Listas aberta tem o estado salvo restaurado sem erro, como
+  foi feito com a rota das rotinas na v1.8.0.
 - O carrinho de progresso some dos blocos de rotina e aparece na linha da tarefa na Hoje.
 
 #### 16.10.5 Rotina: tipo e exercícios
@@ -2074,7 +2086,10 @@ pelas mesmas funções, que não mudam nada em dado já correto.
   voltar. O tipo entra nos campos do Reverter.
 - **Exercícios salvos:** um salvo é um exercício (nome, séries, repetições, carga, descanso).
   Aplicar um salvo **copia**; não há vínculo vivo. São escolhidos, editados e excluídos num painel
-  do próprio editor, e criados pela opção de salvar no diálogo do exercício.
+  do próprio editor, e criados pela opção de salvar no diálogo do exercício. **Excluir um salvo
+  pede confirmação**, pelo mesmo critério do excluir lista (P45): não há Desfazer.
+- Exercícios montados na criação são gravados com a rotina mesmo que o tipo escolhido no fim seja
+  Nenhum; ficam guardados, pela mesma regra da troca de tipo.
 - "Todas as rotinas" perde o filtro e o nome da categoria na linha. A tela de categorias sai de
   Ajustes.
 
@@ -2088,7 +2103,8 @@ pelas mesmas funções, que não mudam nada em dado já correto.
 | T3 | Navegação e listas (16.10.4): três abas, adicionar e excluir lista, pilha do link, atalho, Desfazer com lista, carrinho na linha da tarefa | Voltar a partir de lista aberta por notificação nunca sai do app; atalho antigo não quebra; excluir tarefa e desfazer devolve lista e itens |
 | T4 | Fechamento | Jornadas e perfil, tamanho do APK, matriz manual, atualização por cima da v1.9.1 com dados de cada caso da migração, aviso no CHANGELOG |
 
-T2 corre em paralelo com T1 e T3. Primeiro corte: os exercícios salvos.
+T2 corre em paralelo com T1 e T3. Ordem de corte: primeiro a tarefa aninhada no bloco (16.10.8,
+último item da T3); depois os exercícios salvos.
 
 #### 16.10.7 Riscos
 
@@ -2110,3 +2126,63 @@ Pendente na data desta emenda:
 
 - O resultado da conferência visual da Hoje com tarefas entre rotinas, pedida pelo usuário; se
   trouxer ajuste, entra na T3.
+
+#### 16.10.8 Tarefa dentro do horário de uma rotina, na Hoje (P47 a P50)
+
+Observação do usuário: a linha do tempo ordena pelo início e o bloco é uma linha só, então uma
+tarefa das 7:30 aparece **depois** do bloco das 7:00 às 8:00, embora esteja dentro do horário
+dele. Com as compras virando tarefa, o caso fica mais comum.
+
+Decisão (P47): a tarefa fica **aninhada no cartão da rotina**, entre o cabeçalho e o fim do bloco,
+com a faixa colorida da rotina contínua de cima a baixo. Não se parte o bloco em linhas soltas: ele
+é uma linha com um toque, um menu de segurar, um círculo de concluir, um destaque de em andamento
+e um nó de leitura, e cada pedaço teria de repetir ou esconder tudo isso.
+
+- **O domínio decide quem está dentro de quem**, em função pura na montagem da linha do tempo:
+  cada bloco leva as tarefas que caem na janela dele, e elas saem da trilha de fora. A tela só
+  desenha.
+- **Limites (P49):** tarefa no minuto de início está dentro; no minuto do fim, fora, depois do
+  bloco. Bloco sem duração não contém nada.
+- **Rotinas sobrepostas:** a tarefa fica no bloco que começou por último entre os que a contêm.
+- **Bloco pulado não contém nada:** as tarefas voltam para a trilha de fora, porque o pulado já é
+  tratado como se não existisse (14.5). Bloco concluído mantém as tarefas com o estado delas.
+- **Cabeçalho sem mudança:** título, horário, círculo de concluir, exercícios, toque e segurar.
+  Cada tarefa de dentro tem a própria hora, caixa de concluir, título e carrinho. O fim do bloco é
+  só a faixa fechando, sem linha de horário (P48).
+- **Leitor de tela:** o bloco continua um nó; cada tarefa de dentro é um nó próprio, lido em
+  seguida, dizendo de qual rotina está dentro.
+- Não mudam: tarefa atrasada e sem horário (fora da trilha), widgets, Desfazer, intervalos livres
+  e ligações entre blocos. A contagem de feitos continua somando as tarefas de dentro; tem teste.
+
+Entra na v1.10.0 como **último item da T3**, em commit próprio, e é o **primeiro corte** da versão
+(P50), antes dos exercícios salvos. **O desenho só é aprovado depois das capturas** do caso atual
+em 360dp e em 320dp com fonte 2.0: o risco é a largura que sobra para o título da tarefa de dentro.
+
+**Desenho fechado depois das capturas (2026-11-25).** A conferência na v1.9.1 confirmou o relato e
+mostrou o defeito de verdade: a **coluna de horas volta no tempo**. O bloco mostra o início em
+cima e o fim embaixo; as tarefas de dentro vêm depois, então a coluna lê 07:00, 08:00, 07:00,
+07:30. Com isso o desenho fica assim:
+
+- A faixa colorida do bloco (a pílula) **se alonga** para cobrir o cabeçalho e as tarefas de
+  dentro. O rótulo do fim do bloco continua na coluna de horas, **embaixo da faixa alongada**,
+  depois das tarefas: a coluna volta a ler em ordem. Não é uma linha nova; é o rótulo que já
+  existia, no lugar certo.
+- A tarefa de dentro **mantém a linha de hoje**: hora na coluna de horas, o losango sobre a faixa,
+  a caixa tracejada e o círculo de concluir. **Não há recuo a mais**, então a largura do título é a
+  mesma de hoje, e o risco de 320dp com fonte 2.0 que condicionava a aprovação não se confirma.
+- **Bloco pulado** continua sem conter tarefas e passa a mostrar **só o início** na coluna de
+  horas, para não deixar o fim dele antes das tarefas que vêm em seguida.
+- **Limite aceito:** entre duas rotinas sobrepostas a coluna ainda recua (o fim da primeira vem
+  antes do início da segunda). É a própria sobreposição; aninhar não resolve.
+
+**Leitura da tarefa na trilha.** Achado da mesma conferência, e entra na T3 **mesmo que o
+aninhamento seja cortado**: a linha da tarefa não lê a hora (o rótulo está fora da árvore de
+leitura) nem diz que é uma tarefa. Passa a ler tipo, hora, título e estado, e, quando aninhada, de
+qual rotina está dentro. É a mesma classe do horário escondido da 15.7.
+
+Outros achados da conferência, fora desta versão: indicador de repetição na tarefa da trilha e
+data e hora na linha das atrasadas vão para a v1.11.0, junto com a regra das repetidas; trilha
+curta em paisagem com fonte 2.0 é da v1.12.0; o widget não intercala tarefas e rotinas, o que não
+é defeito e fica sem versão. Não são defeitos: a mensagem de Desfazer cobrir a linha de baixo, o
+botão flutuante cobrir o círculo de uma linha que passa por baixo ao rolar, e a quebra de palavra
+em 320dp com fonte 2.0 (limite aceito na 14.13).
