@@ -4,6 +4,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
 
 /**
  * Campos do editor de rotina (v1.9.0, ADR-0002 15.2 e 15.5). Na CRIAÇÃO é o rascunho, que só vai para
@@ -20,8 +21,11 @@ data class RoutineDraft(
     val durationMinutes: Int = DEFAULT_DURATION_MINUTES,
     val daysOfWeek: Int = RoutineDays.ALL,
     val remind: Boolean = true,
-    /** Categoria à qual a rotina pertence ([RoutineCategory.id]), ou null se sem categoria. */
-    val categoryId: Long? = null,
+    /**
+     * Tipo (v1.10.0, ADR-0002 16.10.5). Só [RoutineKind.EXERCISE] mostra os exercícios; trocar para
+     * [RoutineKind.NONE] os esconde e guarda. A categoria antiga da linha não é do editor.
+     */
+    val kind: RoutineKind = RoutineKind.DEFAULT,
     /** "A cada N semanas"; 1 = toda semana. */
     val weekInterval: Int = 1,
     /** Dia (epoch day) a partir do qual a rotina vale, ou null para sem início definido. */
@@ -60,7 +64,7 @@ data class RoutineDraft(
             durationMinutes = durationMinutes,
             daysOfWeek = daysOfWeek,
             remind = remind,
-            categoryId = categoryId,
+            kind = kind.name,
             weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = startEpochDay,
             endEpochDay = endEpochDay,
@@ -87,7 +91,7 @@ data class RoutineDraft(
             durationMinutes = routine.durationMinutes,
             daysOfWeek = routine.daysOfWeek,
             remind = routine.remind,
-            categoryId = routine.categoryId,
+            kind = RoutineKind.fromKey(routine.kind),
             weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = routine.startEpochDay,
             endEpochDay = routine.endEpochDay,

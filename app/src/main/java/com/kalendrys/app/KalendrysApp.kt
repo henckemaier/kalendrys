@@ -10,7 +10,6 @@ import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineCatchUpMark
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
@@ -107,10 +106,6 @@ class KalendrysApp : Application() {
             },
             clock = clock,
         )
-    }
-
-    val routineCategoryRepository: RoutineCategoryRepository by lazy {
-        RoutineCategoryRepository(database)
     }
 
     /** Listas de compras independentes (ADR-0001): aba Listas, rotinas e tarefas. */

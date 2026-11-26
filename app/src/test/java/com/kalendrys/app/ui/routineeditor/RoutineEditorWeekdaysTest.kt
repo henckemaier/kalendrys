@@ -14,7 +14,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -70,7 +69,6 @@ class RoutineEditorWeekdaysTest {
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
                 routineRepository,
-                RoutineCategoryRepository(db),
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),

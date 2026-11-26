@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToKeyAction
@@ -28,9 +30,9 @@ import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
@@ -87,7 +89,6 @@ class RoutineEditorShellTest {
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 routines,
-                RoutineCategoryRepository(db),
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
                 offers,
                 testDb.appScope(),
@@ -132,7 +133,11 @@ class RoutineEditorShellTest {
         showSaved()
         // Sem a seção Lista desde a v1.10.0 (ADR-0002 16.10.5): rotina não tem lista.
         assertEquals(0, compose.onAllNodes(hasText("Lista de compras"), useUnmergedTree = true).fetchSemanticsNodes().size)
-        val order = listOf("Título", "Quando", "Avisar no início", "Aparência")
+        // Ordem da 16.10.5 (v1.10.0): o Tipo depois do Lembrar; sem Categoria.
+        assertEquals(0, compose.onAllNodes(hasText("Categoria"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        // Tipo Nenhum: a seção Exercícios não aparece.
+        assertEquals(0, compose.onAllNodes(hasText("Lista de exercícios"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        val order = listOf("Título", "Quando", "Avisar no início", "Tipo", "Aparência")
         val tops = order.map { label ->
             compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         }
@@ -140,6 +145,30 @@ class RoutineEditorShellTest {
         // "Mais opções" (cabeçalho da lista, não o menu) vem depois da Aparência.
         val more = compose.onAllNodes(hasText("Mais opções"), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         assertTrue(more > tops.last())
+    }
+
+    @Test
+    fun `edicao - tipo Exercicio mostra os exercicios entre o Tipo e a Aparencia`() {
+        showSaved(Routine(title = "Força", startMinute = 420, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val order = listOf("Avisar no início", "Tipo", "Lista de exercícios", "Aparência")
+        val tops = order.map { label ->
+            compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
+        }
+        assertEquals("ordem $order: $tops", tops.sorted(), tops)
+    }
+
+    @Test
+    fun `criacao - Tipo com Nenhum e Exercicio, um so escolhido, e Exercicio abre a lista de exercicios`() {
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsSelected()
+        compose.onNode(hasText("Exercício") and hasClickAction()).assertIsNotSelected()
+        assertEquals(0, compose.onAllNodesWithText("Adicionar exercício").fetchSemanticsNodes().size)
+
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+
+        compose.onNode(hasText("Exercício") and hasClickAction()).assertIsSelected()
+        compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsNotSelected()
+        compose.onNodeWithText("Adicionar exercício").assertExists()
     }
 
     @Test

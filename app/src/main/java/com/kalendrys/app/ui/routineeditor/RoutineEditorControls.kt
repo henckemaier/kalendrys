@@ -75,7 +75,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.ExerciseFormat

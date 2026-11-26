@@ -9,7 +9,7 @@ import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.SystemAppClock
-import com.kalendrys.app.domain.RoutineCategoryKind
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -17,7 +17,6 @@ import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.domain.RoutineChange
@@ -107,7 +106,6 @@ class RoutineEditorViewModelTest {
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 repository,
-                RoutineCategoryRepository(db),
                 exercises,
                 undoOffers,
                 testDb.appScope(),
@@ -508,8 +506,7 @@ class RoutineEditorViewModelTest {
 
     @Test
     fun `edicao - exercicios na ordem do toque e Reverter devolve a lista da abertura`() = runTest {
-        val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routines.add(Routine(title = "Força", startMinute = 600, categoryId = categoryId, createdAt = TEST_CREATED_AT))
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
         exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
         val vm = viewModel(routine.id)
         vm.awaitLoaded()
@@ -601,14 +598,93 @@ class RoutineEditorViewModelTest {
         assertEquals("aquecer", vm.notesInput)
     }
 
+    // --- Tipo (v1.10.0, T2, C2; ADR-0002 16.10.5) -------------------------------------------------
+
+    @Test
+    fun `edicao - tipo grava na hora, sem reagendar, e mostra ou esconde os exercicios`() = runTest {
+        val routine = saved()
+        exercises.add(routine.id, "Flexão", sets = 3, reps = 15, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        assertTrue("tipo Nenhum esconde", vm.awaitUi { it.fields != null }.exerciseItems.isEmpty())
+        alarms.reset()
+
+        vm.updateKind(RoutineKind.EXERCISE)
+
+        eventually { row(routine.id).kind == RoutineKind.EXERCISE.name }
+        assertEquals(listOf("Flexão"), vm.awaitUi { it.exerciseItems.isNotEmpty() }.exerciseItems.map { it.name })
+        vm.awaitPendingWrites()
+        assertTrue("tipo não mexe em alarme", alarms.calls.isEmpty())
+    }
+
+    @Test
+    fun `edicao - Exercicio para Nenhum guarda os exercicios, sem perguntar, e eles voltam com o tipo`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
+        exercises.add(routine.id, "B", sets = 1, reps = 1, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        vm.awaitUi { it.exerciseItems.size == 2 }
+
+        vm.updateKind(RoutineKind.NONE)
+        eventually { row(routine.id).kind == RoutineKind.NONE.name }
+        val hidden = vm.awaitUi { it.exerciseItems.isEmpty() }
+        assertEquals("guardados no banco", listOf("A", "B"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+        assertFalse("esconder não é mexer nos exercícios", hidden.exerciseItemsChanged)
+
+        vm.updateKind(RoutineKind.EXERCISE)
+        assertEquals(listOf("A", "B"), vm.awaitUi { it.exerciseItems.size == 2 }.exerciseItems.map { it.name })
+    }
+
+    @Test
+    fun `edicao - Reverter devolve o tipo da abertura`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateKind(RoutineKind.EXERCISE)
+        eventually { row(routine.id).kind == RoutineKind.EXERCISE.name }
+        assertTrue(vm.awaitUi { it.canRevert }.canRevert)
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        assertEquals(RoutineKind.NONE.name, row(routine.id).kind)
+    }
+
+    @Test
+    fun `criacao - o tipo vai no rascunho e a rotina nasce com ele`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateTitle("Força")
+        vm.updateKind(RoutineKind.EXERCISE)
+        assertTrue(vm.awaitUi { it.isExercise }.hasDraftChanges)
+        assertTrue(db.routineDao().all().isEmpty())
+
+        vm.create()
+        vm.awaitClosed()
+
+        assertEquals(RoutineKind.EXERCISE.name, db.routineDao().all().single().kind)
+    }
+
+    @Test
+    fun `edicao - duplicar copia o tipo`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.duplicate("Força (cópia)")
+        vm.awaitClosed()
+
+        assertEquals(RoutineKind.EXERCISE.name, db.routineDao().all().single { it.id != routine.id }.kind)
+    }
+
     // --- Exercícios já na criação (v1.10.0, T2, C3; ADR-0002 16.10.5) -----------------------------
 
-    /** Rotina nova com o tipo que mostra exercícios (por ora pela categoria EXERCICIO; o C2 troca pelo tipo). */
+    /** Rotina nova com o tipo Exercício (o que mostra a seção Exercícios). */
     private suspend fun RoutineEditorViewModel.chooseExerciseType() {
-        val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
-        eventually { uiState.value.categories.any { it.id == categoryId } }
-        updateCategory(categoryId)
-        awaitUi { it.isExerciseCategory }
+        updateKind(RoutineKind.EXERCISE)
+        awaitUi { it.isExercise }
     }
 
     @Test
@@ -616,7 +692,7 @@ class RoutineEditorViewModelTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.chooseExerciseType()
-        val initial = vm.awaitUi { it.isExerciseCategory }
+        val initial = vm.awaitUi { it.isExercise }
         assertTrue(initial.exerciseItems.isEmpty())
 
         vm.addExerciseItem("Agachamento", sets = 3, reps = 10, load = "20kg", restSeconds = 60)
@@ -690,10 +766,10 @@ class RoutineEditorViewModelTest {
         vm.addExerciseItem("Flexão", 3, 15, null, null)
         vm.awaitUi { it.exerciseItems.size == 1 }
 
-        vm.updateCategory(null)
-        val hidden = vm.awaitUi { !it.isExerciseCategory }
+        vm.updateKind(RoutineKind.NONE)
+        val hidden = vm.awaitUi { !it.isExercise }
         assertTrue(hidden.exerciseItems.isEmpty())
-        assertEquals(1, hidden.draftExercises.size)
+        assertEquals(1, hidden.allExercises.size)
 
         vm.create()
         vm.awaitClosed()

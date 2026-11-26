@@ -10,6 +10,7 @@ import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -78,7 +79,7 @@ class RoutineRepositoryEditTest {
         repository.edit(routine.id, RoutineChange.Duration(45))
         repository.edit(routine.id, RoutineChange.Color(RoutineColor.entries.last()))
         repository.edit(routine.id, RoutineChange.Icon(RoutineIcon.entries.last()))
-        repository.edit(routine.id, RoutineChange.Category(null))
+        repository.edit(routine.id, RoutineChange.Kind(RoutineKind.EXERCISE))
 
         assertTrue(alarms.calls.isEmpty())
         val after = row(routine.id)

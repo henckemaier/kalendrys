@@ -87,8 +87,9 @@ interface RoutineDao {
     @Query("UPDATE routines SET remind = :remind WHERE id = :id")
     suspend fun updateRemind(id: Long, remind: Boolean)
 
-    @Query("UPDATE routines SET categoryId = :categoryId WHERE id = :id")
-    suspend fun updateCategory(id: Long, categoryId: Long?)
+    /** Tipo ([com.kalendrys.app.domain.RoutineKind.name]); os exercícios ficam como estão (16.10.5). */
+    @Query("UPDATE routines SET kind = :kind WHERE id = :id")
+    suspend fun updateKind(id: Long, kind: String)
 
     @Query("UPDATE routines SET color = :color WHERE id = :id")
     suspend fun updateColor(id: Long, color: String)
@@ -101,10 +102,6 @@ interface RoutineDao {
 
     @Query("UPDATE routines SET archivedAt = :archivedAt WHERE id = :id")
     suspend fun updateArchivedAt(id: Long, archivedAt: Long?)
-
-    /** Desvincula as rotinas de uma categoria (ao excluí-la); rode dentro de uma transação. */
-    @Query("UPDATE routines SET categoryId = NULL WHERE categoryId = :categoryId")
-    suspend fun clearCategory(categoryId: Long)
 
     /** Apaga todas as rotinas (restauro de backup limpa antes de reinserir). */
     @Query("DELETE FROM routines")
