@@ -3,6 +3,86 @@
 Mudanças visíveis do Kalendrys por versão. Regra de versão em `docs/VERSIONING.md`; fluxo de
 publicação em `docs/RELEASING.md`.
 
+## v1.10.0 — Rotinas e tarefas (versionCode 11000)
+
+> **⚠️ Antes de atualizar, exporte o backup na v1.9.1** (Configurações → Dados → Exportar backup). Esta versão
+> muda o banco (**11 → 12**) e o backup (**versão 7**), e **apaga dados** na atualização:
+>
+> - **rotinas perdem a lista de compras** (a lista e os itens são apagados; a rotina fica);
+> - **listas avulsas, sem tarefa, são apagadas** com os itens;
+> - uma lista usada por **várias tarefas** fica com a mais antiga, e cada uma das outras recebe
+>   uma **cópia** com os itens;
+> - as **categorias de rotina deixam de aparecer** (a rotina de categoria Exercício vira do tipo
+>   Exercício; as outras, Nenhum).
+>
+> **Não há volta para a v1.9.1 sem esse backup** (a v1.9.1 recusa um backup da versão 7). Restaurar na v1.10.0 um backup antigo (versão 6
+> ou anterior) aplica as mesmas regras.
+
+Decisão de arquitetura: `docs/architecture/ADR-0002-design-system-e-roteiro-de-ui.md` (seções 16.3
+e 16.10) e `docs/architecture/ADR-0001-listas-de-compras-independentes.md` (seção 9). Sem
+dependência nova e sem permissão nova.
+
+### Novidades
+
+- **Rotina e tarefa com papéis separados.** A rotina é o bloco de hábito, com horário e duração,
+  que se repete; a tarefa é a coisa pontual e a única dona de lista.
+- **Tipo da rotina**, Nenhum ou Exercício, escolhido ao criar e ao editar, no lugar da categoria.
+  Só o tipo Exercício tem exercícios. Trocar para Nenhum guarda os exercícios, que voltam se o
+  tipo voltar.
+- **Exercícios já na criação** da rotina, gravados junto com ela, e no Duplicar.
+- **Exercícios salvos**: um salvo é um exercício (nome, séries, repetições, carga, descanso),
+  criado pela opção de salvar no diálogo do exercício. Aplicar um salvo **copia** o exercício, sem
+  vínculo. Os salvos são escolhidos, editados e excluídos num painel do próprio editor; excluir
+  um salvo pede confirmação.
+- **Lista dentro da tarefa**: uma lista por tarefa. **Adicionar lista** cria a lista na hora, com
+  o nome da tarefa; não há mais escolha de lista existente. **Excluir lista** (no detalhe e na
+  tela da lista) apaga a lista e os itens, com confirmação.
+- **Hoje: tarefa dentro do bloco de rotina.** A tarefa com horário dentro do horário de uma rotina
+  aparece **dentro do bloco**, com a faixa da rotina alongada até o fim dela, e a coluna de horas
+  lê em ordem. O carrinho de progresso da lista sai do bloco de rotina e fica na linha da tarefa.
+- **Leitor de tela na Hoje**: a linha da tarefa lê "Tarefa", a hora, o título e o estado e, quando
+  está dentro de um bloco, de qual rotina.
+
+### Mudanças de comportamento
+
+- **A aba Listas sai.** São três abas: Hoje, Tarefas e Calendário. A lista é alcançada pela
+  tarefa dona; aberta por uma notificação, ela abre sobre o detalhe da tarefa, e lista que não
+  existe mais abre a aba Tarefas. Quem atualizar com a aba Listas aberta cai na aba Tarefas.
+- **O atalho "Listas"** do ícone passa a se chamar **"Tarefas"** e abre a aba Tarefas; quem o
+  tinha fixado na tela inicial continua com um atalho que funciona.
+- **Excluir a tarefa apaga a lista e os itens**; o Desfazer devolve os três. Excluir pelo detalhe
+  da tarefa **não pede mais confirmação**: a proteção é o Desfazer.
+- **Categorias de rotina saem das telas**: do editor, do filtro e da linha de "Todas as rotinas"
+  e de Ajustes.
+- A **aba Tarefas vira o dia à meia-noite** com a aba aberta, pelo relógio único do app.
+- Pular uma rotina que não existe mais (ou arquivada) não grava nada nem oferece Desfazer.
+- O botão flutuante não cobre mais a última linha da aba Tarefas em 320dp com fonte grande.
+
+### Limitações conhecidas
+
+- **Rotinas sobrepostas em parte** ainda fazem a coluna de horas da Hoje recuar (o fim da primeira
+  vem antes do início da segunda). Uma rotina curta inteira dentro de outra, ou um bloco pulado,
+  pode interromper a faixa do bloco de fora.
+- A lista de uma tarefa sem repetição já concluída continua com ela, alcançável pela tarefa.
+
+### Interno
+
+- **Banco 12** (migração automática, sem recriar tabela): tipo na rotina, tabela de exercícios
+  salvos, vínculo de lista apagado das rotinas, cópia das listas compartilhadas, limpeza de
+  vínculos órfãos e de listas sem tarefa, e índice único no vínculo de lista da tarefa. A coluna
+  antiga do vínculo na rotina e a tabela de categorias continuam no banco, sem uso.
+- **Backup versão 7**, com o tipo e os exercícios salvos e sem vínculo de lista em rotina. O
+  restauro de backup antigo e a migração usam as mesmas funções puras (`domain/ListOwnership`).
+- **Relógio único** (`AppClock`): agora, fuso e a data de hoje vêm de uma peça só, recebida por
+  parâmetro; um teste de varredura falha em qualquer leitura direta do relógio do sistema fora
+  dela. O repositório passa o instante pronto aos alarmes de rotina.
+- **Baseline Profile**: não regerado; é o da v1.9.0, sem as telas de rotinas (lacuna conhecida,
+  para a v1.11.0). As jornadas foram corrigidas para as três abas e passam a falhar quando não
+  acham o caminho.
+- **Abertura a frio**: **não medida**.
+- **Acessibilidade**: leitor de tela com fala real não verificado, coberto por testes de
+  semântica.
+
 ## v1.9.1 — Aviso de rotina (versionCode 10901)
 
 Versão corretiva, só com este defeito. Decisão de arquitetura:
