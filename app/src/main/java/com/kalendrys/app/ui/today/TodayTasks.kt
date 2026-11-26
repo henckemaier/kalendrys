@@ -207,8 +207,11 @@ internal fun TaskRow(
     } else {
         stringResource(R.string.today_task_row_description_inside, time, task.title, container.title)
     }
-    // A faixa do bloco que contém a tarefa passa por trás do losango, sem recuo a mais na linha.
-    val band = container?.let { routineTone(RoutineColor.fromKey(it.color)).fill }
+    // A faixa do bloco que contém a tarefa passa por trás do losango, sem recuo a mais na linha. Sobre a
+    // faixa, o losango usa o onFill da rotina (a cor de contraste da paleta, a mesma do ícone da
+    // pílula), com contraste de pelo menos 3:1 nos dois temas (N2 da Coruja na T3).
+    val bandTone = container?.let { routineTone(RoutineColor.fromKey(it.color)) }
+    val band = bandTone?.fill
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -247,7 +250,7 @@ internal fun TaskRow(
                     }
                 },
         ) {
-            Diamond(filled = item.done, color = accent)
+            Diamond(filled = item.done, color = bandTone?.onFill ?: accent)
         }
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
