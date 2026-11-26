@@ -204,6 +204,8 @@ private fun EditorContent(
     // Painel "Dos salvos" e o salvo em edição nele (v1.10.0, 16.10.5).
     var showSavedSheet by rememberSaveable { mutableStateOf(false) }
     var editingSavedId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // Excluir um salvo pede confirmação (B2 do Esquadro, critério da P45: confirmação, sem Desfazer).
+    var confirmDeleteSavedId by rememberSaveable { mutableStateOf<Long?>(null) }
     // "Mais opções" (Vigência e Observações): aberto se a rotina já tem vigência ou observações, decidido
     // UMA vez, na abertura (vigência escondida é armadilha, (c) da revisão da E3); depois só pelo toque.
     var moreOptions by rememberSaveable {
@@ -392,8 +394,27 @@ private fun EditorContent(
                 showSavedSheet = false
             },
             onEdit = { saved -> editingSavedId = saved.id },
-            onDelete = viewModel::deleteSavedExercise,
+            onDelete = { saved -> confirmDeleteSavedId = saved.id },
             onDismiss = { showSavedSheet = false },
+        )
+    }
+    val deletingSaved = confirmDeleteSavedId?.let { id -> state.savedExercises.firstOrNull { it.id == id } }
+    if (deletingSaved != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSavedId = null },
+            title = { Text(stringResource(R.string.saved_exercise_delete_title)) },
+            text = { Text(stringResource(R.string.saved_exercise_delete_message, deletingSaved.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSavedExercise(deletingSaved)
+                        confirmDeleteSavedId = null
+                    },
+                ) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteSavedId = null }) { Text(stringResource(R.string.cancel)) }
+            },
         )
     }
     val editingSaved = editingSavedId?.let { id -> state.savedExercises.firstOrNull { it.id == id } }

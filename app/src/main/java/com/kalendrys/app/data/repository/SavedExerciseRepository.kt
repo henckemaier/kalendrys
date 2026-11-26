@@ -43,6 +43,6 @@ class SavedExerciseRepository(
         dao.updateFields(id = id, name = f.name, sets = f.sets, reps = f.reps, load = f.load, restSeconds = f.restSeconds)
     }
 
-    /** Exclui o salvo [id] (sem confirmação no painel); as cópias nas rotinas ficam. */
+    /** Exclui o salvo [id] (o painel confirma antes); as cópias nas rotinas ficam. */
     suspend fun delete(id: Long) = dao.delete(id)
 }

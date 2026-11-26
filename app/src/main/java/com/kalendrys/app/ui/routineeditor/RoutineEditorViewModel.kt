@@ -527,7 +527,7 @@ class RoutineEditorViewModel(
         launchSavedWrite { savedExerciseRepository.update(saved.id, ExerciseFields(name, sets, reps, load, restSeconds)) }
     }
 
-    /** Exclui o salvo no painel (sem confirmação); as cópias nas rotinas ficam. */
+    /** Exclui o salvo (a tela confirma antes, B2 do Esquadro); as cópias nas rotinas ficam. */
     fun deleteSavedExercise(saved: SavedExercise) = launchSavedWrite { savedExerciseRepository.delete(saved.id) }
 
     private fun saveForReuse(fields: ExerciseFields) = launchSavedWrite { savedExerciseRepository.save(fields) }

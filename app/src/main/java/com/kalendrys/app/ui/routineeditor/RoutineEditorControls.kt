@@ -279,7 +279,7 @@ internal fun ExerciseItemDialog(
 
 /**
  * Painel "Dos salvos" (v1.10.0, 16.10.5): os exercícios salvos, por nome. Tocar na linha aplica uma
- * CÓPIA na rotina (e fecha); editar abre o diálogo dos campos; excluir não pede confirmação. As cópias
+ * CÓPIA na rotina (e fecha); editar abre o diálogo dos campos; excluir pede confirmação na tela. As cópias
  * já aplicadas nunca mudam com o salvo.
  */
 @OptIn(ExperimentalMaterial3Api::class)

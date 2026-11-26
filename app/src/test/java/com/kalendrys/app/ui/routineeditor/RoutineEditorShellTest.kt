@@ -203,6 +203,36 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `salvos - excluir no painel pede confirmacao - cancelar mantem, confirmar apaga`() {
+        // B2 do Esquadro (critério da P45): confirmação, sem Desfazer.
+        runBlocking {
+            testDb.db.savedExerciseDao().insert(
+                SavedExercise(name = "Agachamento", sets = 4, reps = 6, createdAt = TEST_CREATED_AT),
+            )
+        }
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodes(hasContentDescription("Excluir Agachamento dos salvos")).fetchSemanticsNodes().isNotEmpty() }
+        val storedCount = { runBlocking { testDb.db.savedExerciseDao().all() }.size }
+
+        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Cancelar") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
+        assertEquals("cancelar não apaga", 1, storedCount())
+
+        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Excluir") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+
+        waitFor { storedCount() == 0 }
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
+    }
+
+    @Test
     fun `edicao - Mais opcoes recolhido esconde vigencia e observacoes e abre no toque`() {
         showSaved()
         assertEquals(0, compose.onAllNodesWithText("Vigência").fetchSemanticsNodes().size)

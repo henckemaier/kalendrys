@@ -224,6 +224,8 @@
     <string name="saved_exercise_edit_title">Editar exercício salvo</string>
     <string name="saved_exercise_edit">Editar %1$s</string>
     <string name="saved_exercise_delete">Excluir %1$s dos salvos</string>
+    <string name="saved_exercise_delete_title">Excluir exercício salvo?</string>
+    <string name="saved_exercise_delete_message">\"%1$s\" sai dos salvos. As rotinas que já o usam não mudam.</string>
     <string name="exercise_add_title">Novo exercício</string>
     <string name="exercise_edit_title">Editar exercício</string>
     <string name="exercise_item_name_label">Exercício</string>
