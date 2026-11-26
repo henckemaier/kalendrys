@@ -94,8 +94,6 @@
     <string name="task_created_on">Criada em %1$s</string>
     <string name="history_title">Histórico de conclusões</string>
     <string name="history_empty">Nenhuma conclusão registrada ainda.</string>
-    <string name="delete_task_confirm_title">Excluir tarefa?</string>
-    <string name="delete_task_confirm_message">A tarefa e o lembrete serão removidos. As conclusões continuam no histórico do calendário.</string>
     <string name="discard_changes_title">Descartar alterações?</string>
     <string name="discard">Descartar</string>
     <string name="keep_editing">Continuar editando</string>

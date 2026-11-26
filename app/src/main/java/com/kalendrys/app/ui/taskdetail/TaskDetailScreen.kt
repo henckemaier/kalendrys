@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -94,7 +93,6 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel = viewModel(factory = TaskDetailViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     // Seletor "Criar nova / Usar lista existente" da lista de compras.
     var showDeleteListDialog by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
@@ -126,7 +124,8 @@ fun TaskDetailScreen(
                 menu = if (loaded) {
                     listOfNotNull(
                         TopBarAction(revertLabel, onClick = viewModel::revert).takeIf { state.canRevert },
-                        TopBarAction(deleteLabel) { showDeleteDialog = true },
+                        // P7 (ADR-0002 16.10.4): sem confirmação; o Desfazer devolve tarefa, lista e itens.
+                        TopBarAction(deleteLabel, onClick = viewModel::delete),
                     )
                 } else {
                     emptyList()
@@ -162,27 +161,6 @@ fun TaskDetailScreen(
                 contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s, bottom = Spacing.xl),
             )
         }
-    }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(R.string.delete_task_confirm_title)) },
-            text = { Text(stringResource(R.string.delete_task_confirm_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        viewModel.delete()
-                    },
-                ) {
-                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) }
-            },
-        )
     }
 
     // "Excluir lista" (P45): confirma; sem Desfazer. A lista some do banco junto com os itens.
