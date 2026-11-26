@@ -224,7 +224,7 @@
     <string name="exercise_save_for_reuse">Salvar para reutilizar</string>
     <string name="exercise_from_saved">Dos salvos</string>
     <string name="saved_exercises_title">Exercícios salvos</string>
-    <string name="saved_exercises_empty">Nenhum exercício salvo. Ao adicionar um exercício, marque \"Salvar para reutilizar\".</string>
+    <string name="saved_exercises_empty">Salve um exercício para reutilizar em outras rotinas.</string>
     <string name="saved_exercise_apply">Adicionar %1$s à rotina</string>
     <string name="saved_exercise_edit_title">Editar exercício salvo</string>
     <string name="saved_exercise_edit">Editar %1$s</string>

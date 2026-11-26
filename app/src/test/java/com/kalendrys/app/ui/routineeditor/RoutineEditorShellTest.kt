@@ -223,6 +223,20 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `salvos - painel vazio mostra o estado vazio`() {
+        // Achado 3 da Coruja: o painel sem salvos diz o que fazer.
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Salve um exercício para reutilizar em outras rotinas.").assertExists()
+    }
+
+    @Test
     fun `salvos - excluir no painel pede confirmacao - cancelar mantem, confirmar apaga`() {
         // B2 do Esquadro (critério da P45): confirmação, sem Desfazer.
         runBlocking {
