@@ -100,9 +100,17 @@ interface TaskDao {
     /**
      * Cria a lista [list] (de [ShoppingList.named]) e vincula a tarefa a ela numa transação só (v1.9.0,
      * fecha o NB-E6-A): falhar o vínculo não deixa lista avulsa. Devolve o id da lista.
+     *
+     * Tarefa que JÁ tem lista (a linha atual, lida aqui dentro) não ganha outra: devolve null sem criar
+     * nada (A1 da revisão da T3). Sem isso, um toque duplo em "Adicionar lista" trocava o vínculo e
+     * deixava a primeira lista sem dona, invisível. Vínculo órfão (lista que não existe) conta como sem
+     * lista. Tarefa que não existe mais: null.
      */
     @Transaction
-    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long {
+    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long? {
+        val current = byId(taskId) ?: return null
+        val linked = current.shoppingListId
+        if (linked != null && listExists(linked)) return null
         val listId = insertList(list)
         updateShoppingList(taskId, listId)
         return listId

@@ -172,8 +172,8 @@ class TaskRepository(
             val updated = change.applyTo(current, zone) ?: return@withLock false
             when (change) {
                 is TaskChange.NewShoppingList -> {
-                    taskDao.linkNewList(taskId, ShoppingList.named(change.name, clock.nowMillis()))
-                    return@withLock true
+                    // Já tem lista: não cria outra (A1 da T3; a transação confere a linha atual).
+                    return@withLock taskDao.linkNewList(taskId, ShoppingList.named(change.name, clock.nowMillis())) != null
                 }
                 else -> {
                     if (updated == current) return@withLock false

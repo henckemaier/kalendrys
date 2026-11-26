@@ -280,6 +280,28 @@ class TaskRepositoryEditTest {
     }
 
     @Test
+    fun `lista nova duas vezes seguidas - uma lista so, sem lista sem dona`() = runTest {
+        // A1 da revisão da T3: toque duplo em "Adicionar lista".
+        val saved = repository.addTask("Feira")
+
+        assertTrue(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+        assertFalse(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+
+        val lists = db.shoppingListDao().all()
+        assertEquals(1, lists.size)
+        assertEquals(lists.single().id, task(saved.id).shoppingListId)
+    }
+
+    @Test
+    fun `lista nova com vinculo orfao cria a lista`() = runTest {
+        val saved = repository.addTask("Feira").also { db.linkList(it.id, 404) }
+
+        assertTrue(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+
+        assertEquals(db.shoppingListDao().all().single().id, task(saved.id).shoppingListId)
+    }
+
+    @Test
     fun `lista nova com nome em branco nao cria lista`() = runTest {
         val saved = repository.addTask("Tarefa")
 
