@@ -190,6 +190,19 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `tipo - o rotulo nao cola no circulo do botao de opcao`() {
+        // Achado da Coruja na T3 ("oNenhum" em 320dp com fonte 2.0): círculo (24dp com a folga interna) e
+        // pelo menos 8dp até o texto.
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        val row = compose.onNode(hasText("Nenhum") and hasClickAction()).fetchSemanticsNode().boundsInRoot
+        val label = compose.onNode(hasText("Nenhum"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val density = compose.density.density
+        val gapDp = (label.left - row.left) / density
+        assertTrue("texto a ${gapDp}dp do início da opção", gapDp >= 24f + 8f - 0.5f)
+    }
+
+    @Test
     fun `criacao - Tipo com Nenhum e Exercicio, um so escolhido, e Exercicio abre a lista de exercicios`() {
         show(NEW_ROUTINE_ID)
         // Na criação a prévia e os modelos vêm antes: rola até o Tipo para a LazyColumn compô-lo.
