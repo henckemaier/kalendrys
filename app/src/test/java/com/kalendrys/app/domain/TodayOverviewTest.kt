@@ -198,17 +198,15 @@ class TodayOverviewTest {
     // --- Progresso das listas no retrato do dia (ADR-0001, P8) ---
 
     @Test
-    fun `tarefa e bloco com lista trazem o progresso, avulsa fica de fora e orfao sem progresso`() {
+    fun `tarefa com lista traz o progresso, avulsa fica de fora e orfao sem progresso`() {
         val progress = mapOf(10L to ShoppingProgress(3, 8), 11L to ShoppingProgress(1, 2), 12L to ShoppingProgress(0, 4))
         val tasks = listOf(
             task(1, "Com lista", reminder = now.plusHours(2)).copy(shoppingListId = 10),
             task(2, "Órfã", reminder = now.plusHours(3)).copy(shoppingListId = 99),
             task(3, "Sem lista", reminder = now.plusHours(4)),
         )
-        val routines = listOf(
-            routine(5, "Feira", LocalTime.of(18, 0)).copy(shoppingListId = 11),
-            routine(6, "Arquivada", LocalTime.of(19, 0)).copy(shoppingListId = 11, archivedAt = millis(now.plusDays(1))),
-        )
+        // v1.10.0: rotina não tem lista; um vínculo antigo no banco não dá progresso ao bloco.
+        val routines = listOf(routine(5, "Feira", LocalTime.of(18, 0)).copy(shoppingListId = 11))
 
         val overview = TodayOverview.build(tasks, emptyList(), now, zone, routines, listProgress = progress)
 
@@ -216,10 +214,9 @@ class TodayOverviewTest {
             listOf(ShoppingProgress(3, 8), null, null),
             overview.pending.sortedBy { it.taskId }.map { it.listProgress },
         )
-        assertEquals(ShoppingProgress(1, 2), overview.routines.first { it.routineId == 5L }.listProgress)
-        assertNull("rotina arquivada ignora o vínculo", overview.routines.firstOrNull { it.routineId == 6L }?.listProgress)
-        // A lista 12 é avulsa: não aparece em lugar nenhum do retrato.
-        val shown = overview.pending.mapNotNull { it.listProgress } + overview.routines.mapNotNull { it.listProgress }
+        // As listas 11 (só da rotina) e 12 (avulsa) não aparecem em lugar nenhum do retrato.
+        val shown = overview.pending.mapNotNull { it.listProgress }
+        assertTrue(ShoppingProgress(1, 2) !in shown)
         assertTrue(ShoppingProgress(0, 4) !in shown)
     }
 

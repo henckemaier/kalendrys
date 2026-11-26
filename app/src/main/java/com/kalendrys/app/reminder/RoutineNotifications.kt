@@ -16,7 +16,6 @@ import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineSchedule
 import com.kalendrys.app.domain.RoutineSnooze
-import com.kalendrys.app.domain.ShoppingProgress
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -24,12 +23,11 @@ import java.time.format.DateTimeFormatter
 /** Aviso de início de um bloco de rotina, com as ações Concluir, Pular (ou Abrir lista) e Adiar. */
 open class RoutineNotifications(private val context: Context) {
 
-    /** [listProgress]: progresso da lista do bloco (`null` sem lista ou com vínculo órfão). Só muda o título ("Feira · 3/8"). */
+    /** Aviso de início do bloco. Rotina não tem lista desde a v1.10.0: sem progresso nem "Abrir lista". */
     open fun show(
         routine: Routine,
         date: LocalDate,
         overrides: List<RoutineOverride> = emptyList(),
-        listProgress: ShoppingProgress? = null,
     ) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -46,13 +44,13 @@ open class RoutineNotifications(private val context: Context) {
         val notification = NotificationCompat.Builder(context, KalendrysApp.ROUTINE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
-            .setContentTitle(ShoppingProgress.titleWithProgress(routine.title, listProgress))
+            .setContentTitle(routine.title)
             .setContentText(timeLabel(routine, date, overrides))
             .setContentIntent(tapIntent)
             .setAutoCancel(true)
             // Some sozinha quando o bloco termina; sem duração, depois de uma hora.
             .setTimeoutAfter(maxOf(routine.durationMinutes, NO_DURATION_TIMEOUT_MINUTES) * 60_000L)
-        actionsFor(routine, listProgress).forEach { action ->
+        ACTIONS.forEach { action ->
             when (action) {
                 Action.COMPLETE -> notification.addAction(
                     0,
@@ -63,17 +61,6 @@ open class RoutineNotifications(private val context: Context) {
                     0,
                     context.getString(R.string.routine_skip_action),
                     action(context, RoutineAlarmReceiver.ACTION_SKIP, routine.id, date, AppLinks.routineSkip(routine.id, date.toEpochDay())),
-                )
-                // Abre a lista direto, sem tarefa de origem: rotina não recebe a oferta P3.
-                Action.OPEN_LIST -> notification.addAction(
-                    0,
-                    context.getString(R.string.reminder_open_list_action),
-                    PendingIntent.getActivity(
-                        context,
-                        requestCode,
-                        AppLinks.openList(context, checkNotNull(routine.shoppingListId)),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    ),
                 )
                 Action.SNOOZE -> notification.addAction(
                     0,
@@ -109,21 +96,11 @@ open class RoutineNotifications(private val context: Context) {
         )
 
     /** Ações do aviso, na ordem em que aparecem. */
-    enum class Action { COMPLETE, SKIP, OPEN_LIST, SNOOZE }
+    enum class Action { COMPLETE, SKIP, SNOOZE }
 
     companion object {
-        /**
-         * Ações do aviso de bloco (ADR-0002, E-1, aprovada pelo usuário). Bloco com lista válida
-         * (lista existente e rotina não arquivada): Concluir, Abrir lista, Adiar. O Android mostra no
-         * máximo 3 ações, então "Pular" sai SÓ desses avisos e continua disponível no app. Sem lista
-         * ou com vínculo órfão ([listProgress] `null`): Concluir, Pular, Adiar, como antes.
-         */
-        internal fun actionsFor(routine: Routine, listProgress: ShoppingProgress?): List<Action> =
-            if (routine.shoppingListId != null && listProgress != null && routine.archivedAt == null) {
-                listOf(Action.COMPLETE, Action.OPEN_LIST, Action.SNOOZE)
-            } else {
-                listOf(Action.COMPLETE, Action.SKIP, Action.SNOOZE)
-            }
+        /** Ações do aviso de bloco: Concluir, Pular, Adiar (sem "Abrir lista" desde a v1.10.0). */
+        internal val ACTIONS: List<Action> = listOf(Action.COMPLETE, Action.SKIP, Action.SNOOZE)
 
         // Tag própria: os ids das rotinas e das tarefas começam ambos em 1.
         private const val TAG = "routine"

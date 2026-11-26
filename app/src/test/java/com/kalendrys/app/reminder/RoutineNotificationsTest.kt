@@ -50,41 +50,13 @@ class RoutineNotificationsTest {
         )
     }
 
-    // --- Ações do aviso de bloco (ADR-0002, E-1) ---
+    // --- Ações do aviso de bloco: sem "Abrir lista" desde a v1.10.0 (rotina não tem lista) ---
 
     @Test
-    fun `bloco com lista troca Pular por Abrir lista`() {
-        assertEquals(
-            listOf(RoutineNotifications.Action.COMPLETE, RoutineNotifications.Action.OPEN_LIST, RoutineNotifications.Action.SNOOZE),
-            RoutineNotifications.actionsFor(treino().copy(shoppingListId = 7), com.kalendrys.app.domain.ShoppingProgress(3, 8)),
-        )
-    }
-
-    @Test
-    fun `bloco sem lista mantem Concluir, Pular e Adiar`() {
+    fun `aviso de bloco tem Concluir, Pular e Adiar`() {
         assertEquals(
             listOf(RoutineNotifications.Action.COMPLETE, RoutineNotifications.Action.SKIP, RoutineNotifications.Action.SNOOZE),
-            RoutineNotifications.actionsFor(treino(), null),
-        )
-    }
-
-    @Test
-    fun `bloco com vinculo orfao fica como sem lista`() {
-        // progressOf devolve null quando a lista não existe mais.
-        assertEquals(
-            listOf(RoutineNotifications.Action.COMPLETE, RoutineNotifications.Action.SKIP, RoutineNotifications.Action.SNOOZE),
-            RoutineNotifications.actionsFor(treino().copy(shoppingListId = 7), null),
-        )
-    }
-
-    @Test
-    fun `rotina arquivada ignora o vinculo`() {
-        assertEquals(
-            listOf(RoutineNotifications.Action.COMPLETE, RoutineNotifications.Action.SKIP, RoutineNotifications.Action.SNOOZE),
-            RoutineNotifications.actionsFor(
-                treino().copy(shoppingListId = 7, archivedAt = 1),
-                com.kalendrys.app.domain.ShoppingProgress(3, 8),
-            ),
+            RoutineNotifications.ACTIONS,
         )
     }
 }

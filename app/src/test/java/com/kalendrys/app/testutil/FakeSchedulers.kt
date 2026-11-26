@@ -90,7 +90,7 @@ class FakeRoutineNotifications(context: Context) : RoutineNotifications(context)
     val shown = mutableListOf<Long>()
     val cancelled = mutableListOf<Long>()
 
-    override fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride>, listProgress: ShoppingProgress?) {
+    override fun show(routine: Routine, date: LocalDate, overrides: List<RoutineOverride>) {
         shown += routine.id
     }
 

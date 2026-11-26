@@ -48,8 +48,6 @@ data class TodayOverview(
         val end: LocalTime?,
         val color: RoutineColor,
         val done: Boolean,
-        /** Progresso da lista de compras anexada (ADR-0001, P8); null sem lista ou com vínculo órfão. */
-        val listProgress: ShoppingProgress? = null,
     )
 
     data class Upcoming(val title: String, val at: LocalDateTime, val isRoutine: Boolean)
@@ -127,10 +125,6 @@ data class TodayOverview(
                         end = routine.takeIf { it.durationMinutes > 0 }?.let { timeOfDay(startMinute + it.durationMinutes) },
                         color = RoutineColor.fromKey(routine.color),
                         done = routine.id in routinesDoneToday,
-                        // Rotina arquivada mantém o vínculo, mas ele é ignorado na leitura (P5).
-                        listProgress = routine.shoppingListId
-                            ?.takeIf { routine.archivedAt == null }
-                            ?.let(listProgress::get),
                     )
                 }
                 .sortedWith(compareBy({ it.start }, { it.routineId }))

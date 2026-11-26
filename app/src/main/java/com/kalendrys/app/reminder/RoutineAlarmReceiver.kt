@@ -55,12 +55,7 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
                         // Reexibe só se o bloco ainda existe, é ativo, ocorre no dia e não foi concluído.
                         val date = LocalDate.ofEpochDay(epochDay)
                         app.routineRepository.routineForNotification(routineId, date)?.let { routine ->
-                            app.routineNotifications.show(
-                                routine,
-                                date,
-                                app.routineRepository.overridesFor(routineId),
-                                app.shoppingRepository.progressOf(routine.shoppingListId),
-                            )
+                            app.routineNotifications.show(routine, date, app.routineRepository.overridesFor(routineId))
                         }
                     }
                 }

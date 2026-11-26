@@ -75,13 +75,11 @@ import com.kalendrys.app.domain.DayTimeline.Link
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineIcon
-import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.ui.components.rememberTimeColumnWidth
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTimeRange
 import com.kalendrys.app.ui.routines.routineTone
-import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.today.TodayViewModel.UiState
 
 internal val RowPadding = 6.dp
@@ -144,7 +142,6 @@ internal fun LazyListScope.todayTrail(state: UiState, nowMinute: Int, actions: T
                 val editable = item.routine.archivedAt == null
                 BlockRow(
                     block = item,
-                    listProgress = state.progressFor(item.routine.shoppingListId),
                     inProgress = !item.skipped && state.isShowingToday &&
                         nowMinute >= item.startMinute && nowMinute < item.endMinute,
                     canComplete = state.canComplete,
@@ -210,7 +207,6 @@ private fun pillMinHeight(durationMinutes: Int): Dp = (durationMinutes * 1.6f).c
 @Composable
 private fun BlockRow(
     block: DayTimeline.Block,
-    listProgress: ShoppingProgress?,
     inProgress: Boolean,
     canComplete: Boolean,
     onOpen: (() -> Unit)?,
@@ -358,9 +354,6 @@ private fun BlockRow(
                                 .padding(start = 4.dp)
                                 .size(14.dp),
                         )
-                    }
-                    if (listProgress != null) {
-                        ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
                 Text(
