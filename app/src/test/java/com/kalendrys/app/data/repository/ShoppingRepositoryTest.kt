@@ -115,6 +115,17 @@ class ShoppingRepositoryTest {
     }
 
     @Test
+    fun `adicionar item a lista que ja saiu nao grava`() = runTest {
+        // Ajuste do Lince na T3: a tela da lista aberta logo depois de a lista ser excluída.
+        val listId = repository.createList("Mercado")
+        repository.deleteList(listId)
+
+        assertNull(repository.add(listId, "Arroz", quantity = 1, priceCents = null))
+
+        assertTrue(db.shoppingItemDao().all().isEmpty())
+    }
+
+    @Test
     fun `desmarcar todos zera as marcacoes`() = runTest {
         val listId = repository.createList("L")
         repository.add(listId, "A", 1, null)

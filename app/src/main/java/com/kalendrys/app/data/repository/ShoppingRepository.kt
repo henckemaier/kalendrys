@@ -134,8 +134,13 @@ class ShoppingRepository(
      * Novo item no fim da lista (position após a maior atual). Quantidade mínima 1. Ler a maior e
      * inserir na mesma transação: duas inclusões ao mesmo tempo (adição rápida com Enter seguido) não
      * pegam a mesma posição (parecer do Esquadro, E4).
+     *
+     * Lista que não existe mais (excluída com a tela dela aberta): não grava e devolve null, conferido na
+     * MESMA transação (ajuste do Lince na T3, v1.10.0). Sem isso o item ficava sem lista e voltava junto
+     * no Desfazer da exclusão da tarefa.
      */
-    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long = database.withTransaction {
+    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long? = database.withTransaction {
+        if (listDao.byId(listId) == null) return@withTransaction null
         val nextPosition = (itemDao.maxPosition(listId) ?: -1) + 1
         itemDao.insert(
             ShoppingItem(
