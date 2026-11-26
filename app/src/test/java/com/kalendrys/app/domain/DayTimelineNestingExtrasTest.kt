@@ -134,13 +134,13 @@ class DayTimelineNestingExtrasTest {
     }
 
     /**
-     * Sobreposição PARCIAL: cada tarefa vai para o bloco certo. A ORDEM da coluna não é conferida aqui:
-     * hoje o fim de A (08:00) sai logo depois da última tarefa de A (07:15), ANTES do início de B
-     * (07:30), e a coluna lê 07:00, 07:15, 08:00, 07:30, 07:45, 08:30, 09:00. Defeito reportado pelo
-     * Lince na T3; quando a regra de posição do fim for decidida, este teste ganha a ordem.
+     * Sobreposição PARCIAL: cada tarefa vai para o bloco certo, e a ORDEM da coluna é a de hoje, fixada
+     * aqui como LIMITE ACEITO (decisão do Esquadro sobre o D1 do Lince na T3; não mexer no nest() sem nova
+     * decisão): o fim de A (08:00) sai logo depois da última tarefa de A (07:15), ANTES do início de B
+     * (07:30). O recuo de horário já existia sem tarefa.
      */
     @Test
-    fun `sobreposicao parcial - cada tarefa no seu bloco`() {
+    fun `sobreposicao parcial - cada tarefa no seu bloco e a ordem atual da coluna (limite aceito)`() {
         // A 07:00–08:00 e B 07:30–09:00: 07:15 só em A; 07:45 em A e B (fica B, que começou depois).
         val a = routine(1, "07:00", 60)
         val b = routine(2, "07:30", 90)
@@ -150,5 +150,14 @@ class DayTimelineNestingExtrasTest {
         assertEquals(b, items.task(11).container)
         assertEquals(b, items.task(12).container)
         assertEquals(2, items.count { it is BlockEnd })
+        val track = items.filter { it !is DayTimeline.Gap }
+        assertEquals(
+            listOf("routine_1", "task_10", "routine_end_1", "routine_2", "task_11", "task_12", "routine_end_2"),
+            track.map { it.key },
+        )
+        assertEquals(
+            listOf("07:00", "07:15", "08:00", "07:30", "07:45", "08:30", "09:00").map(::minute),
+            track.map { it.startMinute },
+        )
     }
 }
