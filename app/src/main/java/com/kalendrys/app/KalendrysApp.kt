@@ -92,12 +92,7 @@ class KalendrysApp : Application() {
             // Entrega do catch-up do aviso de bloco (ADR-0003, 4.3.1): o repositório decide, aqui mostra.
             deliverDueBlocks = { due, date ->
                 due.forEach { routine ->
-                    routineNotifications.show(
-                        routine,
-                        date,
-                        routineRepository.overridesFor(routine.id),
-                        shoppingRepository.progressOf(routine.shoppingListId),
-                    )
+                    routineNotifications.show(routine, date, routineRepository.overridesFor(routine.id))
                 }
             },
             mark = object : RoutineCatchUpMark {
@@ -135,7 +130,7 @@ class KalendrysApp : Application() {
      * Painel de nova tarefa (v1.8.0, E6): dono único do rascunho e das operações dele (salvar no escopo
      * do app, listas do seletor). Só em memória. Aberto ou fechado é estado de tela (NewTaskHost).
      */
-    val newTaskPanel: NewTaskPanel by lazy { NewTaskPanel(repository, shoppingRepository, appScope) }
+    val newTaskPanel: NewTaskPanel by lazy { NewTaskPanel(repository, appScope) }
 
     /** Desfazer das exclusões que fecham a tela (tarefa e rotina), na origem; só em memória (E0-D, P8). */
     val undoOffers: UndoOffers by lazy { UndoOffers(repository, routineRepository, appScope, clock) }

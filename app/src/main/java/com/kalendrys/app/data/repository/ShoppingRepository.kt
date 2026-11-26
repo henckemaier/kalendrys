@@ -1,5 +1,6 @@
 package com.kalendrys.app.data.repository
 
+import androidx.annotation.VisibleForTesting
 import androidx.room.withTransaction
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.dao.ShoppingListOwnerRow
@@ -54,7 +55,12 @@ class ShoppingRepository(
 
     suspend fun list(listId: Long): ShoppingList? = listDao.byId(listId)
 
-    /** Cria uma lista avulsa e devolve o id. Nome vazio não é aceito (a UI valida antes). */
+    /**
+     * Cria uma lista SEM tarefa e devolve o id. Desde a v1.10.0 (ADR-0002 16.10.4) nenhum caminho do app
+     * faz isso: a lista nasce com a tarefa (TaskChange.NewShoppingList, addTask com newListName). Fica só
+     * para os testes montarem dados.
+     */
+    @VisibleForTesting
     suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name, clock.nowMillis()))
 
     suspend fun renameList(listId: Long, name: String) {
@@ -63,8 +69,8 @@ class ShoppingRepository(
     }
 
     /**
-     * Exclui a lista, os itens dela e o vínculo de todas as tarefas e rotinas (inclusive arquivadas),
-     * numa transação só (padrão do [RoutineCategoryRepository.delete]).
+     * "Excluir lista" (v1.10.0, P45): apaga a lista, os itens e o vínculo da tarefa dona, numa transação
+     * só. Não sobra lista sem tarefa nem tarefa apontando para lista que não existe.
      */
     suspend fun deleteList(listId: Long) = database.withTransaction {
         itemDao.deleteByList(listId)

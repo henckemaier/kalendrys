@@ -49,7 +49,6 @@ class NewTaskSheetTest {
                     onSave = {},
                     onCancel = {},
                     onDismiss = {},
-                    lists = emptyList(),
                 )
             }
         }

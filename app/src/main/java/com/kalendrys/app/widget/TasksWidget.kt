@@ -219,7 +219,8 @@ private fun RoutineRow(block: TodayOverview.RoutineBlock, date: LocalDate) {
         )
         Spacer(GlanceModifier.width(6.dp))
         Text(
-            text = ShoppingProgress.titleWithProgress(block.title, block.listProgress),
+            // Rotina não tem lista desde a v1.10.0: o carrinho fica só na linha da tarefa.
+            text = block.title,
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
             maxLines = 1,
             modifier = GlanceModifier.defaultWeight(),

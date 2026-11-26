@@ -58,19 +58,6 @@ interface TaskDao {
         return insert(task.copy(shoppingListId = listId))
     }
 
-    /**
-     * Tarefa nova com uma lista EXISTENTE (o painel ainda oferece "usar lista existente" até a T3 da
-     * v1.10.0). Confere na MESMA transação que a lista existe e não é de outra tarefa (índice único):
-     * se não for o caso, grava a tarefa SEM lista em vez de derrubar a gravação (A1 da revisão da T1).
-     * Devolve o id da tarefa.
-     */
-    @Transaction
-    suspend fun insertTaskWithExistingList(task: Task): Long {
-        val listId = task.shoppingListId ?: return insert(task)
-        val usable = listExists(listId) && !listOwnedByAnother(listId, taskId = task.id)
-        return insert(if (usable) task else task.copy(shoppingListId = null))
-    }
-
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(tasks: List<Task>)
@@ -111,27 +98,19 @@ interface TaskDao {
     suspend fun listExists(listId: Long): Boolean
 
     /**
-     * Vincula a tarefa a uma lista EXISTENTE, conferindo a lista na mesma transação: se ela foi
-     * excluída no meio, nada é gravado (sem vínculo com lista inexistente). Devolve se vinculou.
-     */
-    @Transaction
-    suspend fun linkExistingList(taskId: Long, listId: Long): Boolean {
-        if (!listExists(listId)) return false
-        // v1.10.0: a lista é de UMA tarefa (índice único): lista de outra tarefa não é vinculada.
-        if (listOwnedByAnother(listId, taskId)) return false
-        updateShoppingList(taskId, listId)
-        return true
-    }
-
-    @Query("SELECT EXISTS(SELECT 1 FROM tasks WHERE shoppingListId = :listId AND id != :taskId)")
-    suspend fun listOwnedByAnother(listId: Long, taskId: Long): Boolean
-
-    /**
      * Cria a lista [list] (de [ShoppingList.named]) e vincula a tarefa a ela numa transação só (v1.9.0,
      * fecha o NB-E6-A): falhar o vínculo não deixa lista avulsa. Devolve o id da lista.
+     *
+     * Tarefa que JÁ tem lista (a linha atual, lida aqui dentro) não ganha outra: devolve null sem criar
+     * nada (A1 da revisão da T3). Sem isso, um toque duplo em "Adicionar lista" trocava o vínculo e
+     * deixava a primeira lista sem dona, invisível. Vínculo órfão (lista que não existe) conta como sem
+     * lista. Tarefa que não existe mais: null.
      */
     @Transaction
-    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long {
+    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long? {
+        val current = byId(taskId) ?: return null
+        val linked = current.shoppingListId
+        if (linked != null && listExists(linked)) return null
         val listId = insertList(list)
         updateShoppingList(taskId, listId)
         return listId
@@ -181,11 +160,14 @@ interface TaskDao {
     }
 
     /**
-     * Devolve uma tarefa excluída com a lista e os itens, com os mesmos ids, numa transação só. A
-     * lista só volta se ainda não existe (os ids não se repetem; é a defesa contra um Desfazer duplo).
+     * Devolve uma tarefa excluída com a lista e os itens, com os mesmos ids, numa transação só. Tarefa
+     * que já voltou (Desfazer duplo) não grava nada: sem isso o segundo insert lançaria
+     * SQLiteConstraintException no escopo do app e derrubaria o processo (OBS-1 do Lince na T1). A lista
+     * só volta se ainda não existe (os ids não se repetem).
      */
     @Transaction
     suspend fun restoreTaskWithList(deleted: TaskWithList) {
+        if (byId(deleted.task.id) != null) return
         val list = deleted.list
         if (list != null && !listExists(list.id)) {
             insertList(list)

@@ -79,11 +79,9 @@ class TaskRepository(
         timing: TaskTiming = TaskTiming(date = null),
         location: String = "",
         /**
-         * Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. Lista que não existe
-         * ou que já é de outra tarefa não é vinculada: a tarefa nasce sem lista (v1.10.0, A1). Sai na T3.
+         * Nome da lista a criar junto com a tarefa ("Adicionar lista" no painel: o nome da tarefa), ou
+         * null. Sem lista existente desde a v1.10.0 (ADR-0002 16.10.4): a lista é de uma tarefa só.
          */
-        shoppingListId: Long? = null,
-        /** Nome da lista NOVA a criar junto com a tarefa ("Criar nova" no painel), ou null. */
         newListName: String? = null,
     ): Task {
         closeReminderWindow()
@@ -93,15 +91,13 @@ class TaskRepository(
                 title = title.trim(),
                 notes = notes.trim(),
                 location = location.trim(),
-                shoppingListId = if (newList != null) null else shoppingListId,
                 createdAt = clock.nowMillis(),
             ),
             clock.zone(),
         )
         return alarmLock.withLock {
             val saved = if (newList == null) {
-                // Relê: sem dono livre, a transação grava a tarefa sem a lista pedida.
-                checkNotNull(taskDao.byId(taskDao.insertTaskWithExistingList(task)))
+                task.copy(id = taskDao.insert(task))
             } else {
                 // A transação troca o vínculo pelo da lista gravada: relê para devolver a tarefa como ficou.
                 checkNotNull(taskDao.byId(taskDao.insertTaskWithNewList(newList, task)))
@@ -176,13 +172,8 @@ class TaskRepository(
             val updated = change.applyTo(current, zone) ?: return@withLock false
             when (change) {
                 is TaskChange.NewShoppingList -> {
-                    taskDao.linkNewList(taskId, ShoppingList.named(change.name, clock.nowMillis()))
-                    return@withLock true
-                }
-                is TaskChange.ShoppingList -> {
-                    if (updated.shoppingListId == current.shoppingListId) return@withLock false
-                    val listId = updated.shoppingListId
-                    if (listId == null) taskDao.updateShoppingList(taskId, null) else return@withLock taskDao.linkExistingList(taskId, listId)
+                    // Já tem lista: não cria outra (A1 da T3; a transação confere a linha atual).
+                    return@withLock taskDao.linkNewList(taskId, ShoppingList.named(change.name, clock.nowMillis())) != null
                 }
                 else -> {
                     if (updated == current) return@withLock false
@@ -206,7 +197,7 @@ class TaskRepository(
                             scheduler.cancel(taskId)
                             if (!isFinished(updated)) scheduleNext(updated)
                         }
-                        is TaskChange.NewShoppingList, is TaskChange.ShoppingList -> Unit // tratados acima
+                        is TaskChange.NewShoppingList -> Unit // tratado acima
                     }
                 }
             }
@@ -350,6 +341,12 @@ class TaskRepository(
      * públicos a pegam; o [scheduleNext] privado (chamado de dentro deles) não.
      */
     private val alarmLock = Mutex()
+
+    /**
+     * A tarefa DONA da lista [listId] (v1.10.0: a lista é de uma tarefa só), ou `null` se a lista não
+     * existe ou não tem dona. O link de lista abre a lista sobre o detalhe dela (ADR-0002 16.10.4).
+     */
+    suspend fun ownerOfList(listId: Long): Task? = taskDao.byShoppingList(listId).firstOrNull()
 
     /**
      * Tarefas vinculadas à lista [listId] e se cada uma está pendente agora (atrasada, de hoje ou

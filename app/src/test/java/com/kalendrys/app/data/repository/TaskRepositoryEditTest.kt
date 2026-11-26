@@ -9,6 +9,7 @@ import com.kalendrys.app.domain.RecurrenceUnit
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.linkList
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import java.time.LocalDate
 import java.time.LocalTime
@@ -94,13 +95,11 @@ class TaskRepositoryEditTest {
     @Test
     fun `observacoes, local e lista nao tocam em alarme`() = runTest {
         val saved = repository.addTask("Tarefa", timing = futureTiming())
-        val listId = shopping.createList("Mercado")
         scheduler.reset()
         windowsClosed = 0
 
         repository.edit(saved.id, TaskChange.Notes("n"))
         repository.edit(saved.id, TaskChange.Location("l"))
-        repository.edit(saved.id, TaskChange.ShoppingList(listId))
         repository.edit(saved.id, TaskChange.NewShoppingList("Farmácia"))
 
         assertTrue(scheduler.scheduled.isEmpty())
@@ -190,7 +189,6 @@ class TaskRepositoryEditTest {
     fun `mudanca que nao muda nada nao grava`() = runTest {
         val saved = repository.addTask("Tarefa")
         assertFalse(repository.edit(saved.id, TaskChange.Title("Tarefa")))
-        assertFalse(repository.edit(saved.id, TaskChange.ShoppingList(null)))
     }
 
     @Test
@@ -260,7 +258,7 @@ class TaskRepositoryEditTest {
     @Test
     fun `lista excluida por fora - editar o titulo nao devolve o vinculo`() = runTest {
         val listId = shopping.createList("Mercado")
-        val saved = repository.addTask("Tarefa", shoppingListId = listId)
+        val saved = repository.addTask("Tarefa").also { db.linkList(it.id, listId) }
         shopping.deleteList(listId)
 
         repository.edit(saved.id, TaskChange.Title("Tarefa nova"))
@@ -268,17 +266,6 @@ class TaskRepositoryEditTest {
         val after = task(saved.id)
         assertEquals("Tarefa nova", after.title)
         assertNull(after.shoppingListId)
-    }
-
-    @Test
-    fun `vincular a uma lista ja excluida nao grava`() = runTest {
-        val listId = shopping.createList("Mercado")
-        val saved = repository.addTask("Tarefa")
-        shopping.deleteList(listId)
-
-        assertFalse(repository.edit(saved.id, TaskChange.ShoppingList(listId)))
-
-        assertNull(task(saved.id).shoppingListId)
     }
 
     @Test
@@ -293,6 +280,28 @@ class TaskRepositoryEditTest {
     }
 
     @Test
+    fun `lista nova duas vezes seguidas - uma lista so, sem lista sem dona`() = runTest {
+        // A1 da revisão da T3: toque duplo em "Adicionar lista".
+        val saved = repository.addTask("Feira")
+
+        assertTrue(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+        assertFalse(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+
+        val lists = db.shoppingListDao().all()
+        assertEquals(1, lists.size)
+        assertEquals(lists.single().id, task(saved.id).shoppingListId)
+    }
+
+    @Test
+    fun `lista nova com vinculo orfao cria a lista`() = runTest {
+        val saved = repository.addTask("Feira").also { db.linkList(it.id, 404) }
+
+        assertTrue(repository.edit(saved.id, TaskChange.NewShoppingList("Feira")))
+
+        assertEquals(db.shoppingListDao().all().single().id, task(saved.id).shoppingListId)
+    }
+
+    @Test
     fun `lista nova com nome em branco nao cria lista`() = runTest {
         val saved = repository.addTask("Tarefa")
 
@@ -300,17 +309,6 @@ class TaskRepositoryEditTest {
 
         assertTrue(db.shoppingListDao().all().isEmpty())
         assertNull(task(saved.id).shoppingListId)
-    }
-
-    @Test
-    fun `desvincular mantem a lista`() = runTest {
-        val listId = shopping.createList("Mercado")
-        val saved = repository.addTask("Tarefa", shoppingListId = listId)
-
-        assertTrue(repository.edit(saved.id, TaskChange.ShoppingList(null)))
-
-        assertNull(task(saved.id).shoppingListId)
-        assertEquals(1, db.shoppingListDao().all().size)
     }
 
     @Test

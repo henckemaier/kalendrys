@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Bookmarks
@@ -212,8 +213,21 @@ private fun EditorContent(
         mutableStateOf(fields.startEpochDay != null || fields.endEpochDay != null || fields.notes.isNotBlank())
     }
     val exerciseItems = state.exerciseItems
+    val listState = rememberLazyListState()
+    // Condição do Esquadro no achado 2: aplicar um salvo FECHA o painel e o exercício novo fica à vista
+    // (rola até ele), para um toque repetido não duplicar sem ninguém notar. Guarda quantos havia ao
+    // aplicar; quando a lista cresce, rola até o último (o aplicado entra no fim, na criação e na edição).
+    var scrollAfterApplyFrom by rememberSaveable { mutableStateOf<Int?>(null) }
+    LaunchedEffect(exerciseItems.size) {
+        val from = scrollAfterApplyFrom ?: return@LaunchedEffect
+        if (exerciseItems.size > from) {
+            scrollAfterApplyFrom = null
+            listState.animateScrollToItem(exerciseListStart(isNew = state.isNew) + exerciseItems.lastIndex)
+        }
+    }
 
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
+        // Itens antes dos exercícios: conferir [exerciseListStart] ao mexer aqui.
         item(key = "preview") { Preview(fields) }
         if (state.isNew) {
             item(key = "templates") {
@@ -390,6 +404,7 @@ private fun EditorContent(
         SavedExercisesSheet(
             saved = state.savedExercises,
             onApply = { saved ->
+                scrollAfterApplyFrom = exerciseItems.size
                 viewModel.applySavedExercise(saved)
                 showSavedSheet = false
             },
@@ -432,3 +447,9 @@ private fun EditorContent(
         )
     }
 }
+
+/**
+ * Índice, na lista do editor, do primeiro exercício: prévia, modelos (só na criação), título, quando,
+ * lembrar, tipo e o título da seção Exercícios vêm antes. Segue a ordem de [EditorContent].
+ */
+internal fun exerciseListStart(isNew: Boolean): Int = if (isNew) 7 else 6

@@ -11,6 +11,7 @@ import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.reminder.ReminderScheduler
+import com.kalendrys.app.testutil.linkList
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import java.time.LocalDate
 import java.time.LocalTime
@@ -210,7 +211,7 @@ class TaskRepositoryTest {
     fun `concluir tarefa repetida zera a lista e desfazer restaura`() = runTest {
         val listId = listWithPickedItems()
         val task = repository.addTask("Feira", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.edit(task.id, TaskChange.ShoppingList(listId))
+        db.linkList(task.id, listId)
 
         val logId = repository.logCompletion(task.id)
         assertEquals(listOf(false, false), picked(listId))
@@ -223,7 +224,7 @@ class TaskRepositoryTest {
     fun `concluir tarefa unica nao mexe na lista`() = runTest {
         val listId = listWithPickedItems()
         val task = repository.addTask("Compra do mês", timing = todayTiming())
-        repository.edit(task.id, TaskChange.ShoppingList(listId))
+        db.linkList(task.id, listId)
 
         repository.logCompletion(task.id)
         assertEquals(listOf(true, true), picked(listId))
@@ -234,7 +235,7 @@ class TaskRepositoryTest {
         // v1.10.0 (ADR-0002 16.10.4): a lista é da tarefa.
         val listId = listWithPickedItems()
         val task = repository.addTask("Feira", timing = todayTiming())
-        repository.edit(task.id, TaskChange.ShoppingList(listId))
+        db.linkList(task.id, listId)
         val list = db.shoppingListDao().byId(listId)!!
         val items = db.shoppingItemDao().all().filter { it.listId == listId }.sortedBy { it.id }
 
@@ -252,43 +253,40 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `dona da lista vem do banco - e sem dona ou sem lista nao ha`() = runTest {
+        // O link de lista abre sobre o detalhe da dona (v1.10.0, ADR-0002 16.10.4).
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Feira", timing = todayTiming())
+        db.linkList(task.id, listId)
+
+        assertEquals(task.id, repository.ownerOfList(listId)?.id)
+        assertNull("lista que não existe", repository.ownerOfList(404))
+        db.linkList(task.id, null)
+        assertNull("lista sem dona", repository.ownerOfList(listId))
+    }
+
+    @Test
+    fun `Desfazer duplo da exclusao nao grava de novo nem derruba`() = runTest {
+        // OBS-1 do Lince (T1): a segunda restauração do mesmo pacote não pode lançar.
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Feira", timing = todayTiming())
+        db.linkList(task.id, listId)
+        val deleted = checkNotNull(repository.deleteTask(task))
+
+        repository.restoreTask(deleted)
+        repository.restoreTask(deleted)
+
+        assertEquals(listOf(task.id), db.taskDao().all().map { it.id })
+        assertEquals(listId, db.taskDao().byId(task.id)!!.shoppingListId)
+        assertEquals(deleted.items.size, db.shoppingItemDao().all().count { it.listId == listId })
+    }
+
+    @Test
     fun `excluir a tarefa que nao existe mais devolve null`() = runTest {
         val task = repository.addTask("Feira", timing = todayTiming())
         checkNotNull(repository.deleteTask(task))
 
         assertNull(repository.deleteTask(task))
-    }
-
-    @Test
-    fun `criar tarefa com lista de outra tarefa nasce sem lista, sem derrubar a gravacao`() = runTest {
-        // A1 da revisão da T1: com o índice único, inserir direto derrubaria o app.
-        val listId = listWithPickedItems()
-        val owner = repository.addTask("Feira", timing = todayTiming(), shoppingListId = listId)
-        assertEquals(listId, db.taskDao().byId(owner.id)!!.shoppingListId)
-
-        val second = repository.addTask("Mercado", timing = todayTiming(), shoppingListId = listId)
-
-        assertNull(second.shoppingListId)
-        assertNull(db.taskDao().byId(second.id)!!.shoppingListId)
-        assertEquals("a dona continua com a lista", listId, db.taskDao().byId(owner.id)!!.shoppingListId)
-    }
-
-    @Test
-    fun `criar tarefa com lista que nao existe nasce sem lista`() = runTest {
-        val task = repository.addTask("Feira", timing = todayTiming(), shoppingListId = 404)
-
-        assertNull(db.taskDao().byId(task.id)!!.shoppingListId)
-    }
-
-    @Test
-    fun `lista de outra tarefa nao e vinculada (lista de uma tarefa so)`() = runTest {
-        val listId = listWithPickedItems()
-        val first = repository.addTask("Feira", timing = todayTiming())
-        val second = repository.addTask("Mercado", timing = todayTiming())
-        assertTrue(repository.edit(first.id, TaskChange.ShoppingList(listId)))
-
-        assertFalse(repository.edit(second.id, TaskChange.ShoppingList(listId)))
-        assertNull(db.taskDao().byId(second.id)!!.shoppingListId)
     }
 
     @Test
@@ -309,8 +307,8 @@ class TaskRepositoryTest {
         val doneList = listWithPickedItems()
         val pending = repository.addTask("Pendente", timing = todayTiming())
         val done = repository.addTask("Feita", timing = todayTiming())
-        repository.edit(pending.id, TaskChange.ShoppingList(pendingList))
-        repository.edit(done.id, TaskChange.ShoppingList(doneList))
+        db.linkList(pending.id, pendingList)
+        db.linkList(done.id, doneList)
         repository.logCompletion(done.id)
 
         assertEquals(
@@ -390,8 +388,8 @@ class TaskRepositoryTest {
         val dailyList = listWithPickedItems()
         val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
         val daily = repository.addTask("Diária", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.edit(tomorrow.id, TaskChange.ShoppingList(tomorrowList))
-        repository.edit(daily.id, TaskChange.ShoppingList(dailyList))
+        db.linkList(tomorrow.id, tomorrowList)
+        db.linkList(daily.id, dailyList)
         repository.logCompletion(daily.id)
 
         assertEquals(mapOf(tomorrow.id to true), repository.linkedTasks(tomorrowList).associate { it.taskId to it.pending })
@@ -402,7 +400,7 @@ class TaskRepositoryTest {
     fun `tarefa unica de amanha ja concluida nao conta como pendente`() = runTest {
         val listId = listWithPickedItems()
         val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
-        repository.edit(tomorrow.id, TaskChange.ShoppingList(listId))
+        db.linkList(tomorrow.id, listId)
         repository.logCompletion(tomorrow.id)
 
         assertEquals(listOf(false), repository.linkedTasks(listId).map { it.pending })
@@ -462,7 +460,7 @@ class TaskRepositoryTest {
     @Test
     fun `tarefa unica adiantada com lista nao zera e desfazer devolve a data sem mexer na lista`() = runTest {
         val listId = listWithPickedItems()
-        val task = repository.addTask("Mercado amanhã", timing = tomorrowAtNine(), shoppingListId = listId)
+        val task = repository.addTask("Mercado amanhã", timing = tomorrowAtNine()).also { db.linkList(it.id, listId) }
         val original = db.taskDao().byId(task.id)!!
 
         val logId = repository.logCompletion(task.id)
@@ -599,8 +597,7 @@ class TaskRepositoryTest {
         val daily = repository.addTask(
             "Remédio",
             timing = TaskTiming(date = LocalDate.now().minusDays(1), time = LocalTime.of(10, 0), repeat = ReminderRepeat.DAILY),
-            shoppingListId = listId,
-        )
+        ).also { db.linkList(it.id, listId) }
         val now = at(LocalDate.now(), 11)
         val alarmBefore = repository.nextReminderToDeliver(now)
         scheduler.reset()

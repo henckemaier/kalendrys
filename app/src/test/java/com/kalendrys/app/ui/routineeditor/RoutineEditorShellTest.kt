@@ -2,6 +2,7 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import android.os.Looper
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -111,6 +112,13 @@ class RoutineEditorShellTest {
         return saved.id
     }
 
+    /** Roda a ação de acessibilidade [label] da linha com o texto [rowText] (a do menu da linha). */
+    private fun rowAction(rowText: String, label: String) {
+        val node = compose.onNode(hasText(rowText) and hasClickAction()).fetchSemanticsNode()
+        val action = node.config[SemanticsActions.CustomActions].first { it.label == label }
+        compose.runOnIdle { action.action() }
+    }
+
     /** O Room volta ao Main a cada consulta: drena o looper enquanto espera. */
     private fun waitFor(condition: () -> Boolean) = compose.waitUntil(TIMEOUT_MS) {
         shadowOf(Looper.getMainLooper()).idle()
@@ -163,6 +171,25 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `tipo - cada opcao e botao de opcao num grupo, e a selecionada vem marcada`() {
+        // Achado 1 da Coruja: o leitor anunciava "caixa de seleção" (FilterChip). Agora é botão de opção.
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        listOf("Nenhum" to true, "Exercício" to false).forEach { (label, selected) ->
+            val node = compose.onNode(hasText(label) and hasClickAction()).fetchSemanticsNode()
+            assertEquals(label, Role.RadioButton, node.config[SemanticsProperties.Role])
+            assertEquals(label, selected, node.config[SemanticsProperties.Selected])
+            assertEquals(label, null, node.config.getOrNull(SemanticsProperties.ToggleableState))
+        }
+        // As duas no mesmo grupo de seleção.
+        val groups = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+            .fetchSemanticsNodes()
+            .filter { group -> group.children.any { child -> child.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Exercício" } == true } }
+        assertEquals(1, groups.size)
+        assertEquals(2, groups.single().children.count { it.config.getOrNull(SemanticsProperties.Role) == Role.RadioButton })
+    }
+
+    @Test
     fun `criacao - Tipo com Nenhum e Exercicio, um so escolhido, e Exercicio abre a lista de exercicios`() {
         show(NEW_ROUTINE_ID)
         // Na criação a prévia e os modelos vêm antes: rola até o Tipo para a LazyColumn compô-lo.
@@ -203,6 +230,53 @@ class RoutineEditorShellTest {
     }
 
     @Test
+    fun `salvos - aplicar fecha o painel e o exercicio novo fica visivel, mesmo no fim de uma lista longa`() {
+        // Condição do Esquadro no achado 2: um toque repetido não duplica sem ninguém notar.
+        val routineId = runBlocking {
+            val routine = routines.add(Routine(title = "Força", startMinute = 420, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+            val exercises = ExerciseRepository(testDb.db.exerciseItemDao(), clock = SystemAppClock)
+            (1..12).forEach { n -> exercises.add(routine.id, "Exercício $n", sets = 3, reps = 10, load = null, restSeconds = null) }
+            testDb.db.savedExerciseDao().insert(SavedExercise(name = "Agachamento", sets = 4, reps = 6, createdAt = TEST_CREATED_AT))
+            routine.id
+        }
+        show(routineId)
+        waitFor { viewModel!!.uiState.value.exerciseItems.size == 12 }
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
+        // Volta ao topo: o exercício novo, no fim da lista, fica fora da tela até o editor rolar. A lista
+        // do editor (não a do painel, que também rola): a de muitas linhas.
+        val editorList = hasScrollToKeyAction() and SemanticsMatcher("lista do editor") {
+            (it.config.getOrNull(SemanticsProperties.CollectionInfo)?.rowCount ?: 0) > 10
+        }
+        compose.onNode(editorList).performScrollToKey("title")
+
+        compose.onNode(hasText("Agachamento") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
+        waitFor { viewModel!!.uiState.value.exerciseItems.lastOrNull()?.name == "Agachamento" }
+        waitFor {
+            compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes()
+                .any { it.config.getOrNull(SemanticsActions.OnClick)?.label == "Editar Agachamento" }
+        }
+        compose.onNode(hasText("Agachamento") and hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun `salvos - painel vazio mostra o estado vazio`() {
+        // Achado 3 da Coruja: o painel sem salvos diz o que fazer.
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Salve um exercício para reutilizar em outras rotinas.").assertExists()
+    }
+
+    @Test
     fun `salvos - excluir no painel pede confirmacao - cancelar mantem, confirmar apaga`() {
         // B2 do Esquadro (critério da P45): confirmação, sem Desfazer.
         runBlocking {
@@ -215,16 +289,17 @@ class RoutineEditorShellTest {
         compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
         compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
         compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
-        waitFor { compose.onAllNodes(hasContentDescription("Excluir Agachamento dos salvos")).fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
         val storedCount = { runBlocking { testDb.db.savedExerciseDao().all() }.size }
 
-        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        // Excluir pela ação da linha (a mesma do menu de três pontos; achado 2 da Coruja).
+        rowAction("Agachamento", "Excluir Agachamento dos salvos")
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("Cancelar") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
         assertEquals("cancelar não apaga", 1, storedCount())
 
-        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        rowAction("Agachamento", "Excluir Agachamento dos salvos")
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("Excluir") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
 

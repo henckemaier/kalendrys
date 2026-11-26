@@ -20,7 +20,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
@@ -82,21 +81,16 @@ class ShoppingProgressTagFitTest {
                     ShoppingItem(listId = listId, name = "Café", position = 2, createdAt = TEST_CREATED_AT),
                 ),
             )
-            db.routineDao().insert(
-                Routine(
-                    title = "Compras da semana no mercado do bairro com a família",
-                    startMinute = 10 * 60,
-                    durationMinutes = 90,
-                    remind = true,
-                    createdAt = 0,
-                    shoppingListId = listId,
-                ),
-            )
+            // v1.10.0: o "2/3" na Hoje fica na linha da TAREFA (rotina não tem lista): tarefa de hoje com
+            // horário, na trilha. A mesma tarefa aparece na aba Tarefas.
+            val today = java.time.LocalDate.now()
             db.taskDao().insert(
                 Task(
                     title = "Passar no mercado e conferir a lista inteira de compras",
                     location = "Supermercado do bairro, perto da praça",
                     shoppingListId = listId,
+                    dueDate = today.toEpochDay(),
+                    reminderAt = today.atTime(23, 30).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
                     createdAt = TEST_CREATED_AT,
                 ),
             )
@@ -153,7 +147,7 @@ class ShoppingProgressTagFitTest {
     }
 
     @Test
-    fun `aba Rotinas mostra 2 de 3 inteiro com fonte 1_0, 1_3 e 2_0`() {
+    fun `Hoje mostra 2 de 3 inteiro na linha da tarefa com fonte 1_0, 1_3 e 2_0`() {
         val viewModel = routinesViewModel()
         showAtEachScale("Rotinas") {
             TodayScreen(

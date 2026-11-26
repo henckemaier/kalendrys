@@ -4,6 +4,8 @@
 <resources>
     <string name="shortcut_new_task_short">Nova tarefa</string>
     <string name="shortcut_new_task_long">Nova tarefa</string>
-    <string name="shortcut_lists_short">Listas</string>
-    <string name="shortcut_lists_long">Listas de compras</string>
+    <!-- v1.10.0: o atalho de id "lists" passou a abrir a aba Tarefas (a aba Listas saiu), para o
+         atalho fixado na tela inicial continuar funcionando. -->
+    <string name="shortcut_tasks_short">Tarefas</string>
+    <string name="shortcut_tasks_long">Abrir as tarefas</string>
 </resources>

@@ -97,10 +97,13 @@ class TodayScreenSemanticsTest {
 
     /** O nó (mesclado) da LINHA que mostra [text]: a que tem estado (o "A seguir" também pode citar o título). */
     private fun row(text: String): SemanticsNode =
-        compose.onNode(hasText(text, substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+        compose.onNode((hasText(text, substring = true) or hasContentDescription(text, substring = true)) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
             .fetchSemanticsNode()
 
     private fun SemanticsNode.texts(): List<String> = config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+
+    /** A linha de tarefa lê o título pela descrição (tipo, hora, título; v1.10.0, 16.10.8 item 6). */
+    private fun shows(text: String) = hasText(text, substring = true) or hasContentDescription(text, substring = true)
 
     private fun SemanticsNode.actionLabels(): List<String?> =
         config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
@@ -136,6 +139,10 @@ class TodayScreenSemanticsTest {
 
     @Test
     fun `tarefa da trilha e tarefa sem horario sao um no cada, com estado e concluir acessivel`() {
+        // Leitura (v1.10.0, 16.10.8 item 6): tipo, hora e título na trilha; tipo e título sem horário.
+        val timed = row("Ligar para o banco").config[SemanticsProperties.ContentDescription].first()
+        assertTrue(timed, Regex("""^Tarefa, \d{2}:\d{2}, Ligar para o banco$""").matches(timed))
+        assertEquals("Tarefa, Comprar pão", row("Comprar pão").config[SemanticsProperties.ContentDescription].first())
         listOf("Ligar para o banco", "Comprar pão").forEach { title ->
             val node = row(title)
             assertEquals(title, "Pendente", node.config[SemanticsProperties.StateDescription])
@@ -146,10 +153,10 @@ class TodayScreenSemanticsTest {
 
         // E3: concluída sai de "Hoje" e vai para "Concluídas" (recolhida); aberta, a linha é Feita e desmarcável.
         compose.runOnIdle { row("Comprar pão").config[SemanticsActions.CustomActions].single().action() }
-        waitFor { compose.onAllNodes(hasText("Comprar pão")).fetchSemanticsNodes().isEmpty() }
+        waitFor { compose.onAllNodes(shows("Comprar pão")).fetchSemanticsNodes().isEmpty() }
         val done = compose.onNode(heading and hasText("Concluídas")).fetchSemanticsNode()
         compose.runOnIdle { done.config[SemanticsActions.OnClick].action?.invoke() }
-        waitFor { compose.onAllNodes(hasText("Comprar pão")).fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodes(shows("Comprar pão")).fetchSemanticsNodes().isNotEmpty() }
         assertEquals("Feita", row("Comprar pão").config[SemanticsProperties.StateDescription])
         assertEquals(listOf<String?>("Desmarcar Comprar pão"), row("Comprar pão").actionLabels())
     }

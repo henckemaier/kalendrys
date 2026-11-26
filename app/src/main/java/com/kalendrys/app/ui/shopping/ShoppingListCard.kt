@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,26 +23,22 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
-import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.MoneyFormat
 import com.kalendrys.app.ui.theme.Spacing
 
 /**
- * Cartão-resumo de uma lista de compras (ADR-0001): nome, progresso, total e os outros donos.
- * Tocar abre a lista; [onDetach] (quando não nulo) mostra a ação "Desvincular". Reutilizado no
- * editor de rotina (v1.5.0) e no detalhe da tarefa (v1.6.0).
- *
- * [isCurrentOwner] tira da etiqueta de donos quem está mostrando o cartão (a própria rotina ou
- * tarefa), para a etiqueta dizer só com quem mais a lista é compartilhada.
+ * Cartão-resumo da lista de uma tarefa (ADR-0001; v1.10.0, ADR-0002 16.10.4): nome, progresso e total.
+ * Tocar abre a lista; [onDelete] (quando não nulo) mostra a ação "Excluir lista", que quem chama
+ * confirma antes ([DeleteListDialog]). A lista é de uma tarefa só: não há mais etiqueta de outros donos
+ * nem "Desvincular".
  */
 @Composable
 fun ShoppingListCard(
     summary: ShoppingListSummary,
     onOpen: () -> Unit,
-    onDetach: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    isCurrentOwner: (ShoppingListOwner) -> Boolean = { false },
 ) {
     val progress = summary.progress
     Surface(
@@ -95,21 +91,10 @@ fun ShoppingListCard(
                             .padding(top = Spacing.s),
                     )
                 }
-                val others = summary.owners.filterNot(isCurrentOwner)
-                if (others.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.list_card_shared_with, others.joinToString { it.title }),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                }
             }
-            if (onDetach != null) {
-                IconButton(onClick = onDetach) {
-                    Icon(Icons.Outlined.LinkOff, contentDescription = stringResource(R.string.list_card_detach))
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.shopping_list_delete))
                 }
             }
         }

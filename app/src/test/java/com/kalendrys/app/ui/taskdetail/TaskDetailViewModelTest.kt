@@ -18,6 +18,7 @@ import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.linkList
 import com.kalendrys.app.testutil.testUndoOffers
 import java.time.LocalDate
 import java.time.LocalTime
@@ -125,8 +126,7 @@ class TaskDetailViewModelTest {
         taskRepository.addTask(
             "Levar o carro",
             timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)),
-            shoppingListId = listId,
-        ).id
+        ).id.also { if (listId != null) db.linkList(it, listId) }
 
     /** A oferta do app (no escopo do app, tempo real). */
     private suspend fun awaitOffer() = withContext(Dispatchers.Default) {
@@ -474,39 +474,60 @@ class TaskDetailViewModelTest {
     }
 
     @Test
-    fun `usar lista existente e desvincular gravam na hora e a lista fica`() = runBlocking {
-        val listId = shoppingRepository.createList("Mercado")
-        shoppingRepository.add(listId, "Café", quantity = 1, priceCents = 0)
-        val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
-        val vm = viewModel(id)
-        vm.awaitUi { it.task != null }
-
-        vm.attachShoppingList(listId)
-        vm.awaitPendingWrites()
-        assertEquals(listId, stored(id).shoppingListId)
-        vm.awaitUi { it.shoppingList?.id == listId }
-
-        vm.detachShoppingList()
-        vm.awaitPendingWrites()
-        assertNull(stored(id).shoppingListId)
-        assertNotNull("a lista continua", shoppingRepository.observeSummary(listId).first())
-    }
-
-    @Test
-    fun `criar nova vincula numa transacao e reverter deixa a lista avulsa`() = runBlocking {
+    fun `Adicionar lista cria na hora com o nome da tarefa e o Reverter nao a desfaz`() = runBlocking {
+        // v1.10.0 (ADR-0002 16.10.4, P46): sem seletor; o nome é o da tarefa.
         val id = db.taskDao().insert(Task(title = "Churrasco", createdAt = TEST_CREATED_AT))
         val vm = viewModel(id)
         vm.awaitUi { it.task != null }
+        vm.updateTitle("Churrasco de sábado")
 
-        vm.createShoppingList("Churrasco")
+        vm.createShoppingList()
         vm.awaitPendingWrites()
-        val linked = stored(id).shoppingListId!!
+        val linked = checkNotNull(stored(id).shoppingListId)
+        assertEquals("Churrasco de sábado", shoppingRepository.observeSummary(linked).first()?.name)
 
         vm.revert()
         vm.awaitPendingWrites()
-        assertNull(stored(id).shoppingListId)
-        // Aceito pelo Esquadro: a lista criada na sessão fica avulsa na aba Listas.
-        assertEquals("Churrasco", shoppingRepository.observeSummary(linked).first()?.name)
+        assertEquals("criar lista não entra no Reverter", linked, stored(id).shoppingListId)
+    }
+
+    @Test
+    fun `excluir e adicionar lista em seguida saem na ordem - fica uma lista nova`() = runBlocking {
+        // A2 da revisão da T3: excluir passa pela mesma fila do editor.
+        val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
+        val vm = viewModel(id)
+        vm.awaitUi { it.task != null }
+        vm.createShoppingList()
+        vm.awaitPendingWrites()
+        val first = checkNotNull(stored(id).shoppingListId)
+        vm.awaitUi { it.shoppingList?.id == first }
+
+        vm.deleteShoppingList()
+        vm.createShoppingList()
+        vm.awaitPendingWrites()
+
+        val second = checkNotNull(stored(id).shoppingListId)
+        assertTrue("a lista nova é outra", second != first)
+        assertNull("a primeira foi excluída", shoppingRepository.list(first))
+        assertEquals(listOf(second), db.shoppingListDao().all().map { it.id })
+    }
+
+    @Test
+    fun `Excluir lista apaga lista e itens e tira o vinculo`() = runBlocking {
+        val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
+        val vm = viewModel(id)
+        vm.awaitUi { it.task != null }
+        vm.createShoppingList()
+        vm.awaitPendingWrites()
+        val listId = checkNotNull(stored(id).shoppingListId)
+        shoppingRepository.add(listId, "Café", quantity = 1, priceCents = 0)
+        vm.awaitUi { it.shoppingList?.id == listId }
+
+        vm.deleteShoppingList()
+        withTimeout(TIMEOUT_MS) { while (stored(id).shoppingListId != null) kotlinx.coroutines.delay(20) }
+
+        assertNull(shoppingRepository.list(listId))
+        assertTrue(db.shoppingItemDao().all().none { it.listId == listId })
     }
 
     @Test

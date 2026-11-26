@@ -176,14 +176,17 @@ class TaskDetailShellTest {
     }
 
     @Test
-    fun `Excluir tarefa no menu com rotulo pede confirmacao`() {
-        show()
+    fun `Excluir tarefa no menu com rotulo exclui sem confirmacao`() {
+        // P7 (v1.10.0, ADR-0002 16.10.4): a proteção é o Desfazer, que devolve tarefa, lista e itens.
+        val id = show()
         assertEquals(0, compose.onAllNodesWithText("Excluir tarefa").fetchSemanticsNodes().size)
 
         openMenu()
         compose.onNodeWithText("Excluir tarefa").performClick()
 
-        compose.onNodeWithText("Excluir tarefa?").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodesWithText("Excluir tarefa?").fetchSemanticsNodes().size)
+        runBlocking { withTimeoutOrNull(TIMEOUT_MS) { viewModel!!.awaitPendingWrites() } }
+        assertEquals(null, runBlocking { testDb.db.taskDao().byId(id) })
     }
 
     @Test

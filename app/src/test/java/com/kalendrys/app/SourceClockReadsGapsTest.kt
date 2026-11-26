@@ -1,5 +1,6 @@
 package com.kalendrys.app
 
+import com.kalendrys.app.testutil.KotlinSourceText
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,9 +48,8 @@ class SourceClockReadsGapsTest {
             .map { it.relativeTo(sourceRoot).invariantSeparatorsPath to it.readText() }
             .toList()
 
-    /** A mesma limpeza do [SourceClockReadsTest]. */
-    private fun withoutComments(text: String): String =
-        text.replace(Regex("""/\*[\s\S]*?\*/"""), " ").replace(Regex("""//[^\n]*"""), " ")
+    /** A mesma limpeza do [SourceClockReadsTest]: o leitor [KotlinSourceText], que conhece strings. */
+    private fun withoutComments(text: String): String = KotlinSourceText.codeOnly(text)
 
     @Test
     fun `nenhuma leitura escondida do relogio fora da peca e das excecoes`() {
@@ -85,28 +85,15 @@ class SourceClockReadsGapsTest {
         ).forEach { assertFalse(it, hiddenReads.containsMatchIn(it)) }
     }
 
-    @Test
-    fun `nenhuma string de producao abre ou fecha comentario de bloco - a limpeza nao esconde codigo`() {
-        val found = sources().flatMap { (relative, text) ->
-            text.lines().mapIndexedNotNull { index, line ->
-                stringWithBlockCommentMark.find(line)?.let { "$relative:${index + 1}: ${it.value}" }
-            }
-        }
-
-        assertEquals(
-            "string com marca de comentário de bloco: a limpeza do SourceClockReadsTest esconderia o código seguinte:\n" +
-                found.joinToString("\n"),
-            emptyList<String>(),
-            found,
-        )
-    }
+    // A premissa "nenhuma string de produção abre ou fecha comentário de bloco" saiu com a correção do
+    // buraco (KotlinSourceText lê as strings antes): "image/" + "*" numa string agora é permitido.
 
     @Test
-    fun `demonstracao do buraco - uma string com abertura de comentario esconde a leitura`() {
+    fun `buraco fechado - uma string com abertura de comentario nao esconde mais a leitura`() {
         val source = "val mime = \"image/" + "*\"\nval t = System.currentTimeMillis()\n/* fim */\n"
         assertTrue(stringWithBlockCommentMark.containsMatchIn(source))
-        assertFalse(
-            "a limpeza sem strings apaga a leitura junto com o falso comentário",
+        assertTrue(
+            "a leitura depois da string continua sendo código",
             withoutComments(source).contains("System.currentTimeMillis"),
         )
     }

@@ -29,7 +29,4 @@ class NewTaskDraftStore {
 
     /** Descarta e devolve o rascunho (Cancelar devolve e esquece; Salvar grava o devolvido). */
     fun discard(): NewTaskDraft? = _draft.getAndUpdate { null }
-
-    /** Lista excluída enquanto escolhida no rascunho some da escolha. */
-    fun keepListsIn(existingListIds: Set<Long>) = update { it.keepingListsIn(existingListIds) }
 }

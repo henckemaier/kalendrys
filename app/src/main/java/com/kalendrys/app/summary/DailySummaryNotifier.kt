@@ -45,7 +45,7 @@ object DailySummaryNotifier {
 
         // Primeiro o que tem horário (lembretes de hoje e rotinas), em ordem; depois as tarefas sem horário.
         val timed = overview.pending.mapNotNull { task -> task.reminderToday?.let { it to task.titleWithList() } } +
-            routinesAhead.map { it.start to ShoppingProgress.titleWithProgress(it.title, it.listProgress) }
+            routinesAhead.map { it.start to it.title }
         val lines = timed.sortedBy { it.first }.map { (time, title) -> "${time.format(TIME)}  $title" } +
             overview.pending.filter { it.reminderToday == null }.map { it.titleWithList() }
 

@@ -49,14 +49,11 @@ sealed interface TaskChange {
             timing.takeIf { it.isValid }?.applyTo(task, zone)
     }
 
-    /** Vincula a uma lista EXISTENTE ([listId]) ou desvincula (`null`). */
-    data class ShoppingList(val listId: Long?) : TaskChange {
-        override fun applyTo(task: Task, zone: ZoneId): Task = task.copy(shoppingListId = listId)
-    }
-
     /**
      * Cria uma lista nova com [name] e vincula a tarefa a ela, numa transação só no repositório (o id
-     * só existe depois de gravar a lista). Aqui só a validação: nome em branco não cria lista.
+     * só existe depois de gravar a lista). Aqui só a validação: nome em branco não cria lista. É o ÚNICO
+     * jeito de dar lista a uma tarefa desde a v1.10.0 (ADR-0002 16.10.4): sem vincular lista existente e
+     * sem desvincular (a lista sai com "Excluir lista", que apaga lista e itens).
      */
     data class NewShoppingList(val name: String) : TaskChange {
         override fun applyTo(task: Task, zone: ZoneId): Task? = task.takeIf { name.isNotBlank() }

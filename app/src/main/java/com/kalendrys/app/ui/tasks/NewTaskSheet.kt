@@ -60,12 +60,9 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
-import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.domain.NewTaskDraft
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.ui.components.isCompactHeight
 import com.kalendrys.app.ui.components.windowHeightDp
-import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -76,8 +73,8 @@ import kotlinx.coroutines.launch
  * Fechar pelo voltar, tocando fora ou arrastando para baixo ([onDismiss]) GUARDA o rascunho;
  * [onCancel] o descarta; [onSave] grava a tarefa e o descarta (quem chama decide, aqui só avisa).
  *
- * [lists] liga a opção de anexar lista de compras ("Criar nova" / "Usar lista existente"); `null`
- * esconde a opção.
+ * "Adicionar lista" (v1.10.0, ADR-0002 16.10.4): só marca o rascunho; a lista nasce ao salvar, com o
+ * nome da tarefa (P46). Sem seletor e sem lista existente.
  */
 @Composable
 internal fun NewTaskSheet(
@@ -86,11 +83,9 @@ internal fun NewTaskSheet(
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
-    lists: List<ShoppingListSummary>? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var showListPicker by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     // Foco no Título só na PRIMEIRA abertura (v1.9.0): salvo, para girar a tela ou recriar o painel não
     // tirar o foco do campo em que a pessoa está. Fechar e reabrir é outra abertura (estado novo).
@@ -191,14 +186,12 @@ internal fun NewTaskSheet(
                 onValueChange = { value -> onChange { it.copy(location = value) } },
                 modifier = keepLocationVisible.modifier,
             )
-            if (lists != null) {
-                NewTaskListField(
-                    choice = draft.list,
-                    lists = lists,
-                    onAdd = { showListPicker = true },
-                    onClear = { onChange { it.copy(list = null) } },
-                )
-            }
+            NewTaskListField(
+                withList = draft.withList,
+                title = draft.title,
+                onAdd = { onChange { it.copy(withList = true) } },
+                onClear = { onChange { it.copy(withList = false) } },
+            )
         }
         if (!compact) {
             Row(
@@ -224,21 +217,6 @@ internal fun NewTaskSheet(
         }
     }
 
-    if (showListPicker && lists != null) {
-        ShoppingListPicker(
-            lists = lists,
-            suggestedName = draft.title,
-            onCreate = { name ->
-                onChange { it.copy(list = NewTaskList.New(name)) }
-                showListPicker = false
-            },
-            onPick = { id ->
-                onChange { it.copy(list = NewTaskList.Existing(id)) }
-                showListPicker = false
-            },
-            onDismiss = { showListPicker = false },
-        )
-    }
 }
 
 /** Arrastar move/fecha o painel? Não em altura compacta com o teclado aberto (v1.9.0, 15.7). */
@@ -313,21 +291,18 @@ private fun CompactTopRow(canSave: Boolean, onCancel: () -> Unit, onSave: () -> 
     }
 }
 
-/** Lista escolhida para a nova tarefa: botão "Adicionar lista" ou a escolha com a ação de remover. */
+/**
+ * Lista da nova tarefa: botão "Adicionar lista" ou a lista que vai nascer ("Nova lista: <título>", o
+ * nome acompanha o título digitado) com a ação de remover.
+ */
 @Composable
 private fun NewTaskListField(
-    choice: NewTaskList?,
-    lists: List<ShoppingListSummary>,
+    withList: Boolean,
+    title: String,
     onAdd: () -> Unit,
     onClear: () -> Unit,
 ) {
-    val label = when (choice) {
-        null -> null
-        is NewTaskList.New -> stringResource(R.string.list_card_new_pending, choice.name)
-        // A lista pode ter sido excluída enquanto o painel estava aberto: aí some da escolha.
-        is NewTaskList.Existing -> lists.firstOrNull { it.id == choice.listId }?.name
-    }
-    if (label == null) {
+    if (!withList) {
         TextButton(onClick = onAdd) {
             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
@@ -335,6 +310,7 @@ private fun NewTaskListField(
         }
         return
     }
+    val label = stringResource(R.string.list_card_new_pending, title.trim())
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer,

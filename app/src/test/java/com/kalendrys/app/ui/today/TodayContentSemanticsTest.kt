@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -115,7 +116,10 @@ class TodayContentSemanticsTest {
 
     /** A LINHA que mostra [text]: a que tem estado (o "A seguir" também pode citar o título). */
     private fun row(text: String): SemanticsNode =
-        node(hasText(text, substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+        node((hasText(text, substring = true) or hasContentDescription(text, substring = true)) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+
+    /** A linha de tarefa lê o título pela descrição (tipo, hora, título; v1.10.0, 16.10.8 item 6). */
+    private fun shows(text: String) = hasText(text, substring = true) or hasContentDescription(text, substring = true)
 
     private fun SemanticsNode.actionLabels(): List<String?> =
         config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
@@ -140,10 +144,10 @@ class TodayContentSemanticsTest {
         val header = node(heading and hasText("Sem data"))
         assertEquals("Recolhida", header.state())
         assertEquals("Mostrar Sem data", header.config[SemanticsActions.OnClick].label)
-        assertEquals(0, compose.onAllNodesWithText("Ideias para o fim de semana").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(shows("Ideias para o fim de semana")).fetchSemanticsNodes().size)
 
         compose.runOnUiThread { header.config[SemanticsActions.OnClick].action?.invoke() }
-        waitFor { compose.onAllNodesWithText("Ideias para o fim de semana").fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodes(shows("Ideias para o fim de semana")).fetchSemanticsNodes().isNotEmpty() }
 
         val opened = node(heading and hasText("Sem data"))
         assertEquals("Aberta", opened.state())

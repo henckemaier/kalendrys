@@ -20,6 +20,14 @@ import java.time.ZoneId
  * ligação ([Link]) dos outros, como se não existisse; as ligações dele mesmo são [Link.NONE]. Fica
  * na ordem pelo início, depois dos itens que começam no mesmo minuto. Quem conta o dia ("próximo
  * item", progresso, agrupamento) deve ignorar os pulados ([Item.isActive]).
+ *
+ * TAREFA ANINHADA (v1.10.0, ADR-0002 16.10.8, P47-P50): uma tarefa com horário DENTRO de um bloco ativo
+ * com duração (início do bloco <= horário < fim do bloco: o início conta, o fim não) é marcada com o
+ * bloco ([TaskItem.container]); entre blocos sobrepostos, fica com o que começou por último (empate: o
+ * que vem depois na trilha). Bloco pulado e bloco sem duração não contêm nada. O bloco que contém
+ * tarefas diz quantas ([Block.nestedTasks]) e ganha, logo depois da última delas, um [BlockEnd] com a
+ * hora de fim, para a faixa do bloco se alongar por cima delas. A ordem continua a do horário; as
+ * tarefas continuam [TaskItem] (contagens, Feitos e Desfazer não mudam).
  */
 object DayTimeline {
 
@@ -60,6 +68,8 @@ object DayTimeline {
         val occurrenceDate: LocalDate,
         /** Ocorrência pulada (`SKIP`) naquele dia: só vem com `includeSkipped`; ver [DayTimeline]. */
         val skipped: Boolean = false,
+        /** Quantas tarefas estão dentro deste bloco (v1.10.0): com alguma, a hora de fim vai no [BlockEnd]. */
+        val nestedTasks: Int = 0,
     ) : Item {
         /** Pode passar de 1440 (bloco que termina depois da meia-noite). */
         val endMinute: Int get() = startMinute + routine.durationMinutes
@@ -80,10 +90,26 @@ object DayTimeline {
         val done: Boolean,
         val linkAbove: Link,
         val linkBelow: Link,
+        /** A rotina do bloco em que a tarefa está DENTRO (v1.10.0); null = solta na trilha. */
+        val container: Routine? = null,
     ) : Item {
         /** Ponto no tempo: termina onde começa. */
         val endMinute: Int get() = startMinute
         override val key: String get() = "task_${task.id}"
+    }
+
+    /**
+     * Fim de um bloco que contém tarefas (v1.10.0): vem logo depois da última tarefa de dentro e leva a
+     * hora de fim ([startMinute] = fim do bloco) para baixo delas. Não é um item do dia: não conta
+     * ([isActive] falso) e não tem ação; só desenha o fim da faixa.
+     */
+    data class BlockEnd(
+        val routine: Routine,
+        override val startMinute: Int,
+        val linkBelow: Link,
+    ) : Item {
+        override val key: String get() = "routine_end_${routine.id}"
+        override val isActive: Boolean get() = false
     }
 
     /** Intervalos menores que isso não ganham linha própria; a ligação só fica tracejada. */
@@ -173,7 +199,47 @@ object DayTimeline {
             }
             items += entry.toItem(linkAbove, linkBelow)
         }
-        return withSkipped(items, skippedBlocks)
+        return withSkipped(nest(items), skippedBlocks)
+    }
+
+    /**
+     * Bloco que contém a tarefa [task], pela regra da tarefa aninhada: início dentro e fim fora; entre
+     * sobrepostos, o que começou por último (empate: o último na trilha). Pulado ou sem duração, nenhum.
+     */
+    internal fun containerOf(task: TaskItem, blocks: List<Block>): Block? =
+        blocks.withIndex()
+            .filter { (_, b) ->
+                !b.skipped && b.routine.durationMinutes > 0 && task.startMinute >= b.startMinute && task.startMinute < b.endMinute
+            }
+            .maxWithOrNull(compareBy({ it.value.startMinute }, { it.index }))
+            ?.value
+
+    /** Marca as tarefas de dentro, conta as de cada bloco e põe o [BlockEnd] depois da última. */
+    private fun nest(items: List<Item>): List<Item> {
+        val blocks = items.filterIsInstance<Block>()
+        if (blocks.isEmpty()) return items
+        val containerOf = items.filterIsInstance<TaskItem>()
+            .mapNotNull { task -> containerOf(task, blocks)?.let { task.key to it } }
+            .toMap()
+        if (containerOf.isEmpty()) return items
+        val nestedCount = containerOf.values.groupingBy { it.key }.eachCount()
+        val lastNested = containerOf.entries.groupBy({ it.value.key }, { it.key })
+            .mapValues { (_, taskKeys) -> items.last { it.key in taskKeys }.key }
+        val result = ArrayList<Item>(items.size + nestedCount.size)
+        items.forEach { item ->
+            when (item) {
+                is Block -> result += item.copy(nestedTasks = nestedCount[item.key] ?: 0)
+                is TaskItem -> {
+                    val container = containerOf[item.key]
+                    result += item.copy(container = container?.routine)
+                    if (container != null && lastNested[container.key] == item.key) {
+                        result += BlockEnd(container.routine, container.endMinute, item.linkBelow)
+                    }
+                }
+                else -> result += item
+            }
+        }
+        return result
     }
 
     /**

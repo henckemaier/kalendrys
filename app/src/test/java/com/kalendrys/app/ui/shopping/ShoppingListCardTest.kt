@@ -1,7 +1,9 @@
 package com.kalendrys.app.ui.shopping
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -27,37 +29,30 @@ class ShoppingListCardTest {
     val compose = createComposeRule()
 
     @Test
-    fun `mostra nome, progresso e outros donos e repassa os toques`() {
-        val rotina = ShoppingListOwner(ShoppingListOwner.Kind.ROUTINE, id = 1, title = "Feira de sábado")
-        val tarefa = ShoppingListOwner(ShoppingListOwner.Kind.TASK, id = 2, title = "Churrasco")
+    fun `mostra nome e progresso e repassa abrir e excluir`() {
+        // v1.10.0 (ADR-0002 16.10.4): a lista é de uma tarefa; sem etiqueta de donos e sem Desvincular.
         val summary = ShoppingListSummary(
             list = ShoppingList(id = 10, name = "Mercado", createdAt = TEST_CREATED_AT),
             progress = ShoppingProgress(picked = 2, total = 3),
             totalCents = 0,
-            owners = listOf(rotina, tarefa),
+            owners = listOf(ShoppingListOwner(ShoppingListOwner.Kind.TASK, id = 2, title = "Churrasco")),
         )
         var opened = 0
-        var detached = 0
+        var deleted = 0
         compose.setContent {
             KalendrysTheme {
-                ShoppingListCard(
-                    summary = summary,
-                    onOpen = { opened++ },
-                    onDetach = { detached++ },
-                    isCurrentOwner = { it == rotina },
-                )
+                ShoppingListCard(summary = summary, onOpen = { opened++ }, onDelete = { deleted++ })
             }
         }
 
         compose.onNodeWithText("Mercado").assertIsDisplayed()
         compose.onNodeWithText("2 de 3 marcados").assertIsDisplayed()
-        // A própria rotina sai da etiqueta: só aparece com quem mais a lista é compartilhada.
-        compose.onNodeWithText("Também em: Churrasco").assertIsDisplayed()
+        compose.onAllNodesWithText("Também em: Churrasco").assertCountEquals(0)
 
         compose.onNodeWithText("Mercado").performClick()
-        compose.onNodeWithContentDescription("Desvincular lista").performClick()
+        compose.onNodeWithContentDescription("Excluir lista").performClick()
 
         assertEquals(1, opened)
-        assertEquals(1, detached)
+        assertEquals(1, deleted)
     }
 }

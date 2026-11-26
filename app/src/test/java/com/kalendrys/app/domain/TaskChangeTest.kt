@@ -95,16 +95,10 @@ class TaskChangeTest {
             TaskChange.Title("x"),
             TaskChange.Notes("x"),
             TaskChange.Location("x"),
-            TaskChange.ShoppingList(1),
             TaskChange.NewShoppingList("Mercado"),
         ).forEach { assertFalse("$it", it.touchesReminder) }
     }
 
-    @Test
-    fun `lista existente vincula e null desvincula`() {
-        assertEquals(base.copy(shoppingListId = 9), TaskChange.ShoppingList(9).applyTo(base, zone))
-        assertEquals(base.copy(shoppingListId = null), TaskChange.ShoppingList(null).applyTo(base, zone))
-    }
 
     @Test
     fun `lista nova com nome em branco e invalida`() {

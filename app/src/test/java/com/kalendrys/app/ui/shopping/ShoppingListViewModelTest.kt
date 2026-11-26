@@ -362,6 +362,23 @@ class ShoppingListViewModelTest {
     }
 
     @Test
+    fun `Excluir lista apaga lista e itens e tira o vinculo da dona`() = runTest {
+        // v1.10.0 (ADR-0002 16.10.4, P45; a tela confirma antes): sem Desfazer.
+        val listId = listMissingOne("Arroz", "Feijão")
+        val owner = db.taskDao().insert(Task(title = "Feira", shoppingListId = listId, createdAt = TEST_CREATED_AT))
+
+        viewModel(listId).deleteList()
+
+        val deadline = System.currentTimeMillis() + 3_000
+        while (db.taskDao().byId(owner)!!.shoppingListId != null && System.currentTimeMillis() < deadline) {
+            kotlinx.coroutines.delay(20)
+        }
+        assertNull(db.taskDao().byId(owner)!!.shoppingListId)
+        assertNull(repository.list(listId))
+        assertTrue(db.shoppingItemDao().all().none { it.listId == listId })
+    }
+
+    @Test
     fun `desmarcar nunca oferece`() = runTest {
         val listId = listMissingOne("Arroz")
         db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
