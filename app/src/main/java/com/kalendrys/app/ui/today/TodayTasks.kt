@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
@@ -192,6 +193,10 @@ internal fun TaskRow(
     val task = item.task
     val timeColumnWidth = timeColumnWidth()
     val toggleLabel = taskToggleLabel(item.done, task.title)
+    val time = minuteOfDayLabel(item.startMinute)
+    // Leitura (v1.10.0, 16.10.8 item 6): tipo, hora, título; o estado vem do stateDescription e o
+    // progresso da lista, se houver, do próprio selo. O título visível fica fora para não ler duas vezes.
+    val description = stringResource(R.string.today_task_row_description, time, task.title)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -202,6 +207,7 @@ internal fun TaskRow(
                 rowStateLabel(item.done),
                 if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
             )
+            .semantics { contentDescription = description }
             .clickable(onClick = onOpen),
     ) {
         Box(
@@ -211,7 +217,7 @@ internal fun TaskRow(
                 .padding(vertical = RowPadding + 2.dp)
                 .clearAndSetSemantics {},
         ) {
-            TimeLabel(minuteOfDayLabel(item.startMinute))
+            TimeLabel(time)
         }
         Box(
             contentAlignment = Alignment.Center,
@@ -239,6 +245,7 @@ internal fun TaskRow(
                 textDecoration = if (item.done) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics {},
             )
             if (listProgress != null) {
                 ShoppingProgressTag(progress = listProgress)
@@ -260,6 +267,8 @@ internal fun DayTaskRow(
     val accent = MaterialTheme.colorScheme.secondary
     val task = dayTask.task
     val toggleLabel = taskToggleLabel(dayTask.done, task.title)
+    // Sem horário: tipo e título (o estado vem do stateDescription).
+    val description = stringResource(R.string.today_task_row_description_untimed, task.title)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -269,6 +278,7 @@ internal fun DayTaskRow(
                 rowStateLabel(dayTask.done),
                 if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
             )
+            .semantics { contentDescription = description }
             .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
     ) {
@@ -282,7 +292,8 @@ internal fun DayTaskRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 12.dp),
+                .padding(start = 12.dp)
+                .clearAndSetSemantics {},
         )
         if (listProgress != null) {
             ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))

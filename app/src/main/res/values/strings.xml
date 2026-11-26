@@ -9,6 +9,9 @@
     <string name="today_all_routines">Todas as rotinas</string>
     <string name="today_state_done">Feita</string>
     <string name="today_state_pending">Pendente</string>
+    <!-- Leitura da linha de tarefa na Hoje (v1.10.0, ADR-0002 16.10.8 item 6): tipo, hora e título. -->
+    <string name="today_task_row_description">Tarefa, %1$s, %2$s</string>
+    <string name="today_task_row_description_untimed">Tarefa, %1$s</string>
     <string name="today_block_exception">Pular ou remarcar este dia</string>
     <!-- Conteúdo da Hoje (ADR-0002, 14.4; v1.8.0, E3). -->
     <string name="today_skip_day">Pular este dia</string>
