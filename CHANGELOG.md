@@ -47,7 +47,7 @@ dependência nova e sem permissão nova.
 
 - **A aba Listas sai.** São três abas: Hoje, Tarefas e Calendário. A lista é alcançada pela
   tarefa dona; aberta por uma notificação, ela abre sobre o detalhe da tarefa, e lista que não
-  existe mais abre a aba Tarefas. Quem atualizar com a aba Listas aberta cai na aba Tarefas.
+  existe mais abre a aba Tarefas. Quem atualizar com a aba Listas aberta reabre na Hoje, sem erro.
 - **O atalho "Listas"** do ícone passa a se chamar **"Tarefas"** e abre a aba Tarefas; quem o
   tinha fixado na tela inicial continua com um atalho que funciona.
 - **Excluir a tarefa apaga a lista e os itens**; o Desfazer devolve os três. Excluir pelo detalhe
@@ -63,7 +63,9 @@ dependência nova e sem permissão nova.
 - **Rotinas sobrepostas em parte** ainda fazem a coluna de horas da Hoje recuar (o fim da primeira
   vem antes do início da segunda). Uma rotina curta inteira dentro de outra, ou um bloco pulado,
   pode interromper a faixa do bloco de fora.
-- A lista de uma tarefa sem repetição já concluída continua com ela, alcançável pela tarefa.
+- A lista de uma tarefa sem repetição já concluída continua com ela e fica fora de alcance.
+- Reordenar exercícios custa dois toques por movimento (menu da linha).
+- Marcar "Salvar para reutilizar" ao editar um exercício cria um salvo novo a cada vez.
 
 ### Interno
 
@@ -79,6 +81,7 @@ dependência nova e sem permissão nova.
 - **Baseline Profile**: não regerado; é o da v1.9.0, sem as telas de rotinas (lacuna conhecida,
   para a v1.11.0). As jornadas foram corrigidas para as três abas e passam a falhar quando não
   acham o caminho.
+- **APK de release** com R8: 3.360.179 B (−12.028 B sobre os 3.372.207 B da v1.9.1).
 - **Abertura a frio**: **não medida**.
 - **Acessibilidade**: leitor de tela com fala real não verificado, coberto por testes de
   semântica.
