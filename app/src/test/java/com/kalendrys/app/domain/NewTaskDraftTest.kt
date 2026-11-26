@@ -56,12 +56,9 @@ class NewTaskDraftTest {
     }
 
     @Test
-    fun `lista existente excluida some da escolha e lista nova pendente fica`() {
-        val existing = NewTaskDraft(list = NewTaskList.Existing(7))
-        assertNull(existing.keepingListsIn(setOf(1, 2)).list)
-        assertSame(existing, existing.keepingListsIn(setOf(7)))
-
-        val pending = NewTaskDraft(list = NewTaskList.New("Feira"))
-        assertEquals(NewTaskList.New("Feira"), pending.keepingListsIn(emptySet()).list)
+    fun `rascunho comeca sem lista e Adicionar lista so marca`() {
+        // v1.10.0 (ADR-0002 16.10.4): sem lista existente; a lista nasce ao salvar, com o nome da tarefa.
+        assertFalse(NewTaskDraft.startingOn(null).withList)
+        assertTrue(NewTaskDraft(title = "Feira").copy(withList = true).withList)
     }
 }

@@ -9,8 +9,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.reminder.ReminderActionReceiver.Companion.occurrenceDay
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -47,9 +49,9 @@ class AndroidCatchUpNotifierDayTest {
     fun `ocorrencia de ontem 23h50 entregue hoje leva o dia de ontem em Concluir e Adiar`() = runTest {
         val yesterday = LocalDate.now().minusDays(1)
         val firedAt = yesterday.atTime(LocalTime.of(23, 50)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val task = Task(id = 7, title = "Remédio", repeat = ReminderRepeat.DAILY)
+        val task = Task(id = 7, title = "Remédio", repeat = ReminderRepeat.DAILY, createdAt = TEST_CREATED_AT)
 
-        AndroidCatchUpNotifier(app, ShoppingRepository(db)).showReminder(task, firedAt)
+        AndroidCatchUpNotifier(app, ShoppingRepository(db, clock = SystemAppClock), clock = SystemAppClock).showReminder(task, firedAt)
 
         val notification = shadowOf(app.getSystemService(NotificationManager::class.java)).allNotifications.single()
         val days = notification.actions.map { shadowOf(it.actionIntent).savedIntent.occurrenceDay() }

@@ -346,3 +346,26 @@ lista, compartilhar lista como texto, link externo direto para a lista.
 - O "Descartar" do editor de rotina deixa de cobrir itens (mudança em relação à v1.4.1).
 - O padrão (entidade própria + vínculo no dono) fica como referência caso Exercícios precise
   sair das rotinas. Checklist genérico só com um terceiro caso real.
+
+## 9. Emenda de 2026-11-25 — a lista passa a ser de uma tarefa só (v1.10.0)
+
+Decisão do usuário, registrada com o desenho no ADR-0002, 16.10. Deixam de valer neste ADR:
+
+- **A lista independente.** A lista passa a pertencer a **uma tarefa só**; lista sem dono (avulsa)
+  não existe, e excluir a tarefa exclui a lista com os itens. O título deste ADR descreve o modelo
+  da v1.5.0 à v1.9.1.
+- **O vínculo em rotina** (seção 3, "qualquer rotina pode anexar uma lista"). Rotina não tem
+  lista; o tipo da rotina é Nenhum ou Exercício.
+- **Vários donos para a mesma lista** e a escolha de uma lista existente ao anexar.
+- **A aba Listas** (4.5). A lista só é alcançada pela tarefa dona. O atalho do app que abria a aba
+  **não sai**: fica com o mesmo identificador, o rótulo "Tarefas" e abrindo a aba Tarefas, porque
+  o sistema desativa um atalho já fixado na tela inicial quando o atalho correspondente some do
+  app (ADR-0002, 16.10.4).
+- **A regra de pilha do link de lista** (emenda E-1 do ADR-0002): a lista abre sobre o detalhe da
+  tarefa dona.
+
+Continuam valendo: a entidade da lista e dos itens, a tela da lista, o reinício reversível das
+marcações (4.4), a oferta de concluir a tarefa pela lista e o progresso da lista na tarefa.
+
+Dados: banco 12 e backup versão 7, com o que cada lista existente vira na atualização e no
+restauro de backup antigo, estão no ADR-0002, 16.10.3.

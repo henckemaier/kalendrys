@@ -1827,3 +1827,455 @@ sessão; dados do emulador restaurados e conferidos no fim.
   código. A correção exige separar o alarme que avisa (exato, no próximo início que avisa e ainda
   não foi concluído) do alarme que só redesenha os widgets, com parecer próprio. Não entra numa
   versão já fechada e testada; é o **primeiro item da próxima versão**, antes do escopo novo.
+
+## 16. Emenda de 2026-11-25 — escopo e desenho da v1.10.0
+
+Base: `main` em d67327d (v1.9.1 publicada). As decisões P1 a P12 são do usuário.
+
+### 16.1 Decisões do usuário
+
+> **A P12 foi substituída pela 16.10**, que traz as decisões seguintes do usuário sobre rotina, tarefa e lista.
+
+| # | Decisão |
+|---|---------|
+| P1 | O escopo que a 14.1 chamava de v1.10.0 fica **dividido em duas versões** (16.2) |
+| P2 | No dia da atualização, as repetidas já perdidas aparecem atrasadas de uma vez, sem tratamento especial; somem sozinhas na próxima ocorrência de cada uma |
+| P3 | Concluir adiantado uma tarefa repetida **vale pela próxima ocorrência**, limitado a uma ocorrência à frente: ela aparece concluída no dia dela e o lembrete daquele dia não toca. Primeiro corte se o prazo apertar |
+| P4 | Trilho lateral em tela larga **e** no celular em paisagem (v1.11.0) |
+| P5 | Busca global por uma lupa na barra do topo das quatro abas; inclui tarefas concluídas e rotinas pausadas, marcadas como tal; não inclui o excluído; a busca da aba Tarefas continua como filtro da aba (v1.11.0) |
+| P6 | Calendário abre em mês, recolhe para semana por um puxador e ao rolar a lista do dia, e lembra a escolha só enquanto o app está aberto (v1.11.0) |
+| P7 | Excluir pelo detalhe da tarefa deixa de pedir confirmação; fica só o Desfazer, como na rotina |
+| P8 | A posição do concluir na Hoje não muda nesta versão |
+| P9 | Material 3 Expressive fica fora |
+| P10 | Aparelho do usuário **não liberado**: a abertura a frio continua não medida (16.9) |
+| P11 | Target 36, não 37; o 37 pede parecer próprio (v1.11.0) |
+| P12 | No editor de rotina, a seção "Lista de compras" só aparece quando a rotina tem lista; sem lista, o "Adicionar lista de compras" fica dentro de "Mais opções". A mesma regra vale para o detalhe da tarefa. Entra na v1.10.0 (16.6) |
+
+### 16.2 Divisão (P1)
+
+> **Substituída pela 16.10.2:** são três versões; a v1.10.0 é "Rotinas e tarefas".
+
+| Versão | Nome | Conteúdo |
+|--------|------|----------|
+| **v1.10.0** | Tarefas repetidas | Base técnica (16.3), regra das repetidas (16.4, 16.5), conteúdo da rotina no editor (16.6), P7 |
+| **v1.11.0** | Adaptativo, calendário e busca | Barra ou trilho (B5), título cortado em altura compacta, calendário recolhível (D4), busca global (B4), target 36 (F6) |
+
+Motivo, o mesmo da 14.1: juntas, a matriz manual teria de cobrir uma mudança de regra lida por
+cinco superfícies mais o lembrete de tarefa, a troca da casca de todas as telas, duas telas novas
+e o target. O target 36 não tem prazo externo, porque a distribuição é pelo GitHub, e vem depois
+do adaptativo porque o Android 16 deixa de respeitar restrição de janela em tela larga.
+
+Onde a 15.9 e a 15.12 dizem "v1.10.0" para o adaptativo, o calendário, a busca, o target 36 e o
+título cortado do editor em paisagem, leia-se **v1.11.0**.
+
+### 16.3 Base técnica, sem mudar comportamento
+
+- **Relógio único do app.** A data de hoje era lida direto do relógio em onze arquivos de
+  produção. Passa a existir uma peça só, criada no `KalendrysApp`, que dá agora, fuso e a data de
+  hoje como fluxo; repositórios e ViewModels a recebem por parâmetro. É pré-requisito da 16.4,
+  que depende de "hoje" e precisa de teste de virada de dia, e fecha o limite da meia-noite da
+  aba Tarefas (15.9).
+  Regras da peça (`AppClock`, revisada em 68051ed):
+  - **Só dois primitivos**, o instante de agora e o fuso, lidos a cada chamada. Hoje, a hora local
+    e o fluxo da data saem deles, para que agora e hoje não possam discordar, nem num relógio de
+    teste. O relógio de teste tem um instante só; avançá-lo move tudo.
+  - **O domínio continua puro:** recebe data, instante e fuso por parâmetro, nunca o relógio.
+  - **Tela só lê o relógio para valor que é da própria tela** (data inicial de um seletor, o
+    minuto corrente, um rótulo de "hoje"). O que decide o que aparece numa lista vem do estado do
+    ViewModel.
+  - **As entidades não carimbam a criação sozinhas.** A data de criação da rotina entra na regra
+    de ocorrência, então um valor padrão lido do sistema era uma leitura de hoje escondida. Quem
+    cria passa o instante. O esquema do banco não muda.
+  - **Preso por teste:** um teste varre o código de produção e falha em qualquer leitura direta
+    de hora, data ou fuso do sistema fora de duas exceções escritas nele: a própria peça e a
+    migração já publicada, que não se altera.
+  - Limite conhecido, igual ao de antes: o fluxo da data não reemite quando a hora ou o fuso
+    mudam com a coleta em andamento; só na meia-noite seguinte ou ao recomeçar.
+- **Instante pronto para os alarmes de rotina.** O repositório passa ao `RoutineAlarms` o
+  instante já convertido, em vez de data e hora locais convertidas lá com o fuso do sistema
+  (ADR-0003, 8.6). Os extras de dia e minuto do alarme, que ninguém lê, saem.
+- **Jornadas do Baseline Profile** corrigidas (15.12), com duas regras: todo seletor restrito ao
+  pacote do app, e toda jornada falha quando não acha o caminho.
+- Miúdos: a mensagem de pular uma rotina que não existe mais; o botão flutuante cobrindo a última
+  linha da aba Tarefas em 320dp com fonte 2.0.
+
+### 16.4 Tarefa repetida: qual ocorrência um registro satisfaz
+
+> **Movida pela 16.10.2:** esta regra e a 16.5 passam para a **v1.11.0**. O desenho não muda.
+
+Até a v1.9.1 a tarefa que se repete nunca ficava atrasada: o estado era só "hoje" ou "próxima".
+E concluir num dia que não é dia dela só gravava o registro daquele dia (15.6).
+
+Uma regra só responde às duas coisas, sem coluna nova, contando os registros de conclusão numa
+janela. **Janela:** da ocorrência anterior a hoje (inclusive) até a próxima (exclusive).
+
+| Registros na janela | Significado |
+|---------------------|-------------|
+| Nenhum, e hoje não é dia dela | A ocorrência anterior está **atrasada**, até o dia da próxima |
+| Um | A ocorrência anterior está feita |
+| Dois ou mais | A próxima está feita **adiantada** (P3), e só ela |
+
+- Forma curta (15.9, P1 da v1.9.0): só uma ocorrência aberta por tarefa. Uma diária nunca atrasa.
+  Tarefa sem repetição não muda.
+- Concluir uma repetida atrasada grava o registro de hoje e ela sai de "Atrasadas".
+- Lógica pura em `domain/`, numa função só. O domínio ganha a ocorrência **anterior** a uma data,
+  para cada tipo de repetição, inclusive a personalizada.
+- Os registros são lidos por tarefa a partir de uma data, numa consulta para a lista inteira.
+- Banco continua 11 e o backup na versão 6.
+
+A tabela é a regra de produto; os casos de borda (registro no próprio dia da ocorrência, primeira
+ocorrência sem anterior, tarefa que deixou de repetir) são fechados na revisão da E1.
+
+### 16.5 Quem lê a regra
+
+Aba Tarefas, Hoje, widgets, resumo diário e a oferta de concluir pela lista leem da mesma função;
+os números têm de ser os mesmos nas superfícies para os mesmos dados.
+
+Ocorrência consumida por conclusão adiantada (P3): no dia dela a tarefa aparece concluída, o
+lembrete daquele dia não é agendado nem entregue pelo catch-up, e desfazer a conclusão devolve a
+ocorrência e o lembrete. A regra do lembrete está no ADR-0003, seção 9. É a parte de maior risco
+da versão e fica em commit próprio.
+
+### 16.6 Conteúdo da rotina no editor
+
+> **Substituída pela 16.10:** rotina não tem lista; a lista é de uma tarefa só (16.10.4, 16.10.5).
+
+**Em aberto na data desta emenda.** A P12 decidiu a lista de compras. Depois dela o usuário pediu
+para unificar lista de compras e exercícios e tirar as categorias das rotinas; o desenho proposto
+e as perguntas P13 a P18 aguardam resposta, e esta subseção é reescrita quando chegarem. Nenhum
+código desta parte antes disso.
+
+O que já vale: a seção de lista só existe quando a rotina tem lista; sem lista não há título,
+frase nem cartão, e o único lugar para anexar é "Mais opções"; anexar faz a seção aparecer na
+hora e a tela rola até ela; desvincular faz sumir; Reverter e a criação seguem as regras da 15.5.
+
+### 16.7 Etapas da v1.10.0
+
+> **Substituída pela 16.10.6:** a v1.10.0 passou a ter as etapas E0 e T1 a T4; E1 e E2 abaixo são da v1.11.0.
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Base técnica (16.3) | Suíte verde sem teste apagado; nenhuma leitura direta do relógio em `ui` e `data` fora da peça única; teste de virada de dia na aba Tarefas |
+| E1 | Regra das repetidas no domínio (16.4), sem tela | Teste por tipo de repetição, virada de dia e fuso. Revisão do arquiteto linha a linha antes dos testes |
+| E2 | Leitores da regra e lembrete (16.5). Depois da E1 | Mesmos números em Hoje, aba Tarefas, widget e resumo; ocorrência consumida não toca; atualização por cima da v1.9.1 sem aviso duplicado |
+| EX | Conteúdo da rotina no editor (16.6) e P7. Em paralelo, depois das respostas | Os da 16.6 |
+| E3 | Fechamento | Perfil regerado e aceito por linhas por pacote, inclusive rotinas; tamanho do APK; matriz manual; atualização por cima da v1.9.1 |
+
+Ordem de corte: primeiro a P3 (a regra do atraso fica); depois nada mais da E0 à E2.
+
+### 16.8 Fora da v1.10.0
+
+- **v1.11.0:** o que a 16.2 lista.
+- **Sem versão marcada:** lista e detalhe lado a lado; adiamento que sobrevive a reinício e
+  aparece no diagnóstico; alarme próprio do widget Resumo; Material 3 Expressive.
+- **Com parecer próprio no ADR-0003, quando pedido:** reaviso de bloco em troca de fuso para
+  oeste e marca do catch-up que anda para trás quando o relógio atrasa (ADR-0003, 8.6).
+
+### 16.9 Riscos e abertura a frio
+
+| Risco | Mitigação |
+|-------|-----------|
+| Regra lida por cinco lugares divergindo | Uma função só e teste de números iguais |
+| Muitas repetidas atrasadas de uma vez no dia da atualização | Aceito (P2); somem na próxima ocorrência |
+| P3 mexe no lembrete de tarefa: aviso perdido ou duplicado | Commit próprio, ADR-0003 seção 9, primeiro corte |
+| Relógio único toca muitos arquivos | E0 sozinha, sem mudança de comportamento, antes de tudo |
+| Coluna nova pedida no meio do caminho | Nenhuma prevista; se alguma etapa pedir, para e volta ao arquiteto |
+
+Abertura a frio: **não medida** desde a v1.8.0 (14.14, 15.12). O aparelho do usuário não foi
+liberado (P10) e no emulador não se tenta. Fica registrado de novo como não medido.
+
+### 16.10 Emenda de 2026-11-25 (segunda) — rotina, tarefa e lista
+
+Depois da P12 o usuário redefiniu a distinção entre rotina e tarefa, em quatro rodadas de
+perguntas (P13 a P46). Esta subseção é o resultado final e **substitui** a P12 da 16.1, a 16.2,
+a 16.6 e a 16.7. Corrige também o ADR-0001 (seção 9 de lá). As decisões são do usuário.
+
+#### 16.10.1 A distinção
+
+- **Rotina:** bloco de hábito com horário e duração, que se repete. Tem **tipo**, Nenhum ou
+  Exercício, escolhido ao criar e ao editar. Só o tipo Exercício tem conteúdo: os exercícios.
+  Rotina **não tem lista**. As categorias criadas pelo usuário deixam de existir nas telas.
+- **Tarefa:** coisa pontual, com ou sem data e horário. É a **única dona de lista**, de compras
+  ou em geral. Com data e horário, aparece na Hoje entre as rotinas, no horário dela, com formato
+  próprio; isso já existia desde a v1.8.0 (14.5) e não muda. Tarefa não ganha duração.
+- **Lista:** pertence a **uma tarefa só**. Lista sem tarefa não existe. Excluir a tarefa exclui a
+  lista e os itens.
+- **Não há aba Listas.** A barra fica com Hoje, Tarefas e Calendário, nessa ordem (a ordem que
+  já existia, sem a quarta aba).
+
+#### 16.10.2 Divisão das versões
+
+| Versão | Nome | Conteúdo |
+|--------|------|----------|
+| **v1.10.0** | Rotinas e tarefas | Base técnica (16.3) e esta subseção |
+| **v1.11.0** | Tarefas repetidas | 16.4 e 16.5, com a P2 e a P3 |
+| **v1.12.0** | Adaptativo, calendário e busca | O que a 16.2 dava à v1.11.0 |
+
+Não se juntam a v1.10.0 e a regra das repetidas: uma tem migração, backup novo, troca de
+navegação e reescrita do editor; a outra muda a regra de estado em cinco superfícies e o lembrete
+de tarefa. A regra das repetidas fica mais importante depois desta emenda, porque a compra
+recorrente passa a ser tarefa repetida.
+
+#### 16.10.3 Dados: banco 11 para 12
+
+Nenhuma tabela é recriada. Na ordem:
+
+1. Coluna nova de **tipo** na rotina. Rotina em categoria do tipo Exercício vira Exercício; todas
+   as outras, Nenhum.
+2. Tabela nova de **exercícios salvos**.
+3. O vínculo de lista é apagado de **todas as rotinas**. Nenhuma rotina é apagada.
+4. **Lista usada por mais de uma tarefa:** fica com a tarefa mais antiga; cada uma das outras
+   recebe uma cópia da lista com os itens (P44). Assim nenhuma tarefa perde a lista que mostrava.
+5. Vínculo de tarefa para lista que não existe é limpo.
+6. Lista sem tarefa é **apagada com os itens**: as avulsas e as que só rotinas usavam. Itens sem
+   lista também.
+7. Índice único no vínculo de lista da tarefa: o banco passa a recusar duas tarefas na mesma
+   lista. Só é criado depois dos passos 4 a 6. **Decidido na revisão da T1 (87ac09c): o índice
+   fica.** O banco 11 não tinha índice com esse nome, os passos 4 a 6 garantem a unicidade antes
+   dele, e o restauro de backup passa pelas mesmas regras antes de gravar. Consequência: todo
+   caminho que grava o vínculo de lista numa tarefa confere antes se a lista é de outra, em vez
+   de deixar o banco recusar.
+
+As regras dos passos 4 a 6 e a do tipo estão **congeladas**: uma migração publicada depende
+delas. Regra nova numa versão futura é função nova, não mudança nessas.
+
+A coluna antiga do vínculo na rotina e a tabela de categorias continuam no banco, sem uso:
+tirá-las exige recriar a tabela de rotinas, que é a dos alarmes. Exercícios de rotinas que já
+foram de categoria Exercício e mudaram continuam guardados e voltam se o tipo for Exercício.
+
+O descarte dos passos 3 e 6 foi **autorizado pelo usuário**, que tem dados reais no aparelho.
+Condição da release (P43): backup exportado pela v1.9.1 antes de atualizar; depois da migração não
+há volta sem ele. O CHANGELOG e a nota da versão avisam.
+
+**Backup versão 7.** Leva o tipo e os exercícios salvos; deixa de levar vínculo de lista em
+rotina. Restaurar um backup da versão 6 ou anterior aplica as **mesmas regras** dos passos 1 e 3
+a 6. As regras são funções puras em `domain/`, usadas pela migração e pelo restauro, com teste de
+que os dois caminhos dão o mesmo resultado para os mesmos dados. O restauro da versão 7 passa
+pelas mesmas funções, que não mudam nada em dado já correto.
+
+#### 16.10.4 Lista dentro da tarefa
+
+- **Adicionar lista** cria a lista na hora, com o nome da tarefa. Não há mais escolha entre nova
+  e existente, nem seletor. O painel de nova tarefa continua podendo criar a lista junto.
+- A seção de lista do detalhe da tarefa fica à vista, como era. A lista abre na mesma tela de
+  lista de sempre: itens, adicionar rápido, marcar, total, zerar marcados, dica de gestos.
+- **Excluir lista** (no detalhe e na tela da lista) apaga a lista e os itens, com confirmação
+  (P45). Não existe mais desvincular. O Reverter do detalhe não desfaz criar nem excluir lista.
+- **Excluir a tarefa** apaga a tarefa, a lista e os itens numa transação. A oferta de Desfazer
+  guarda os três em memória e os devolve juntos, com os mesmos identificadores, no mesmo molde em
+  que já guardava a tarefa inteira (14.2). Se o processo morrer antes, a exclusão vale. Excluir
+  pelo detalhe não pede confirmação (P7): a proteção é o Desfazer.
+- A lista de uma tarefa sem repetição já concluída continua com ela.
+- **Link de lista.** Continua existindo, porque notificações e ofertas abrem a lista por ele. A
+  regra de pilha E-1 muda: a lista abre sobre o detalhe da tarefa dona, e esse sobre a aba
+  Tarefas. Lista que não existe mais abre a aba Tarefas.
+- **Atalho do app.** A primeira redação dizia que o atalho "Listas" saía. Está **corrigida**: o
+  Android desativa um atalho fixado na tela inicial quando o atalho estático correspondente
+  some do app. O atalho estático fica, com o **mesmo identificador**, o rótulo "Tarefas" e
+  abrindo a aba Tarefas; quem tinha o antigo fixado continua com um atalho que funciona.
+- **Rota e link antigos da aba.** A rota da aba Listas e o link que a abria redirecionam para a
+  aba Tarefas. Quem atualizar com a aba Listas aberta tem o estado salvo restaurado sem erro, como
+  foi feito com a rota das rotinas na v1.8.0.
+- O carrinho de progresso some dos blocos de rotina e aparece na linha da tarefa na Hoje.
+
+#### 16.10.5 Rotina: tipo e exercícios
+
+- Ordem do editor: Título; Quando; Lembrar; Tipo; Exercícios (só no tipo Exercício); Aparência;
+  "Mais opções" com Vigência e Observações. Saem as seções Categoria e Lista.
+- Os exercícios podem ser montados já na **criação**; são gravados junto com a rotina.
+- Trocar de Exercício para Nenhum **guarda** os exercícios, sem perguntar; voltam se o tipo
+  voltar. O tipo entra nos campos do Reverter.
+- **Exercícios salvos:** um salvo é um exercício (nome, séries, repetições, carga, descanso).
+  Aplicar um salvo **copia**; não há vínculo vivo. São escolhidos, editados e excluídos num painel
+  do próprio editor, e criados pela opção de salvar no diálogo do exercício. **Excluir um salvo
+  pede confirmação**, pelo mesmo critério do excluir lista (P45): não há Desfazer.
+- Exercícios montados na criação são gravados com a rotina mesmo que o tipo escolhido no fim seja
+  Nenhum; ficam guardados, pela mesma regra da troca de tipo.
+- "Todas as rotinas" perde o filtro e o nome da categoria na linha. A tela de categorias sai de
+  Ajustes.
+
+#### 16.10.6 Etapas da v1.10.0
+
+| Etapa | Conteúdo | Aceite |
+|-------|----------|--------|
+| E0 | Base técnica (16.3). Feita e revisada em 68051ed | Os da 16.7 |
+| T1 | Dados (16.10.3): migração, entidades, funções das regras, backup 7 e restauro, excluir e restaurar tarefa com lista, fim dos caminhos de lista em rotina | Teste de migração com banco real para cada caso; restauro de backup antigo igual à migração; ida e volta do backup 7. Revisão do arquiteto linha a linha antes dos testes |
+| T2 | Rotina (16.10.5) | Semântica do editor nos dois tipos e na criação; salvo é cópia; Reverter |
+| T3 | Navegação e listas (16.10.4): três abas, adicionar e excluir lista, pilha do link, atalho, Desfazer com lista, carrinho na linha da tarefa | Voltar a partir de lista aberta por notificação nunca sai do app; atalho antigo não quebra; excluir tarefa e desfazer devolve lista e itens |
+| T4 | Fechamento | Jornadas e perfil, tamanho do APK, matriz manual, atualização por cima da v1.9.1 com dados de cada caso da migração, aviso no CHANGELOG |
+
+T2 corre em paralelo com T1 e T3. Ordem de corte: primeiro a tarefa aninhada no bloco (16.10.8,
+último item da T3); depois os exercícios salvos.
+
+#### 16.10.7 Riscos
+
+| Risco | Mitigação |
+|-------|-----------|
+| Migração que apaga dados num aparelho com dados reais | Autorização do usuário, backup como condição da release, aviso no CHANGELOG, teste com banco real de cada caso |
+| Índice único falhando na migração e travando a abertura do app | Criado por último, depois da limpeza; teste com listas compartilhadas e vínculos órfãos; pode sair na revisão da T1 |
+| Regras da migração e do restauro divergindo | Funções puras únicas e teste cruzado |
+| Lista de tarefa concluída e escondida fica fora de alcance | Aceito; não é dado perdido, a tarefa a mantém |
+| Barra mexida agora e de novo na v1.12.0 | Aceito pelo usuário ao tirar a aba agora |
+| Dado parado no banco (coluna e tabela sem uso) | Registrado; limpeza só com parecer próprio |
+
+**Confirmado pelo usuário em 2026-11-25**, depois da primeira redação desta subseção: a cópia da
+lista compartilhada para as outras tarefas (P44, passo 4 da 16.10.3), a confirmação ao excluir
+lista, sem Desfazer (P45), e o nome da lista nova igual ao da tarefa (P46). A emenda está
+aprovada.
+
+Pendente na data desta emenda:
+
+- O resultado da conferência visual da Hoje com tarefas entre rotinas, pedida pelo usuário; se
+  trouxer ajuste, entra na T3.
+
+#### 16.10.8 Tarefa dentro do horário de uma rotina, na Hoje (P47 a P50)
+
+Observação do usuário: a linha do tempo ordena pelo início e o bloco é uma linha só, então uma
+tarefa das 7:30 aparece **depois** do bloco das 7:00 às 8:00, embora esteja dentro do horário
+dele. Com as compras virando tarefa, o caso fica mais comum.
+
+Decisão (P47): a tarefa fica **aninhada no cartão da rotina**, entre o cabeçalho e o fim do bloco,
+com a faixa colorida da rotina contínua de cima a baixo. Não se parte o bloco em linhas soltas: ele
+é uma linha com um toque, um menu de segurar, um círculo de concluir, um destaque de em andamento
+e um nó de leitura, e cada pedaço teria de repetir ou esconder tudo isso.
+
+- **O domínio decide quem está dentro de quem**, em função pura na montagem da linha do tempo:
+  cada bloco leva as tarefas que caem na janela dele, e elas saem da trilha de fora. A tela só
+  desenha.
+- **Limites (P49):** tarefa no minuto de início está dentro; no minuto do fim, fora, depois do
+  bloco. Bloco sem duração não contém nada.
+- **Rotinas sobrepostas:** a tarefa fica no bloco que começou por último entre os que a contêm.
+- **Bloco pulado não contém nada:** as tarefas voltam para a trilha de fora, porque o pulado já é
+  tratado como se não existisse (14.5). Bloco concluído mantém as tarefas com o estado delas.
+- **Cabeçalho sem mudança:** título, horário, círculo de concluir, exercícios, toque e segurar.
+  Cada tarefa de dentro tem a própria hora, caixa de concluir, título e carrinho. O fim do bloco é
+  só a faixa fechando, sem linha de horário (P48).
+- **Leitor de tela:** o bloco continua um nó; cada tarefa de dentro é um nó próprio, lido em
+  seguida, dizendo de qual rotina está dentro.
+- Não mudam: tarefa atrasada e sem horário (fora da trilha), widgets, Desfazer, intervalos livres
+  e ligações entre blocos. A contagem de feitos continua somando as tarefas de dentro; tem teste.
+
+Entra na v1.10.0 como **último item da T3**, em commit próprio, e é o **primeiro corte** da versão
+(P50), antes dos exercícios salvos. **O desenho só é aprovado depois das capturas** do caso atual
+em 360dp e em 320dp com fonte 2.0: o risco é a largura que sobra para o título da tarefa de dentro.
+
+**Desenho fechado depois das capturas (2026-11-25).** A conferência na v1.9.1 confirmou o relato e
+mostrou o defeito de verdade: a **coluna de horas volta no tempo**. O bloco mostra o início em
+cima e o fim embaixo; as tarefas de dentro vêm depois, então a coluna lê 07:00, 08:00, 07:00,
+07:30. Com isso o desenho fica assim:
+
+- A faixa colorida do bloco (a pílula) **se alonga** para cobrir o cabeçalho e as tarefas de
+  dentro. O rótulo do fim do bloco continua na coluna de horas, **embaixo da faixa alongada**,
+  depois das tarefas: a coluna volta a ler em ordem. Não é uma linha nova; é o rótulo que já
+  existia, no lugar certo.
+- A tarefa de dentro **mantém a linha de hoje**: hora na coluna de horas, o losango sobre a faixa,
+  a caixa tracejada e o círculo de concluir. **Não há recuo a mais**, então a largura do título é a
+  mesma de hoje, e o risco de 320dp com fonte 2.0 que condicionava a aprovação não se confirma.
+- **Bloco pulado** continua sem conter tarefas e passa a mostrar **só o início** na coluna de
+  horas, para não deixar o fim dele antes das tarefas que vêm em seguida.
+- **Limite aceito:** entre duas rotinas sobrepostas a coluna ainda recua (o fim da primeira vem
+  antes do início da segunda). É a própria sobreposição; aninhar não resolve.
+
+**Leitura da tarefa na trilha.** Achado da mesma conferência, e entra na T3 **mesmo que o
+aninhamento seja cortado**: a linha da tarefa não lê a hora (o rótulo está fora da árvore de
+leitura) nem diz que é uma tarefa. Passa a ler tipo, hora, título e estado, e, quando aninhada, de
+qual rotina está dentro. É a mesma classe do horário escondido da 15.7.
+
+Outros achados da conferência, fora desta versão: indicador de repetição na tarefa da trilha e
+data e hora na linha das atrasadas vão para a v1.11.0, junto com a regra das repetidas; trilha
+curta em paisagem com fonte 2.0 é da v1.12.0; o widget não intercala tarefas e rotinas, o que não
+é defeito e fica sem versão. Não são defeitos: a mensagem de Desfazer cobrir a linha de baixo, o
+botão flutuante cobrir o círculo de uma linha que passa por baixo ao rolar, e a quebra de palavra
+em 320dp com fonte 2.0 (limite aceito na 14.13).
+
+**Confirmado pelo usuário em 2026-11-25:** o desenho aninhado com os três ajustes acima; a leitura
+da tarefa na T3 mesmo que o aninhamento seja cortado; o indicador de repetição e a data e hora
+nas atrasadas na v1.11.0 (P52); e o widget como está, com a decisão sobre intercalar tarefas e
+rotinas adiada para depois de usar a v1.10.0 (P51).
+
+**Como ficou no código (revisão da T3, 03bb8ea).** A trilha continua uma lista plana: o cabeçalho
+do bloco, as tarefas marcadas com a rotina que as contém, e uma linha de fim do bloco depois da
+última, que não é lida nem conta no dia. Limite conhecido: como a ordem é pelo início, uma rotina
+curta inteira dentro da janela de outra, ou um bloco pulado, pode cair entre o cabeçalho e as
+tarefas de dentro; a faixa do bloco de fora fica interrompida nessa linha e retoma na tarefa.
+
+#### 16.10.9 Fechamento da v1.10.0 (2026-11-26)
+
+Commit final `0b30fe8` (versionCode 11000). CI verde nesse commit: 161 suítes, 1232 testes, 0
+falhas; lint sem erro. Banco 12, backup versão 7.
+
+**O que entrou.** E0 (base técnica), T1 (dados), T2 (rotina com tipo e exercícios salvos) e T3
+(três abas, lista dentro da tarefa, leitura da tarefa na trilha e tarefa aninhada no bloco). Nada
+foi cortado: nem a tarefa aninhada nem os exercícios salvos, que eram os dois primeiros cortes.
+
+**Migração conferida no emulador,** por cima da v1.9.1, com um caso de cada linha da 16.10.3:
+listas avulsas e listas só de rotina apagadas; lista de duas tarefas virou duas, com cópia dos
+itens; tipos certos; exercícios escondidos de volta com o tipo; índice único criado; alarmes
+iguais. Restaurar um backup da versão 6 deu um banco idêntico ao da migração.
+
+**Baseline Profile: não regerado.** Três tentativas falharam, cada uma numa jornada diferente:
+a aba Tarefas tem uma seção chamada "Hoje" e o seletor da aba pegou a seção; o diálogo de
+descartar apareceu na criação da rotina por um Voltar sem teclado aberto; e, na terceira, a
+criação passou e a edição caiu com o título fora da tela depois de "Mais opções". Fica o perfil
+da v1.9.0. Consequências: `ui/routines` e `ui/routineeditor` continuam fora do perfil pela
+**terceira versão seguida**, justamente na versão que reescreveu o editor; e o perfil aponta para
+classes que saíram (aba Listas, categorias), o que não faz mal e não aquece nada. As jornadas
+corrigidas estão no repositório. **Primeiro item da v1.11.0:** gerar o perfil, com o aceite por
+linhas por pacote da 15.12.
+
+Regra que sai daqui, somada às da 15.12: jornada não escolhe elemento só pelo texto quando o
+texto se repete na tela (aba e seção com o mesmo nome), e trata o diálogo que pode aparecer em
+vez de supor o estado do teclado.
+
+**APK de release com R8.** 3.360.179 B, contra 3.372.207 B da v1.9.1: 12.028 B a menos.
+Verificação do R8 sem erro. Medido de novo no versionCode final (11000), com o mesmo resultado.
+
+**Abertura a frio: NÃO MEDIDA,** pela terceira versão seguida (14.14, 15.12, 16.9). O aparelho do
+usuário não foi liberado (P10) e no emulador não se tenta.
+
+**Condição da release (P43).** O usuário exporta o backup pela v1.9.1 antes de atualizar o
+aparelho dele. A migração apaga listas avulsas, listas de rotina e o vínculo de lista das
+rotinas, com autorização dele, e não tem volta sem o backup. O CHANGELOG avisa.
+
+**Limites aceitos nesta versão:**
+
+- Entre duas rotinas sobrepostas a coluna de horas recua (o fim da primeira antes do início da
+  segunda), com ou sem tarefa aninhada. Sobreposição parcial com tarefa nas duas mostra o fim da
+  primeira logo depois da última tarefa dela, não pela hora. Há teste afirmando esse
+  comportamento, para ele não mudar sem decisão.
+- Uma rotina curta inteira dentro da janela de outra, ou um bloco pulado, interrompe a faixa do
+  bloco de fora (16.10.8).
+- Atualizar com a antiga aba Listas aberta reabre na Hoje: o sistema descarta o estado salvo. Sem
+  erro.
+- A lista de uma tarefa sem repetição já concluída continua com ela e fica fora de alcance.
+- Reordenar exercícios custa dois toques por movimento (menu da linha). Arrastar continua no
+  "Depois" do roteiro.
+- Marcar "Salvar para reutilizar" ao editar um exercício cria um salvo novo a cada vez.
+- Quebra no meio da palavra em 320dp com fonte 2.0 (14.13).
+- No banco ficam, sem uso, a coluna antiga do vínculo de lista na rotina e a tabela de
+  categorias.
+
+**Registrado para depois:**
+
+- **v1.11.0:** perfil (acima); regra das tarefas repetidas (16.4, 16.5; ADR-0003, seção 9);
+  indicador de repetição na tarefa da trilha e data e hora na linha das atrasadas (P52).
+- **v1.12.0:** adaptativo, calendário, busca e target 36 (16.2); trilha curta em paisagem com
+  fonte 2.0; rótulo "Calendário" menor na barra e "Adicionar lista" abaixo da dobra com teclado,
+  os dois em 320dp com fonte 2.0; se a aba Listas volta de alguma forma, só se o usuário pedir.
+- **Sem versão:** o widget intercalar tarefas e rotinas por horário (P51, decidir depois de usar
+  esta versão); como desenhar rotinas sobrepostas; limpeza do dado parado no banco.
+
+**Matriz manual final: aprovada,** no release do commit final (versionCode 11000), no emulador.
+Sem falha fatal, ANR nem erro de classe ou método ausente em toda a sessão; dados do emulador
+restaurados e conferidos no fim.
+
+- **Atualização de verdade,** do release da v1.9.1 para o release da v1.10.0, com os casos da
+  migração: sem erro, três abas, tarefa aninhada lida com a rotina que a contém, alarmes iguais,
+  e o resultado da migração igual ao conferido na T1.
+- **No release com R8:** rotina do tipo Exercício com exercício salvo; tarefa com lista; excluir
+  lista; excluir tarefa e desfazer; abrir a lista pela notificação e voltar; restauro de backup da
+  versão 6 idêntico à migração; exportação na versão 7 com banco 12.
+- **A v1.9.1 recusa um backup da versão 7** sem tocar nos dados. Quem voltar de versão precisa do
+  backup exportado **antes** de atualizar, que é o da P43.
+- Atalho antigo fixado abre a aba Tarefas; a aba Listas aberta antes da atualização reabre na
+  Hoje, sem erro.

@@ -9,6 +9,11 @@
     <string name="today_all_routines">Todas as rotinas</string>
     <string name="today_state_done">Feita</string>
     <string name="today_state_pending">Pendente</string>
+    <!-- Leitura da linha de tarefa na Hoje (v1.10.0, ADR-0002 16.10.8 item 6): tipo, hora e título. -->
+    <string name="today_task_row_description">Tarefa, %1$s, %2$s</string>
+    <string name="today_task_row_description_untimed">Tarefa, %1$s</string>
+    <!-- Tarefa dentro de um bloco de rotina (v1.10.0, 16.10.8 item 7). -->
+    <string name="today_task_row_description_inside">Tarefa, %1$s, %2$s, dentro de %3$s</string>
     <string name="today_block_exception">Pular ou remarcar este dia</string>
     <!-- Conteúdo da Hoje (ADR-0002, 14.4; v1.8.0, E3). -->
     <string name="today_skip_day">Pular este dia</string>
@@ -89,8 +94,6 @@
     <string name="task_created_on">Criada em %1$s</string>
     <string name="history_title">Histórico de conclusões</string>
     <string name="history_empty">Nenhuma conclusão registrada ainda.</string>
-    <string name="delete_task_confirm_title">Excluir tarefa?</string>
-    <string name="delete_task_confirm_message">A tarefa e o lembrete serão removidos. As conclusões continuam no histórico do calendário.</string>
     <string name="discard_changes_title">Descartar alterações?</string>
     <string name="discard">Descartar</string>
     <string name="keep_editing">Continuar editando</string>
@@ -107,7 +110,6 @@
     <string name="all_routines_section_active">Ativas</string>
     <string name="all_routines_section_paused">Pausadas</string>
     <string name="all_routines_paused_state">Pausada</string>
-    <string name="all_routines_empty_filter">Nenhuma rotina nesta categoria.</string>
     <string name="all_routines_edit">Editar %1$s</string>
     <string name="all_routines_more">Mais opções para %1$s</string>
     <string name="all_routines_pause">Pausar</string>
@@ -126,29 +128,10 @@
     <string name="task_complete">Concluir %1$s</string>
     <string name="task_uncomplete">Desmarcar %1$s</string>
 
-    <!-- Categorias de rotina -->
-    <string name="routine_category">Categoria</string>
-    <string name="routine_category_none">Sem categoria</string>
-    <string name="routine_category_filter_all">Todas</string>
-    <string name="routine_categories_title">Categorias</string>
-    <string name="routine_categories_empty_title">Nenhuma categoria</string>
-    <string name="routine_categories_empty_message">Crie categorias para agrupar e filtrar suas rotinas.</string>
-    <string name="routine_category_add">Nova categoria</string>
-    <string name="routine_category_edit_title">Editar categoria</string>
-    <string name="routine_category_name_label">Nome</string>
-    <string name="routine_category_edit">Editar %1$s</string>
-    <string name="routine_category_more">Mais opções para %1$s</string>
-    <string name="routine_category_delete_title">Excluir categoria?</string>
-    <string name="routine_category_delete_message">As rotinas de \"%1$s\" ficam sem categoria. Isso não as exclui.</string>
-    <string name="routine_category_kind_label">Tipo</string>
-    <string name="routine_category_kind_simple">Simples</string>
-    <string name="routine_category_kind_shopping">Compras</string>
-    <string name="routine_category_kind_exercise">Exercício</string>
-
-    <!-- Configurações: rotinas -->
-    <string name="settings_section_routines">Rotinas</string>
-    <string name="settings_routine_categories">Categorias de rotina</string>
-    <string name="settings_routine_categories_description">Crie e organize categorias para agrupar suas rotinas.</string>
+    <!-- Tipo da rotina (v1.10.0) -->
+    <string name="routine_kind">Tipo</string>
+    <string name="routine_kind_none">Nenhum</string>
+    <string name="routine_kind_exercise">Exercício</string>
 
     <!-- Editor de rotina -->
     <string name="routine_new_title">Nova rotina</string>
@@ -205,9 +188,6 @@
     <string name="routine_when">Quando</string>
     <string name="routine_appearance">Aparência</string>
     <string name="routine_title_required">Dê um título à rotina.</string>
-    <string name="routine_list_pending">Lista nova: %1$s</string>
-    <string name="routine_list_pending_hint">Ela é criada junto com a rotina.</string>
-    <string name="routine_list_pending_remove">Não criar a lista</string>
     <string name="routine_more_options_expanded">Aberto</string>
     <string name="routine_more_options_collapsed">Recolhido</string>
     <!-- Editores (tarefa e rotina), v1.9.0: desfaz as alterações da sessão (ADR-0002 15.3) -->
@@ -237,8 +217,18 @@
     <!-- Editor de rotina: lista de exercícios (categorias do tipo EXERCICIO) -->
     <string name="exercise_section_title">Lista de exercícios</string>
     <string name="exercise_empty">Nenhum exercício ainda. Toque em \"Adicionar exercício\".</string>
-    <string name="exercise_new_routine_hint">Salve a rotina para montar a lista de exercícios.</string>
     <string name="exercise_add_item">Adicionar exercício</string>
+    <!-- Exercícios salvos (v1.10.0) -->
+    <string name="exercise_save_for_reuse">Salvar para reutilizar</string>
+    <string name="exercise_from_saved">Dos salvos</string>
+    <string name="saved_exercises_title">Exercícios salvos</string>
+    <string name="saved_exercises_empty">Salve um exercício para reutilizar em outras rotinas.</string>
+    <string name="saved_exercise_apply">Adicionar %1$s à rotina</string>
+    <string name="saved_exercise_edit_title">Editar exercício salvo</string>
+    <string name="saved_exercise_edit">Editar %1$s</string>
+    <string name="saved_exercise_delete">Excluir %1$s dos salvos</string>
+    <string name="saved_exercise_delete_title">Excluir exercício salvo?</string>
+    <string name="saved_exercise_delete_message">\"%1$s\" sai dos salvos. As rotinas que já o usam não mudam.</string>
     <string name="exercise_add_title">Novo exercício</string>
     <string name="exercise_edit_title">Editar exercício</string>
     <string name="exercise_item_name_label">Exercício</string>
@@ -250,6 +240,8 @@
     <string name="exercise_item_delete">Remover exercício</string>
     <string name="exercise_item_move_up">Mover para cima</string>
     <string name="exercise_item_move_down">Mover para baixo</string>
+    <string name="exercise_item_edit_named">Editar %1$s</string>
+    <string name="exercise_item_more">Ações de %1$s</string>
     <string name="routine_icon_option">Ícone %1$s</string>
     <string name="routine_color_option">Cor %1$s</string>
     <!-- Na ordem de RoutineIcon. -->

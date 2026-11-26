@@ -20,14 +20,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
@@ -72,29 +73,25 @@ class ShoppingProgressTagFitTest {
         testDb = ViewModelTestDatabase(context)
         runBlocking {
             val db = testDb.db
-            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado"))
+            val listId = db.shoppingListDao().insert(ShoppingList(name = "Mercado", createdAt = TEST_CREATED_AT))
             db.shoppingItemDao().insertAll(
                 listOf(
-                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0),
-                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1),
-                    ShoppingItem(listId = listId, name = "Café", position = 2),
+                    ShoppingItem(listId = listId, name = "Arroz", picked = true, position = 0, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Feijão", picked = true, position = 1, createdAt = TEST_CREATED_AT),
+                    ShoppingItem(listId = listId, name = "Café", position = 2, createdAt = TEST_CREATED_AT),
                 ),
             )
-            db.routineDao().insert(
-                Routine(
-                    title = "Compras da semana no mercado do bairro com a família",
-                    startMinute = 10 * 60,
-                    durationMinutes = 90,
-                    remind = true,
-                    createdAt = 0,
-                    shoppingListId = listId,
-                ),
-            )
+            // v1.10.0: o "2/3" na Hoje fica na linha da TAREFA (rotina não tem lista): tarefa de hoje com
+            // horário, na trilha. A mesma tarefa aparece na aba Tarefas.
+            val today = java.time.LocalDate.now()
             db.taskDao().insert(
                 Task(
                     title = "Passar no mercado e conferir a lista inteira de compras",
                     location = "Supermercado do bairro, perto da praça",
                     shoppingListId = listId,
+                    dueDate = today.toEpochDay(),
+                    reminderAt = today.atTime(23, 30).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                    createdAt = TEST_CREATED_AT,
                 ),
             )
         }
@@ -104,14 +101,14 @@ class ShoppingProgressTagFitTest {
     fun tearDown() = testDb.close()
 
     private fun taskRepository() = testDb.db.let { db ->
-        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     private fun routinesViewModel(): TodayViewModel =
         testDb.track(TodayRepositories(context, testDb.db).viewModel(DayOfWeek.SUNDAY))
 
     private fun taskViewModel(): TaskViewModel =
-        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db), testUndoOffers(testDb)))
+        testDb.track(TaskViewModel(taskRepository(), ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb), clock = SystemAppClock))
 
     private var fontScale by mutableFloatStateOf(1f)
 
@@ -150,7 +147,7 @@ class ShoppingProgressTagFitTest {
     }
 
     @Test
-    fun `aba Rotinas mostra 2 de 3 inteiro com fonte 1_0, 1_3 e 2_0`() {
+    fun `Hoje mostra 2 de 3 inteiro na linha da tarefa com fonte 1_0, 1_3 e 2_0`() {
         val viewModel = routinesViewModel()
         showAtEachScale("Rotinas") {
             TodayScreen(

@@ -2,6 +2,7 @@ package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -55,6 +56,7 @@ class RoutineScheduleTest {
         type = type,
         newStartMinute = newStartMinute,
         newEpochDay = newEpochDay,
+        createdAt = TEST_CREATED_AT,
     )
 
     @Test

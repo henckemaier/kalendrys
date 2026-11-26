@@ -4,24 +4,25 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.kalendrys.app.data.repository.AppClock
+import com.kalendrys.app.data.repository.nowLocal
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.domain.DailySummarySchedule
 import com.kalendrys.app.domain.ReminderRecurrence
 import com.kalendrys.app.reminder.setAlarmClockOrInexact
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
 
 /**
  * Alarmes diários do app: o resumo (exato, no horário das configurações, ou cancelado se
  * desligado) e a virada do dia, que só atualiza os widgets (inexato). Reagendar é idempotente.
  */
-class DailyScheduler(private val context: Context) {
+class DailyScheduler(private val context: Context, private val clock: AppClock) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    fun scheduleAll(settings: AppSettings, now: LocalDateTime = LocalDateTime.now()) {
-        val zone = ZoneId.systemDefault()
+    fun scheduleAll(settings: AppSettings, now: LocalDateTime = clock.nowLocal()) {
+        val zone = clock.zone()
         val summary = pendingIntent(DailyReceiver.ACTION_SUMMARY)
         val summaryAt = DailySummarySchedule.nextAt(settings.summaryEnabled, settings.summaryTime, now, zone)
         if (summaryAt != null) {

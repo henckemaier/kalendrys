@@ -13,8 +13,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testUndoOffers
@@ -52,11 +52,11 @@ class RoutineEditorCompactTest {
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to NEW_ROUTINE_ID)),
                 routines,
-                RoutineCategoryRepository(db),
-                ShoppingRepository(db),
-                ExerciseRepository(db.exerciseItemDao()),
+                ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routines),
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         compose.setContent { KalendrysTheme { RoutineEditorScreen(onBack = {}, viewModel = vm) } }

@@ -12,6 +12,7 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ShoppingListSummary
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
@@ -70,13 +71,17 @@ class TaskDetailViewModel(
     private val undoOffers: UndoOffers,
     /** Escopo das gravações, o do app ([KalendrysApp.editScope]): sobrevive à tela. */
     private val editScope: CoroutineScope,
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     private val taskId: Long = checkNotNull(savedStateHandle[TASK_ID_ARG])
-    private val zone: ZoneId = ZoneId.systemDefault()
+    /** O fuso da sessão da tela, lido do relógio do app ao abrir (como até a v1.9.x). */
+    private val zone: ZoneId = clock.zone()
 
     /** Campos do detalhe que o Reverter conhece. */
-    enum class Field { TITLE, NOTES, LOCATION, TIMING, SHOPPING_LIST }
+    /** Campos que o Reverter conhece. Criar e excluir a lista não entram (v1.10.0, ADR-0002 16.10.4). */
+    enum class Field { TITLE, NOTES, LOCATION, TIMING }
 
     /** Retrato da abertura (primeira emissão do banco), para o Reverter. Não sobrevive ao processo. */
     private data class Snapshot(val task: Task, val timing: TaskTiming)
@@ -102,11 +107,9 @@ class TaskDetailViewModel(
         val doneAt: Long? = null,
         /** O registro da conclusão de [doneAt], o que "Desfazer conclusão" apaga (P6). */
         val doneLogId: Long? = null,
-        val zone: ZoneId = ZoneId.systemDefault(),
-        /** Lista anexada (do banco); null sem lista ou com vínculo órfão (ADR-0001 4.1). */
+        val zone: ZoneId,
+        /** A lista da tarefa (do banco); null sem lista ou com vínculo órfão (ADR-0001 4.1). */
         val shoppingList: ShoppingListSummary? = null,
-        /** Todas as listas, para o "Usar lista existente" do seletor. */
-        val availableLists: List<ShoppingListSummary> = emptyList(),
         /** Algum campo foi mexido nesta sessão: "Reverter alterações" aparece. */
         val canRevert: Boolean = false,
         /**
@@ -169,13 +172,10 @@ class TaskDetailViewModel(
     private val task: Flow<Task?> = repository.observeTask(taskId)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val lists: Flow<Pair<ShoppingListSummary?, List<ShoppingListSummary>>> =
-        combine(
-            task.map { it?.shoppingListId }
-                .distinctUntilChanged()
-                .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) },
-            shoppingRepository.observeSummaries(),
-        ) { linked, all -> linked to all }
+    private val list: Flow<ShoppingListSummary?> =
+        task.map { it?.shoppingListId }
+            .distinctUntilChanged()
+            .flatMapLatest { listId -> if (listId == null) flowOf(null) else shoppingRepository.observeSummary(listId) }
 
     private val texts: Flow<Triple<String?, String?, String?>> =
         combine(titleBuffer.text, notesBuffer.text, locationBuffer.text) { t, n, l -> Triple(t, n, l) }
@@ -190,10 +190,10 @@ class TaskDetailViewModel(
     private val session: Flow<Session> = combine(snapshot, touched, deleting, pendingTiming, ::Session)
 
     val uiState: StateFlow<UiState> =
-        combine(task, repository.observeCompletions(taskId), lists, texts, session) {
-                task, logs, (linked, available), (title, notes, location), session ->
+        combine(task, repository.observeCompletions(taskId), list, texts, session) {
+                task, logs, linked, (title, notes, location), session ->
             val snap = session.snapshot
-            val today = LocalDate.now(zone)
+            val today = Instant.ofEpochMilli(clock.nowMillis()).atZone(zone).toLocalDate()
             val latest = logs.firstOrNull()
             val doneAt = when {
                 latest == null -> null
@@ -216,11 +216,10 @@ class TaskDetailViewModel(
                 doneLogId = latest?.id?.takeIf { doneAt != null },
                 zone = zone,
                 shoppingList = linked,
-                availableLists = available,
                 canRevert = snap != null && session.touched.isNotEmpty(),
                 reminderChanged = snap != null && timing != null && !timing.keepsReminderOf(snap.task, zone),
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(zone = zone))
 
     init {
         viewModelScope.launch {
@@ -269,25 +268,26 @@ class TaskDetailViewModel(
      */
     private var lastSentTiming: TaskTiming? = null
 
-    // --- Lista de compras (ADR-0001): grava na hora; os itens são da tela da lista. ---
+    // --- A lista da tarefa (v1.10.0, ADR-0002 16.10.4): é dela; grava na hora, fora do Reverter. ---
 
-    /** "Usar lista existente". Lista excluída no meio não é vinculada (o repositório confere). */
-    fun attachShoppingList(listId: Long) {
-        touch(Field.SHOPPING_LIST)
-        enqueue(TaskChange.ShoppingList(listId))
-    }
-
-    /** "Criar nova": cria e vincula numa transação só. */
-    fun createShoppingList(name: String) {
+    /**
+     * "Adicionar lista": cria na hora, com o NOME DA TAREFA (P46), e vincula numa transação só. Sem
+     * seletor nem lista existente. O título é o do campo (com a digitação pendente), ou o do banco.
+     */
+    fun createShoppingList() {
+        val name = uiState.value.title.ifBlank { uiState.value.task?.title.orEmpty() }
         if (name.isBlank()) return
-        touch(Field.SHOPPING_LIST)
         enqueue(TaskChange.NewShoppingList(name))
     }
 
-    /** "Desvincular": a lista e os itens continuam na aba Listas. */
-    fun detachShoppingList() {
-        touch(Field.SHOPPING_LIST)
-        enqueue(TaskChange.ShoppingList(null))
+    /**
+     * "Excluir lista" (P45: a tela confirma antes; sem Desfazer): apaga a lista e os itens e tira o
+     * vínculo. Pela MESMA fila das outras gravações do detalhe (regra 15.3, A2 da revisão da T3), com a
+     * linha mais recente: "excluir e adicionar em seguida" sai nessa ordem. A fila roda no escopo do app,
+     * então vale mesmo fechando a tela logo depois.
+     */
+    fun deleteShoppingList() {
+        writes.enqueue { latest -> latest.shoppingListId?.let { shoppingRepository.deleteList(it) } }
     }
 
     /** Grava já a digitação pendente (a tela chama ao ir para segundo plano). */
@@ -357,7 +357,6 @@ class TaskDetailViewModel(
                 Field.NOTES -> TaskChange.Notes(original.notes)
                 Field.LOCATION -> TaskChange.Location(original.location)
                 Field.TIMING -> null // pela fila, com a guarda abaixo
-                Field.SHOPPING_LIST -> TaskChange.ShoppingList(original.shoppingListId)
             }
         }
         val sentTiming = lastSentTiming.takeIf { Field.TIMING in fields }
@@ -410,6 +409,7 @@ class TaskDetailViewModel(
                     app.shoppingRepository,
                     app.undoOffers,
                     app.editScope,
+                    app.clock,
                 )
             }
         }

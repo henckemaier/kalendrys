@@ -88,7 +88,6 @@ private const val DISABLED_ALPHA = 0.38f
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenDiagnostics: () -> Unit,
-    onOpenCategories: () -> Unit,
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -257,25 +256,6 @@ fun SettingsScreen(
                     supporting = stringResource(R.string.settings_diagnostics_description),
                     onClick = onOpenDiagnostics,
                     shape = groupedItemShape(notificationsCount - 1, notificationsCount),
-                    trailing = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
-            }
-
-            item(key = "routines_header") {
-                SectionHeader(stringResource(R.string.settings_section_routines), contentPadding = SectionPadding)
-            }
-            item(key = "routine_categories") {
-                SettingsRow(
-                    title = stringResource(R.string.settings_routine_categories),
-                    supporting = stringResource(R.string.settings_routine_categories_description),
-                    onClick = onOpenCategories,
-                    shape = groupedItemShape(0, 1),
                     trailing = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,

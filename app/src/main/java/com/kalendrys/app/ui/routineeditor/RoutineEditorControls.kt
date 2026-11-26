@@ -3,8 +3,10 @@
 package com.kalendrys.app.ui.routineeditor
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,26 +33,31 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,10 +68,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,19 +88,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
-import com.kalendrys.app.data.repository.ShoppingListOwner
-import com.kalendrys.app.data.repository.ShoppingListSummary
+import com.kalendrys.app.data.local.entity.SavedExercise
+import com.kalendrys.app.data.repository.today
+import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.DurationFormat
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.ExerciseFormat
 import com.kalendrys.app.domain.RoutineColor
-import com.kalendrys.app.domain.AppLocale
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.Dot
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.TimePickerDialog
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.WeekdayToggleRow
@@ -97,8 +111,6 @@ import com.kalendrys.app.ui.routineeditor.RoutineEditorViewModel.Event
 import com.kalendrys.app.ui.routines.imageVector
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.routines.routineTone
-import com.kalendrys.app.ui.shopping.ShoppingListCard
-import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.theme.Spacing
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -112,6 +124,12 @@ import kotlinx.coroutines.flow.collectLatest
  * desenho: nenhum chama o ViewModel; cada seção do [RoutineEditorSections] liga os eventos.
  */
 
+/**
+ * Um exercício da rotina. Achado 2 da Coruja (320dp, fonte 2.0): o nome tem até 2 linhas e a legenda
+ * quebra livre, porque as ações (editar, subir, descer, remover) saem dos 4 ícones e vão para o menu da
+ * linha. Tocar na linha edita. Para o leitor de tela é um nó só, com as mesmas ações como ações da
+ * linha; o botão do menu fica fora da árvore de acessibilidade (como em "Todas as rotinas").
+ */
 @Composable
 internal fun ExerciseItemRow(
     item: ExerciseItem,
@@ -122,30 +140,74 @@ internal fun ExerciseItemRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // Legenda: séries×reps · carga (se houver) · descanso (se houver).
-    val subtitle = buildList {
-        add(ExerciseFormat.setsReps(item.sets, item.reps))
-        item.load?.let { add(it) }
-        item.restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
-    }.joinToString(" · ")
+    val canMoveUp = index > 0
+    val canMoveDown = index < count - 1
+    val editLabel = stringResource(R.string.exercise_item_edit)
+    val upLabel = stringResource(R.string.exercise_item_move_up)
+    val downLabel = stringResource(R.string.exercise_item_move_down)
+    val deleteLabel = stringResource(R.string.exercise_item_delete)
+    val actions = buildList {
+        add(RowAction(editLabel, Icons.Outlined.Edit, onEdit))
+        if (canMoveUp) add(RowAction(upLabel, Icons.Filled.KeyboardArrowUp, onMoveUp))
+        if (canMoveDown) add(RowAction(downLabel, Icons.Filled.KeyboardArrowDown, onMoveDown))
+        add(RowAction(deleteLabel, Icons.Outlined.Delete, onDelete))
+    }
+    ExerciseLikeRow(
+        name = item.name,
+        subtitle = exerciseSubtitle(item.sets, item.reps, item.load, item.restSeconds),
+        index = index,
+        count = count,
+        onClick = onEdit,
+        onClickLabel = stringResource(R.string.exercise_item_edit_named, item.name),
+        menuDescription = stringResource(R.string.exercise_item_more, item.name),
+        actions = actions,
+        modifier = Modifier.testTag("$EXERCISE_ROW_TAG${item.id}"),
+    )
+}
+
+/** Uma ação do menu da linha, que é também ação da linha para o leitor de tela. */
+internal class RowAction(val label: String, val icon: ImageVector, val onClick: () -> Unit)
+
+/**
+ * Linha de exercício (da rotina ou salvo): nome em até 2 linhas, legenda livre, toque principal na
+ * linha e as outras [actions] no menu de três pontos e como ações de acessibilidade da linha.
+ */
+@Composable
+private fun ExerciseLikeRow(
+    name: String,
+    subtitle: String,
+    index: Int,
+    count: Int,
+    onClick: () -> Unit,
+    onClickLabel: String,
+    menuDescription: String,
+    actions: List<RowAction>,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         shape = groupedItemShape(index, count),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(bottom = 2.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 16.dp, end = 4.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp)
+                    .clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick)
+                    // No MESMO nó do toque: um nó só por linha para o leitor, com as ações do menu.
+                    .semantics {
+                        customActions = actions.map { action -> CustomAccessibilityAction(action.label) { action.onClick(); true } }
+                    }
+                    .padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
-                    text = item.name,
+                    text = name,
                     style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
+                    maxLines = NAME_MAX_LINES,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
@@ -154,41 +216,67 @@ internal fun ExerciseItemRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onMoveUp, enabled = index > 0) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.exercise_item_move_up))
-            }
-            IconButton(onClick = onMoveDown, enabled = index < count - 1) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.exercise_item_move_down))
-            }
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.exercise_item_edit))
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.exercise_item_delete))
-            }
+            RowActionsMenu(description = menuDescription, actions = actions)
         }
     }
 }
 
 @Composable
+private fun RowActionsMenu(description: String, actions: List<RowAction>) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    // Fora da árvore de acessibilidade: as mesmas ações estão na linha (customActions).
+    Box(modifier = Modifier.testTag(ROW_MENU_TAG).clearAndSetSemantics {}) {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, contentDescription = description)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            actions.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(action.label) },
+                    leadingIcon = { Icon(action.icon, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        action.onClick()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Nome do exercício em até 2 linhas (achado 2 da Coruja). */
+internal const val NAME_MAX_LINES = 2
+
+/** Tags para os testes: a linha do exercício (+ id) e o botão do menu de cada linha. */
+internal const val EXERCISE_ROW_TAG = "exercise_row_"
+internal const val ROW_MENU_TAG = "exercise_row_menu"
+
+/**
+ * Diálogo dos campos de um exercício: novo ou editado, da rotina ou salvo. [stateKey] identifica o que
+ * está sendo editado (os campos digitados sobrevivem a girar a tela). Com [offerSaveForReuse] mostra
+ * "Salvar para reutilizar" (v1.10.0, 16.10.5: os salvos nascem daqui), desmarcado a cada abertura.
+ */
+@Composable
 internal fun ExerciseItemDialog(
-    existing: ExerciseItem?,
-    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?) -> Unit,
+    initial: ExerciseFields?,
+    stateKey: String,
+    @StringRes titleRes: Int,
+    offerSaveForReuse: Boolean,
+    onConfirm: (name: String, sets: Int, reps: Int, load: String?, restSeconds: Int?, saveForReuse: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by rememberSaveable(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var setsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.sets?.toString() ?: "3") }
-    var repsText by rememberSaveable(existing?.id) { mutableStateOf(existing?.reps?.toString() ?: "10") }
-    var loadText by rememberSaveable(existing?.id) { mutableStateOf(existing?.load ?: "") }
-    var restText by rememberSaveable(existing?.id) { mutableStateOf(existing?.restSeconds?.toString() ?: "") }
+    var name by rememberSaveable(stateKey) { mutableStateOf(initial?.name ?: "") }
+    var setsText by rememberSaveable(stateKey) { mutableStateOf(initial?.sets?.toString() ?: "3") }
+    var repsText by rememberSaveable(stateKey) { mutableStateOf(initial?.reps?.toString() ?: "10") }
+    var loadText by rememberSaveable(stateKey) { mutableStateOf(initial?.load ?: "") }
+    var restText by rememberSaveable(stateKey) { mutableStateOf(initial?.restSeconds?.toString() ?: "") }
+    var saveForReuse by rememberSaveable(stateKey) { mutableStateOf(false) }
     // Séries/reps caem no mínimo 1 quando em branco; carga e descanso em branco = sem valor (null).
     val sets = setsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
     val reps = repsText.toIntOrNull()?.coerceAtLeast(1) ?: 1
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (existing == null) R.string.exercise_add_title else R.string.exercise_edit_title))
-        },
+        title = { Text(stringResource(titleRes)) },
         text = {
             Column {
                 OutlinedTextField(
@@ -238,6 +326,21 @@ internal fun ExerciseItemDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (offerSaveForReuse) {
+                    // A linha inteira é o alvo (um nó só, papel de caixa de seleção).
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .heightIn(min = 48.dp)
+                            .toggleable(value = saveForReuse, role = Role.Checkbox, onValueChange = { saveForReuse = it }),
+                    ) {
+                        Checkbox(checked = saveForReuse, onCheckedChange = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.exercise_save_for_reuse), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -245,7 +348,7 @@ internal fun ExerciseItemDialog(
                 onClick = {
                     val load = loadText.trim().takeIf { it.isNotEmpty() }
                     val rest = restText.toIntOrNull()
-                    onConfirm(name.trim(), sets, reps, load, rest)
+                    onConfirm(name.trim(), sets, reps, load, rest, offerSaveForReuse && saveForReuse)
                 },
                 enabled = name.isNotBlank(),
             ) { Text(stringResource(R.string.save)) }
@@ -255,6 +358,87 @@ internal fun ExerciseItemDialog(
         },
     )
 }
+
+/**
+ * Painel "Dos salvos" (v1.10.0, 16.10.5): os exercícios salvos, por nome. Tocar na linha aplica uma
+ * CÓPIA na rotina (e fecha); editar abre o diálogo dos campos; excluir pede confirmação na tela. As cópias
+ * já aplicadas nunca mudam com o salvo.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SavedExercisesSheet(
+    saved: List<SavedExercise>,
+    onApply: (SavedExercise) -> Unit,
+    onEdit: (SavedExercise) -> Unit,
+    onDelete: (SavedExercise) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Text(
+                text = stringResource(R.string.saved_exercises_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp).semantics { heading() },
+            )
+            if (saved.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.saved_exercises_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            } else {
+                LazyColumn {
+                    itemsIndexed(saved, key = { _, it -> it.id }) { index, item ->
+                        SavedExerciseRow(
+                            item = item,
+                            index = index,
+                            count = saved.size,
+                            onApply = { onApply(item) },
+                            onEdit = { onEdit(item) },
+                            onDelete = { onDelete(item) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Um salvo no painel: tocar aplica uma cópia; editar e excluir no menu da linha (achado 2 da Coruja). */
+@Composable
+internal fun SavedExerciseRow(
+    item: SavedExercise,
+    index: Int,
+    count: Int,
+    onApply: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    ExerciseLikeRow(
+        name = item.name,
+        subtitle = exerciseSubtitle(item.sets, item.reps, item.load, item.restSeconds),
+        index = index,
+        count = count,
+        onClick = onApply,
+        onClickLabel = stringResource(R.string.saved_exercise_apply, item.name),
+        menuDescription = stringResource(R.string.exercise_item_more, item.name),
+        actions = listOf(
+            RowAction(stringResource(R.string.saved_exercise_edit, item.name), Icons.Outlined.Edit, onEdit),
+            RowAction(stringResource(R.string.saved_exercise_delete, item.name), Icons.Outlined.Delete, onDelete),
+        ),
+        modifier = Modifier.testTag("$SAVED_ROW_TAG${item.id}"),
+    )
+}
+
+internal const val SAVED_ROW_TAG = "saved_exercise_row_"
+
+/** Legenda de um exercício: séries×reps · carga (se houver) · descanso (se houver). */
+internal fun exerciseSubtitle(sets: Int, reps: Int, load: String?, restSeconds: Int?): String = buildList {
+    add(ExerciseFormat.setsReps(sets, reps))
+    load?.let { add(it) }
+    restSeconds?.let { add(ExerciseFormat.restLabel(it)) }
+}.joinToString(" · ")
 
 internal fun timeOf(minute: Int): LocalTime = LocalTime.of(minute % 1440 / 60, minute % 60)
 
@@ -466,7 +650,7 @@ internal fun RoutineDatePicker(
     minEpochDay: Long? = null,
 ) {
     val state = rememberDatePickerState(
-        initialSelectedDateMillis = (initialEpochDay ?: minEpochDay ?: LocalDate.now().toEpochDay()) * MILLIS_PER_DAY,
+        initialSelectedDateMillis = (initialEpochDay ?: minEpochDay ?: LocalAppClock.current.today().toEpochDay()) * MILLIS_PER_DAY,
         selectableDates = object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean =
                 minEpochDay == null || utcTimeMillis / MILLIS_PER_DAY >= minEpochDay

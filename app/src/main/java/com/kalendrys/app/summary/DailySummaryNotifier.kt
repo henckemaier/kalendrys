@@ -22,7 +22,7 @@ object DailySummaryNotifier {
     private const val MAX_LINES = 5
     private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-    fun show(context: Context, overview: TodayOverview, now: LocalTime = LocalTime.now()) {
+    fun show(context: Context, overview: TodayOverview, now: LocalTime) {
         // O resumo é um retrato do momento: blocos de rotina que já terminaram ficam de fora.
         val routinesAhead = overview.pendingRoutines.filterNot { it.isOver(now) }
         // Dia sem pendências: não há o que resumir.
@@ -45,7 +45,7 @@ object DailySummaryNotifier {
 
         // Primeiro o que tem horário (lembretes de hoje e rotinas), em ordem; depois as tarefas sem horário.
         val timed = overview.pending.mapNotNull { task -> task.reminderToday?.let { it to task.titleWithList() } } +
-            routinesAhead.map { it.start to ShoppingProgress.titleWithProgress(it.title, it.listProgress) }
+            routinesAhead.map { it.start to it.title }
         val lines = timed.sortedBy { it.first }.map { (time, title) -> "${time.format(TIME)}  $title" } +
             overview.pending.filter { it.reminderToday == null }.map { it.titleWithList() }
 

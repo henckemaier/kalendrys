@@ -27,5 +27,5 @@ data class ExerciseItem(
     val load: String? = null,
     val restSeconds: Int? = null,
     val position: Int,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long,
 )

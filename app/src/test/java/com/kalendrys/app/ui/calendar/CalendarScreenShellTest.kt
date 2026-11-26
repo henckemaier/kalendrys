@@ -15,6 +15,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -57,17 +58,18 @@ class CalendarScreenShellTest {
         val db = testDb.db
         viewModel = testDb.track(
             CalendarViewModel(
-                TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao()),
+                TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock),
                 RoutineRepository(
                     db.routineDao(),
                     db.routineCompletionDao(),
                     db.routineOverrideDao(),
                     FakeRoutineAlarms(context),
                     FakeRoutineNotifications(context),
-                    db.shoppingItemDao(),
                     InMemoryRoutineCatchUpMark(),
+                    clock = SystemAppClock,
                 ),
-                ShoppingRepository(db),
+                ShoppingRepository(db, clock = SystemAppClock),
+                clock = SystemAppClock,
             ),
         )
         compose.setContent {

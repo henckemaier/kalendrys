@@ -2,30 +2,20 @@
 <!-- Listas independentes (ADR-0001, v1.5.0): aba Listas e tela da lista. Arquivo próprio para não
      disputar o strings.xml com outras frentes. -->
 <resources>
-    <string name="tab_lists">Listas</string>
 
     <!-- Aba Listas -->
-    <string name="shopping_lists_empty_title">Nenhuma lista ainda</string>
-    <string name="shopping_lists_empty_message">Crie uma lista de compras e use no mercado. Ela também pode ser anexada a uma rotina.</string>
-    <string name="shopping_list_create">Nova lista</string>
     <string name="shopping_list_rename">Renomear lista</string>
     <string name="shopping_list_delete">Excluir lista</string>
-    <string name="shopping_list_options_named">Opções de %1$s</string>
     <string name="shopping_list_picked_group">Marcados</string>
     <string name="shopping_list_picked_collapse">Recolher marcados</string>
     <string name="shopping_list_picked_expand">Mostrar marcados</string>
     <string name="shopping_quick_add_action">Adicionar</string>
-    <string name="shopping_list_open">abrir a lista</string>
     <string name="shopping_list_name_label">Nome da lista</string>
     <string name="shopping_list_owner_routine">Rotina %1$s</string>
     <string name="shopping_list_owner_task">Tarefa %1$s</string>
-    <string name="shopping_list_standalone">Avulsa</string>
     <string name="shopping_list_delete_title">Excluir lista?</string>
-    <plurals name="shopping_list_delete_message">
-        <item quantity="one">A lista \"%1$s\" e o seu %2$d item serão excluídos.</item>
-        <item quantity="other">A lista \"%1$s\" e os seus %2$d itens serão excluídos.</item>
-    </plurals>
-    <string name="shopping_list_delete_owners">Perdem o vínculo com ela: %1$s.</string>
+    <!-- v1.10.0 (P45): corpo do "Excluir lista?" — a lista é da tarefa e sai com os itens, sem Desfazer. -->
+    <string name="shopping_list_delete_message">A lista \"%1$s\" e os itens dela serão apagados. Isso não pode ser desfeito.</string>
 
     <!-- Tela da lista -->
     <string name="shopping_list_not_found_title">Lista não encontrada</string>

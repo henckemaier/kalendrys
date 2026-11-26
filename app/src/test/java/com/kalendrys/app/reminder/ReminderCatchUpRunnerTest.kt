@@ -5,14 +5,18 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.TEST_CREATED_AT
+import com.kalendrys.app.testutil.clockOf
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
@@ -119,10 +123,10 @@ class ReminderCatchUpRunnerTest {
         )
         scheduler = LoggingScheduler(context, log)
         notifier = FakeNotifier(log)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao()) {
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock) {
             runner.run(clock)
         }
-        runner = ReminderCatchUpRunner(repository, settings, notifier, zone = { zone }, clock = { clock })
+        runner = ReminderCatchUpRunner(repository, settings, notifier, clock = clockOf(zone = { zone }) { clock })
     }
 
     @After
@@ -140,7 +144,7 @@ class ReminderCatchUpRunnerTest {
         title: String = "Tarefa",
         date: LocalDate = day,
     ): Task {
-        val task = Task(title = title, dueDate = date.toEpochDay(), reminderAt = at(hour, minute, date), repeat = repeat)
+        val task = Task(title = title, dueDate = date.toEpochDay(), reminderAt = at(hour, minute, date), repeat = repeat, createdAt = TEST_CREATED_AT)
         return task.copy(id = db.taskDao().insert(task))
     }
 
@@ -275,7 +279,7 @@ class ReminderCatchUpRunnerTest {
         seenAt(at(8))
         repository.deleteTask(task) // às 8:30, antes do lembrete
         clock = at(10)
-        repository.restoreTask(task) // "Desfazer" às 10:00
+        repository.restoreTask(TaskWithList(task, null, emptyList())) // "Desfazer" às 10:00
         runner.run(at(10, 5))
         assertEquals(emptyList<Long>(), notifier.shown)
     }

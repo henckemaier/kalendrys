@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.ThemeMode
+import com.kalendrys.app.testutil.clockOf
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -55,7 +57,7 @@ class DailySummaryCatchUpTest {
                 log += "schedule"
             },
             show = { log += "show" },
-            zone = { zone },
+            clock = clockOf(zone = { zone }) { System.currentTimeMillis() },
         )
     }
 

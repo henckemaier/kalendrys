@@ -3,13 +3,14 @@ package com.kalendrys.app.reminder
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.reminder.ReminderNotifications.Action
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Ações do lembrete de tarefa (ADR-0002, E-1): "Abrir lista" só quando a tarefa tem lista válida. */
 class ReminderNotificationsTest {
 
-    private fun task(shoppingListId: Long?) = Task(id = 1, title = "Feira", shoppingListId = shoppingListId)
+    private fun task(shoppingListId: Long?) = Task(id = 1, title = "Feira", shoppingListId = shoppingListId, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `tarefa sem lista mantem Concluir e Adiar`() {

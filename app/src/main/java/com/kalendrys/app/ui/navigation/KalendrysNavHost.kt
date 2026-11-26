@@ -11,11 +11,9 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Icon
@@ -52,8 +50,9 @@ import com.kalendrys.app.NewTaskPanel
 import com.kalendrys.app.LaunchRequest
 import com.kalendrys.app.R
 import com.kalendrys.app.UndoOffers
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.ui.calendar.CalendarScreen
-import com.kalendrys.app.ui.categories.RoutineCategoriesScreen
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.diagnostics.AlarmDiagnosticsScreen
 import com.kalendrys.app.ui.routineeditor.ROUTINE_EDITOR_ROUTE
@@ -71,7 +70,6 @@ import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ID_ARG
 import com.kalendrys.app.ui.shopping.SHOPPING_LIST_ROUTE
 import com.kalendrys.app.ui.shopping.SHOPPING_LIST_TASK_ID_ARG
 import com.kalendrys.app.ui.shopping.ShoppingListScreen
-import com.kalendrys.app.ui.shopping.ShoppingListsScreen
 import com.kalendrys.app.ui.shopping.shoppingListRoute
 import com.kalendrys.app.ui.taskdetail.TASK_DETAIL_ROUTE
 import com.kalendrys.app.ui.taskdetail.TASK_ID_ARG
@@ -98,8 +96,15 @@ enum class AppTab(
     Today("routines", R.string.tab_today, Icons.Filled.Today, Icons.Outlined.Today),
     Tasks("tasks", R.string.tab_tasks, Icons.Filled.TaskAlt, Icons.Outlined.TaskAlt),
     Calendar("calendar", R.string.tab_calendar, Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
-    Lists("lists", R.string.tab_lists, Icons.Filled.Checklist, Icons.Outlined.Checklist),
 }
+
+/**
+ * Rota da antiga aba Listas (até a v1.9.x). A aba saiu na v1.10.0 (ADR-0002 16.10.1), mas a rota fica
+ * registrada: um estado salvo com ela aberta (atualizar com a aba Listas na frente) é restaurado aqui e
+ * vai para a aba Tarefas, em vez de derrubar o app (o mesmo cuidado da rota "routines" na v1.8.0).
+ */
+private const val LEGACY_LISTS_ROUTE = "lists"
+
 
 @Composable
 fun KalendrysNavHost(
@@ -109,6 +114,7 @@ fun KalendrysNavHost(
     newTaskPanel: NewTaskPanel = (LocalContext.current.applicationContext as KalendrysApp).newTaskPanel,
 ) {
     val navController = rememberNavController()
+    val clock = LocalAppClock.current
     // Mensagens do app (Desfazer das exclusões de tarefa e rotina): o único coletor; quem desenha é o
     // AppScaffold da tela à frente, que lê o estado pelo LocalAppSnackbarHostState.
     val appSnackbar = remember { SnackbarHostState() }
@@ -119,9 +125,8 @@ fun KalendrysNavHost(
     val openTask: (Long) -> Unit = { taskId -> navController.navigate(taskDetailRoute(taskId)) }
     val openSettings: () -> Unit = { navController.navigate(SETTINGS_ROUTE) { launchSingleTop = true } }
     val openDiagnostics: () -> Unit = { navController.navigate(ALARM_DIAGNOSTICS_ROUTE) { launchSingleTop = true } }
-    val openCategories: () -> Unit = { navController.navigate(ROUTINE_CATEGORIES_ROUTE) { launchSingleTop = true } }
     val openRoutine: (Long) -> Unit = { routineId -> navController.navigate(routineEditorRoute(routineId)) }
-    val openShoppingList: (Long) -> Unit = { listId -> navController.navigate(shoppingListRoute(listId)) }
+    val app = LocalContext.current.applicationContext as KalendrysApp
     val openRoutineException: (Long, Long) -> Unit = { routineId, epochDay ->
         navController.navigate(routineExceptionRoute(routineId, epochDay))
     }
@@ -197,8 +202,8 @@ fun KalendrysNavHost(
                         onNewTask = openNewTask,
                     )
                 }
-                composable(AppTab.Lists.route) {
-                    ShoppingListsScreen(onOpenList = openShoppingList, onOpenSettings = openSettings)
+                composable(LEGACY_LISTS_ROUTE) {
+                    LaunchedEffect(Unit) { navController.openTab(AppTab.Tasks) }
                 }
                 // Tela de uso da lista (ADR-0001, 4.5); a barra de abas some por não ser rota de aba.
                 composable(
@@ -235,7 +240,6 @@ fun KalendrysNavHost(
                 ) {
                     RoutineEditorScreen(
                         onBack = { navController.popIfCurrent(ROUTINE_EDITOR_ROUTE) },
-                        onOpenShoppingList = openShoppingList,
                     )
                 }
                 // Exceção pontual de uma ocorrência. O gatilho na timeline (long-press/menu) é plugado
@@ -271,7 +275,6 @@ fun KalendrysNavHost(
                     SettingsScreen(
                         onBack = { navController.popIfCurrent(SETTINGS_ROUTE) },
                         onOpenDiagnostics = openDiagnostics,
-                        onOpenCategories = openCategories,
                     )
                 }
                 composable(
@@ -280,13 +283,6 @@ fun KalendrysNavHost(
                     popExitTransition = { slideOutOfContainer(SlideDirection.End) },
                 ) {
                     AlarmDiagnosticsScreen(onBack = { navController.popIfCurrent(ALARM_DIAGNOSTICS_ROUTE) })
-                }
-                composable(
-                    route = ROUTINE_CATEGORIES_ROUTE,
-                    enterTransition = { slideIntoContainer(SlideDirection.Start) },
-                    popExitTransition = { slideOutOfContainer(SlideDirection.End) },
-                ) {
-                    RoutineCategoriesScreen(onBack = { navController.popIfCurrent(ROUTINE_CATEGORIES_ROUTE) })
                 }
             }
         }
@@ -302,36 +298,45 @@ fun KalendrysNavHost(
             is LaunchRequest.OpenTask -> openTask(launchRequest.taskId)
             // Widget e atalho: o painel abre POR CIMA do que estiver na tela, sem trocar de aba (O-2 da
             // v1.7.0); com o app frio, sobre a aba inicial (Hoje).
-            LaunchRequest.NewTask -> openNewTask(LocalDate.now())
+            LaunchRequest.NewTask -> openNewTask(clock.today())
             // Se o editor de rotina estava aberto, a aba volta com ele (restoreState) e o dia
             // pedido só vale ao sair do editor.
             LaunchRequest.OpenCalendar -> navController.openTab(AppTab.Calendar)
             is LaunchRequest.OpenRoutines -> {
                 navController.openTab(AppTab.Today)
-                routinesDateRequested = launchRequest.date
+                routinesDateRequested = launchRequest.date ?: clock.today()
             }
-            // ADR-0002, E-1: aba Listas e, sobre ela, SÓ a lista pedida (voltar cai na aba). O openTab
-            // restaura a pilha salva da aba, que pode já ter uma lista aberta: desempilha até a aba
-            // (sem tirá-la) antes de abrir, para não empilhar lista sobre lista nem duplicar a mesma.
-            // Lista inexistente cai no estado "não encontrada" da própria tela.
+            // v1.10.0 (ADR-0002 16.10.4): a lista abre sobre o detalhe da tarefa DONA, e esse sobre a aba
+            // Tarefas; voltar nunca sai do app. A dona vem do banco (o taskId do link é só a origem antiga).
+            // O openTab restaura a pilha salva da aba: desempilha até ela antes de abrir. Lista que não
+            // existe mais (ou sem dona) fica na aba Tarefas.
             is LaunchRequest.OpenList -> {
-                navController.openTab(AppTab.Lists)
-                navController.popBackStack(AppTab.Lists.route, inclusive = false)
-                navController.navigate(shoppingListRoute(launchRequest.listId, launchRequest.taskId))
+                navController.openTab(AppTab.Tasks)
+                navController.popBackStack(AppTab.Tasks.route, inclusive = false)
+                val owner = app.repository.ownerOfList(launchRequest.listId)
+                listLinkStack(launchRequest.listId, owner?.id).forEach { navController.navigate(it) }
             }
-            // Atalho "Listas" (ADR-0002, 12.6): a aba em si, mesmo que a pilha salva tenha uma lista aberta.
+            // Endereço da antiga aba Listas (atalho fixado, widget ou notificação antigos): a aba Tarefas.
             LaunchRequest.OpenLists -> {
-                navController.openTab(AppTab.Lists)
-                navController.popBackStack(AppTab.Lists.route, inclusive = false)
+                navController.openTab(AppTab.Tasks)
+                navController.popBackStack(AppTab.Tasks.route, inclusive = false)
             }
         }
         onLaunchRequestHandled()
     }
 }
 
+/**
+ * O que abre, por cima da aba Tarefas, para o link da lista [listId] (v1.10.0, ADR-0002 16.10.4): o
+ * detalhe da tarefa dona e, sobre ele, a lista. Sem dona ([ownerTaskId] nulo: lista que não existe mais
+ * ou sem tarefa), nada: fica a aba Tarefas. Voltar desempilha lista, detalhe e cai na aba, nunca fora
+ * do app.
+ */
+internal fun listLinkStack(listId: Long, ownerTaskId: Long?): List<String> =
+    if (ownerTaskId == null) emptyList() else listOf(taskDetailRoute(ownerTaskId), shoppingListRoute(listId, ownerTaskId))
+
 private const val SETTINGS_ROUTE = "settings"
 private const val ALARM_DIAGNOSTICS_ROUTE = "alarm-diagnostics"
-private const val ROUTINE_CATEGORIES_ROUTE = "routine-categories"
 
 /** Evita desempilhar duas vezes com toques repetidos em "voltar" durante a animação. */
 private fun NavHostController.popIfCurrent(route: String) {

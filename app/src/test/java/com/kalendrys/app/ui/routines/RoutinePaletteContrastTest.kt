@@ -10,6 +10,9 @@ import org.junit.Test
  * O ícone sobre a pílula do bloco precisa ser legível nas duas variantes da paleta (ADR-0002, 12.3).
  * Contraste mínimo de 4.5:1 (WCAG AA para texto). A conferência contra a cor dinâmica de verdade
  * (dois papéis de parede) fica na matriz manual da E7.
+ *
+ * v1.10.0 (N2 da Coruja na T3): o losango da tarefa aninhada sobre a faixa do bloco usa o MESMO onFill,
+ * então este teste também prende o contraste dele (pedido: 3:1 para elemento gráfico; aqui 4.5:1).
  */
 class RoutinePaletteContrastTest {
 

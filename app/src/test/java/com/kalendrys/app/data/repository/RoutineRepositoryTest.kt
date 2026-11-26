@@ -12,6 +12,7 @@ import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -52,8 +53,8 @@ class RoutineRepositoryTest {
             db.routineOverrideDao(),
             alarms,
             notifications,
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
     }
 
@@ -63,7 +64,7 @@ class RoutineRepositoryTest {
     }
 
     private fun routine(title: String = "Treino", startMinute: Int = 600) =
-        Routine(title = title, startMinute = startMinute)
+        Routine(title = title, startMinute = startMinute, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `routineForNotification devolve o bloco ativo que ocorre hoje e nao foi concluido`() = runTest {
@@ -250,91 +251,23 @@ class RoutineRepositoryTest {
         assertTrue(notifications.cancelled.isEmpty())
     }
 
-    // --- Reinício da lista ao concluir o bloco (ADR-0001, P4) ---
-
-    private suspend fun routineWithList(title: String = "Mercado", listId: Long? = null): Pair<Routine, Long> {
-        val shopping = ShoppingRepository(db)
-        val id = listId ?: shopping.createList(title).also { lid ->
-            shopping.add(lid, "Arroz", 1, null)
-            shopping.add(lid, "Feijão", 1, null)
-            db.shoppingItemDao().byList(lid).forEach { shopping.setPicked(it, true) }
-        }
-        return repository.add(Routine(title = title, startMinute = 600, shoppingListId = id)) to id
-    }
-
-    private suspend fun picked(listId: Long) = db.shoppingItemDao().byList(listId).map { it.picked }
+    // --- v1.10.0 (ADR-0002 16.10.1): rotina não tem lista; concluir não mexe em lista nenhuma ---
 
     @Test
-    fun `concluir o bloco de hoje zera a lista e desfazer restaura`() = runTest {
+    fun `concluir e desfazer rotina com vinculo antigo no banco nao mexem na lista`() = runTest {
+        // Um vínculo que tenha escapado da migração (linha gravada direto): ignorado.
+        val shopping = ShoppingRepository(db, clock = SystemAppClock)
+        val listId = shopping.createList("Mercado")
+        shopping.add(listId, "Arroz", 1, null)
+        db.shoppingItemDao().byList(listId).forEach { shopping.setPicked(it, true) }
+        val id = db.routineDao().insert(Routine(title = "Mercado", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         val today = LocalDate.now()
-        val (routine, listId) = routineWithList()
 
-        repository.complete(routine.id, today, today)
-        assertEquals(listOf(false, false), picked(listId))
-
-        repository.uncomplete(routine.id, today)
-        assertEquals(listOf(true, true), picked(listId))
-    }
-
-    @Test
-    fun `concluir dia passado nao mexe na lista`() = runTest {
-        val today = LocalDate.now()
-        val (routine, listId) = routineWithList()
-
-        repository.complete(routine.id, today.minusDays(1), today)
-        assertEquals(listOf(true, true), picked(listId))
-        repository.uncomplete(routine.id, today.minusDays(1))
-        assertEquals(listOf(true, true), picked(listId))
-    }
-
-    @Test
-    fun `concluir duas vezes nao perde as marcacoes guardadas`() = runTest {
-        val today = LocalDate.now()
-        val (routine, listId) = routineWithList()
-
-        repository.complete(routine.id, today, today)
-        repository.complete(routine.id, today, today)
-        repository.uncomplete(routine.id, today)
-        assertEquals(listOf(true, true), picked(listId))
-    }
-
-    @Test
-    fun `rotina sem lista ou com vinculo orfao conclui sem falhar`() = runTest {
-        val today = LocalDate.now()
-        val plain = repository.add(Routine(title = "Sem lista", startMinute = 600))
-        val orphan = repository.add(Routine(title = "Órfã", startMinute = 600, shoppingListId = 999))
-
-        repository.complete(plain.id, today, today)
-        repository.complete(orphan.id, today, today)
-        repository.uncomplete(orphan.id, today)
-        assertEquals(listOf(plain.id), db.routineCompletionDao().doneOn(today.toEpochDay()))
-    }
-
-    @Test
-    fun `concluir bloco de hoje de rotina arquivada nao mexe na lista`() = runTest {
-        // P5: o vínculo de rotina arquivada é mantido no banco, mas ignorado no reinício.
-        val today = LocalDate.now()
-        val (routine, listId) = routineWithList()
-        repository.archive(routine)
-
-        repository.complete(routine.id, today, today)
-        assertEquals(listOf(true, true), picked(listId))
-        assertEquals(listId, db.routineDao().byId(routine.id)!!.shoppingListId)
-    }
-
-    @Test
-    fun `lista compartilhada por duas rotinas zera para ambas`() = runTest {
-        val today = LocalDate.now()
-        val (first, listId) = routineWithList("Feira")
-        val (second, _) = routineWithList("Mercado", listId)
-
-        repository.complete(first.id, today, today)
-        assertEquals(listOf(false, false), picked(listId))
-        // O desfazer do outro dono não tem reinício para reverter.
-        repository.uncomplete(second.id, today)
-        assertEquals(listOf(false, false), picked(listId))
-        repository.uncomplete(first.id, today)
-        assertEquals(listOf(true, true), picked(listId))
+        repository.complete(id, today, today)
+        assertEquals(listOf(true), db.shoppingItemDao().byList(listId).map { it.picked })
+        assertNull(db.shoppingListDao().byId(listId)!!.lastResetKey)
+        repository.uncomplete(id, today)
+        assertEquals(listOf(true), db.shoppingItemDao().byList(listId).map { it.picked })
     }
 
     @Test
@@ -361,7 +294,7 @@ class RoutineRepositoryTest {
         val epochDay = LocalDate.now().toEpochDay()
         repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 930, newEpochDay = null)
 
-        val previous = repository.skipOccurrence(saved.id, epochDay)
+        val previous = checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous
         assertEquals(RoutineOverrideType.SKIP, repository.occurrenceOverride(saved.id, epochDay)?.type)
         assertEquals(RoutineOverrideType.RESCHEDULE, previous?.type)
 
@@ -378,15 +311,37 @@ class RoutineRepositoryTest {
         val saved = repository.add(routine())
         val epochDay = LocalDate.now().toEpochDay()
 
+        assertNull(checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous)
+        assertNull(checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous)
+    }
+
+    @Test
+    fun `pular rotina arquivada nao grava nada e devolve null`() = runTest {
+        // O-3 do Lince (v1.10.0): "Excluir" tira a rotina de hoje em diante; pular não tem efeito.
+        val saved = repository.add(routine())
+        repository.archive(saved)
+        val epochDay = LocalDate.now().toEpochDay()
+
         assertNull(repository.skipOccurrence(saved.id, epochDay))
-        assertNull(repository.skipOccurrence(saved.id, epochDay))
+
+        assertNull(repository.occurrenceOverride(saved.id, epochDay))
+    }
+
+    @Test
+    fun `pular rotina que nao existe mais nao grava nada e devolve null`() = runTest {
+        val epochDay = LocalDate.now().toEpochDay()
+
+        assertNull(repository.skipOccurrence(999, epochDay))
+
+        assertNull(repository.occurrenceOverride(999, epochDay))
+        assertTrue(db.routineOverrideDao().all().isEmpty())
     }
 
     @Test
     fun `restaurar so age se o dia ainda esta pulado`() = runTest {
         val saved = repository.add(routine())
         val epochDay = LocalDate.now().toEpochDay()
-        val previous = repository.skipOccurrence(saved.id, epochDay)
+        val previous = checkNotNull(repository.skipOccurrence(saved.id, epochDay)).previous
         // Outra alteração no meio (ex.: remarcou pela tela de exceção): ela vence.
         repository.rescheduleOccurrence(saved.id, epochDay, newStartMinute = 1_000, newEpochDay = null)
 

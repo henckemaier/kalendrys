@@ -1,8 +1,10 @@
 package com.kalendrys.app
 
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.TaskRepository
 import java.time.LocalDate
@@ -23,7 +25,10 @@ sealed interface UndoTarget {
      * Tarefa excluída pelo detalhe (v1.8.0, E0-D) ou pelo deslize na lista de Tarefas (E5), com os
      * dados de antes da exclusão.
      */
-    data class DeletedTask(val task: Task) : UndoTarget
+    /** Tarefa excluída com a lista e os itens dela (v1.10.0), lidos na mesma transação da exclusão. */
+    data class DeletedTask(val deleted: TaskWithList) : UndoTarget {
+        val task: Task get() = deleted.task
+    }
 
     /** Rotina excluída (arquivada) pelo editor ou por Todas as rotinas (v1.8.0, P8, NB-E3-C). */
     data class DeletedRoutine(val routineId: Long) : UndoTarget
@@ -84,7 +89,8 @@ class UndoOffers(
     private val tasks: TaskRepository,
     private val routines: RoutineRepository,
     private val scope: CoroutineScope,
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3): validade das ofertas e instante das conclusões. */
+    private val clock: AppClock,
 ) {
     private val nextId = AtomicLong()
     private val _pending = MutableStateFlow<UndoOffer?>(null)
@@ -94,7 +100,7 @@ class UndoOffers(
 
     /** [target] acabou de acontecer; substitui a pendente, de qualquer tipo. */
     fun offer(target: UndoTarget) {
-        _pending.value = UndoOffer(nextId.incrementAndGet(), target, createdAt = clock())
+        _pending.value = UndoOffer(nextId.incrementAndGet(), target, createdAt = clock.nowMillis())
     }
 
     /**
@@ -103,8 +109,9 @@ class UndoOffers(
      * nem a oferta. [task] vai como estava no banco (lembrete e vínculo de lista), para o Desfazer.
      */
     fun deleteTask(task: Task): Job = scope.launch {
-        tasks.deleteTask(task)
-        offer(UndoTarget.DeletedTask(task))
+        // Já não existia (excluída por outro caminho): nada foi apagado aqui, nada a desfazer.
+        val deleted = tasks.deleteTask(task) ?: return@launch
+        offer(UndoTarget.DeletedTask(deleted))
     }
 
     /**
@@ -124,8 +131,8 @@ class UndoOffers(
     fun completeTask(
         task: Task,
         /** Instante da conclusão; a Hoje passa o do dia mostrado (conclusão retroativa, 14.4). */
-        completedAt: Long = clock(),
-        now: Long = clock(),
+        completedAt: Long = clock.nowMillis(),
+        now: Long = clock.nowMillis(),
     ): Job = scope.launch {
         val logId = tasks.logCompletion(task.id, completedAt, now)
         offer(UndoTarget.CompletedTask(logId))
@@ -141,8 +148,9 @@ class UndoOffers(
 
     /** PULAR E OFERECER a ocorrência de [routineId] em [date] (v1.9.0, E4: a Hoje só pede). */
     fun skipRoutine(routineId: Long, date: LocalDate): Job = scope.launch {
-        val previous = routines.skipOccurrence(routineId, date.toEpochDay())
-        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), previous))
+        // Rotina que não existe mais: nada foi pulado, então não há o que desfazer (v1.10.0, E0).
+        val skipped = routines.skipOccurrence(routineId, date.toEpochDay()) ?: return@launch
+        offer(UndoTarget.SkippedRoutine(routineId, date.toEpochDay(), skipped.previous))
     }
 
     /**
@@ -181,7 +189,7 @@ class UndoOffers(
     fun isExpired(offer: UndoOffer): Boolean = remainingMs(offer) == 0L
 
     /** Quanto ainda resta do prazo de [offer], em ms (0 se já venceu): o limite da espera da mensagem. */
-    fun remainingMs(offer: UndoOffer): Long = (VALIDITY_MS - (clock() - offer.createdAt)).coerceAtLeast(0L)
+    fun remainingMs(offer: UndoOffer): Long = (VALIDITY_MS - (clock.nowMillis() - offer.createdAt)).coerceAtLeast(0L)
 
     /**
      * A mensagem de [offer] terminou sem Desfazer (tempo esgotado ou dispensada): fica como está. Só
@@ -197,7 +205,7 @@ class UndoOffers(
         // já está a caminho, sem depender do que o coletor fizer depois.
         val restore = scope.launch {
             when (val target = offer.target) {
-                is UndoTarget.DeletedTask -> tasks.restoreTask(target.task)
+                is UndoTarget.DeletedTask -> tasks.restoreTask(target.deleted)
                 is UndoTarget.DeletedRoutine -> routines.unarchive(target.routineId)
                 is UndoTarget.CompletedTask -> tasks.undoCompletion(target.logId)
                 is UndoTarget.CompletedRoutine -> routines.uncomplete(target.routineId, LocalDate.ofEpochDay(target.epochDay))

@@ -1,10 +1,10 @@
 package com.kalendrys.app.reminder
 
 import com.kalendrys.app.data.local.entity.Task
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.ReminderRepeat
-import java.time.ZoneId
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -32,8 +32,8 @@ class ReminderCatchUpRunner(
     private val repository: TaskRepository,
     private val settings: SettingsRepository,
     private val notifier: Notifier,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) {
 
     /** O que o catch-up mostra; no app, notificações e widgets ([AndroidCatchUpNotifier]). */
@@ -64,7 +64,7 @@ class ReminderCatchUpRunner(
      * "relógio voltou", gravando a marca para trás e reentregando uma ocorrência.
      */
     suspend fun run(nowOverride: Long? = null) = mutex.withLock {
-        val now = nowOverride ?: clock()
+        val now = nowOverride ?: clock.nowMillis()
         val lastSeen = settings.lastSeenAt()
         if (lastSeen == null) {
             // Primeira execução de sempre: estabelece a linha de base, sem "recuperar" o passado todo.
@@ -72,7 +72,7 @@ class ReminderCatchUpRunner(
             repository.rescheduleReminders(now)
             return@withLock
         }
-        val (plan, lateTasks) = repository.reminderCatchUpPlan(lastSeen, now, zone())
+        val (plan, lateTasks) = repository.reminderCatchUpPlan(lastSeen, now, clock.zone())
         // Da entrega até gravar a marca, sem cancelamento (tela que fecha, ViewModel que morre): cortado
         // no meio, o lembrete já mostrado seria reexibido na próxima execução.
         withContext(NonCancellable) {
@@ -95,7 +95,7 @@ class ReminderCatchUpRunner(
      * refeitos, sem entregar nada do passado do backup.
      */
     suspend fun establishBaseline(nowOverride: Long? = null) = mutex.withLock {
-        val now = nowOverride ?: clock()
+        val now = nowOverride ?: clock.nowMillis()
         settings.setLastSeen(now)
         repository.rescheduleReminders(now)
     }

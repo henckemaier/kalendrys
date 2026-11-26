@@ -4,8 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import java.time.LocalDateTime
-import java.time.ZoneId
 
 /**
  * Os dois alarmes das rotinas (v1.9.1, E5-B), independentes, calculados juntos no
@@ -23,49 +21,41 @@ import java.time.ZoneId
  *
  * Reagendar é idempotente (cada alarme tem o seu PendingIntent, como no
  * [com.kalendrys.app.summary.DailyScheduler]); horário nulo cancela o alarme.
+ *
+ * Os horários chegam como INSTANTE pronto (v1.10.0, OBS-1): a conversão do início local para o
+ * instante é do repositório, no mesmo fuso em que ele calculou o início. O alarme não leva extras:
+ * quem dispara só chama o catch-up, que recalcula tudo.
  */
 open class RoutineAlarms(private val context: Context) {
 
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
-    /** [remindAt]: o AVISO; [refreshAt]: o dos WIDGETS. Cada um nulo cancela o seu alarme. */
-    open fun schedule(remindAt: LocalDateTime?, refreshAt: LocalDateTime?) {
-        val zone = ZoneId.systemDefault()
-        place(RoutineAlarmReceiver.ACTION_START, REMIND_REQUEST_CODE, remindAt, zone) { triggerAt, operation ->
+    /**
+     * [remindAtMillis]: o AVISO; [refreshAtMillis]: o dos WIDGETS, ambos em milissegundos desde a
+     * época. Cada um nulo cancela o seu alarme.
+     */
+    open fun schedule(remindAtMillis: Long?, refreshAtMillis: Long?) {
+        place(RoutineAlarmReceiver.ACTION_START, REMIND_REQUEST_CODE, remindAtMillis) { triggerAt, operation ->
             alarmManager.setAlarmClockOrInexact(context, triggerAt, operation)
         }
-        place(RoutineAlarmReceiver.ACTION_REFRESH, REFRESH_REQUEST_CODE, refreshAt, zone) { triggerAt, operation ->
+        place(RoutineAlarmReceiver.ACTION_REFRESH, REFRESH_REQUEST_CODE, refreshAtMillis) { triggerAt, operation ->
             alarmManager.set(AlarmManager.RTC, triggerAt, operation)
         }
     }
 
-    private inline fun place(
-        action: String,
-        requestCode: Int,
-        at: LocalDateTime?,
-        zone: ZoneId,
-        set: (Long, PendingIntent) -> Unit,
-    ) {
-        if (at == null) {
-            alarmManager.cancel(pendingIntent(action, requestCode, epochDay = 0, minute = 0))
-            return
-        }
-        set(
-            at.atZone(zone).toInstant().toEpochMilli(),
-            pendingIntent(action, requestCode, epochDay = at.toLocalDate().toEpochDay(), minute = at.hour * 60 + at.minute),
-        )
+    private inline fun place(action: String, requestCode: Int, atMillis: Long?, set: (Long, PendingIntent) -> Unit) {
+        val operation = pendingIntent(action, requestCode)
+        if (atMillis == null) alarmManager.cancel(operation) else set(atMillis, operation)
     }
 
-    // Extras não diferenciam PendingIntents; a ação e o requestCode, sim. Cada alarme é sempre o mesmo,
-    // com o horário atualizado.
-    private fun pendingIntent(action: String, requestCode: Int, epochDay: Long, minute: Int): PendingIntent =
+    // A ação e o requestCode diferenciam os PendingIntents. Cada alarme é sempre o mesmo, com o horário
+    // atualizado; o da v1.9.x tinha extras de dia e minuto, que não entram na igualdade do
+    // PendingIntent, então este o substitui e o cancela.
+    private fun pendingIntent(action: String, requestCode: Int): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             requestCode,
-            Intent(context, RoutineAlarmReceiver::class.java)
-                .setAction(action)
-                .putExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, epochDay)
-                .putExtra(RoutineAlarmReceiver.EXTRA_MINUTE, minute),
+            Intent(context, RoutineAlarmReceiver::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 

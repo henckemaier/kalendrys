@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.RecurrenceUnit
@@ -97,22 +98,19 @@ interface TaskDao {
     suspend fun listExists(listId: Long): Boolean
 
     /**
-     * Vincula a tarefa a uma lista EXISTENTE, conferindo a lista na mesma transação: se ela foi
-     * excluída no meio, nada é gravado (sem vínculo com lista inexistente). Devolve se vinculou.
-     */
-    @Transaction
-    suspend fun linkExistingList(taskId: Long, listId: Long): Boolean {
-        if (!listExists(listId)) return false
-        updateShoppingList(taskId, listId)
-        return true
-    }
-
-    /**
      * Cria a lista [list] (de [ShoppingList.named]) e vincula a tarefa a ela numa transação só (v1.9.0,
      * fecha o NB-E6-A): falhar o vínculo não deixa lista avulsa. Devolve o id da lista.
+     *
+     * Tarefa que JÁ tem lista (a linha atual, lida aqui dentro) não ganha outra: devolve null sem criar
+     * nada (A1 da revisão da T3). Sem isso, um toque duplo em "Adicionar lista" trocava o vínculo e
+     * deixava a primeira lista sem dona, invisível. Vínculo órfão (lista que não existe) conta como sem
+     * lista. Tarefa que não existe mais: null.
      */
     @Transaction
-    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long {
+    suspend fun linkNewList(taskId: Long, list: ShoppingList): Long? {
+        val current = byId(taskId) ?: return null
+        val linked = current.shoppingListId
+        if (linked != null && listExists(linked)) return null
         val listId = insertList(list)
         updateShoppingList(taskId, listId)
         return listId
@@ -121,6 +119,62 @@ interface TaskDao {
 
     @Delete
     suspend fun delete(task: Task)
+
+    // --- Excluir a tarefa com a lista (v1.10.0, ADR-0002 16.10.4): a lista é da tarefa. -------------
+
+    @Query("SELECT * FROM shopping_list WHERE id = :listId")
+    suspend fun listById(listId: Long): ShoppingList?
+
+    @Query("SELECT * FROM shopping_item WHERE listId = :listId ORDER BY position, id")
+    suspend fun itemsOf(listId: Long): List<ShoppingItem>
+
+    @Query("DELETE FROM shopping_item WHERE listId = :listId")
+    suspend fun deleteItemsOf(listId: Long)
+
+    @Query("DELETE FROM shopping_list WHERE id = :listId")
+    suspend fun deleteListById(listId: Long)
+
+    @Query("DELETE FROM tasks WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    /** USO RESTRITO: só dentro de [restoreTaskWithList]. */
+    @Insert
+    suspend fun insertItems(items: List<ShoppingItem>)
+
+    /**
+     * Apaga a tarefa, a lista dela e os itens numa transação só e devolve as três como estavam (lidas
+     * na MESMA transação), para o Desfazer devolver tudo com os mesmos ids. Lê a linha atual pelo id:
+     * a tarefa que a tela tinha pode estar velha. Tarefa que não existe mais: nada, `null`.
+     */
+    @Transaction
+    suspend fun deleteTaskWithList(taskId: Long): TaskWithList? {
+        val task = byId(taskId) ?: return null
+        val list = task.shoppingListId?.let { listById(it) }
+        val items = list?.let { itemsOf(it.id) }.orEmpty()
+        if (list != null) {
+            deleteItemsOf(list.id)
+            deleteListById(list.id)
+        }
+        deleteById(taskId)
+        return TaskWithList(task, list, items)
+    }
+
+    /**
+     * Devolve uma tarefa excluída com a lista e os itens, com os mesmos ids, numa transação só. Tarefa
+     * que já voltou (Desfazer duplo) não grava nada: sem isso o segundo insert lançaria
+     * SQLiteConstraintException no escopo do app e derrubaria o processo (OBS-1 do Lince na T1). A lista
+     * só volta se ainda não existe (os ids não se repetem).
+     */
+    @Transaction
+    suspend fun restoreTaskWithList(deleted: TaskWithList) {
+        if (byId(deleted.task.id) != null) return
+        val list = deleted.list
+        if (list != null && !listExists(list.id)) {
+            insertList(list)
+            insertItems(deleted.items)
+        }
+        insert(deleted.task)
+    }
 
     /** Tarefas com lista anexada (etiqueta de dono na aba Listas e no cartão). */
     @Query("SELECT id, title, shoppingListId FROM tasks WHERE shoppingListId IS NOT NULL ORDER BY title, id")

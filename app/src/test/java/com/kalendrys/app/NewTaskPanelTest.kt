@@ -3,22 +3,17 @@ package com.kalendrys.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.TaskRepository
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testTaskRepository
 import java.time.LocalDate
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -43,10 +38,8 @@ class NewTaskPanelTest {
 
     private lateinit var testDb: ViewModelTestDatabase
     private lateinit var tasks: TaskRepository
-    private lateinit var shopping: ShoppingRepository
 
     /** Coletores ativos das listas (o Room só é lido enquanto houver algum). */
-    private val listObservers = AtomicInteger()
     private lateinit var panel: NewTaskPanel
 
     private val today = LocalDate.now()
@@ -56,23 +49,13 @@ class NewTaskPanelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         tasks = testTaskRepository(testDb.db)
-        shopping = ShoppingRepository(testDb.db)
-        panel = NewTaskPanel(tasks, shopping, testDb.appScope(), NewTaskDraftStore()) {
-            shopping.observeSummaries()
-                .onStart { listObservers.incrementAndGet() }
-                .onCompletion { listObservers.decrementAndGet() }
-        }
+        panel = NewTaskPanel(tasks, testDb.appScope(), NewTaskDraftStore())
     }
 
     @After
     fun tearDown() = testDb.close()
 
     /** Espera [condition] em tempo real (o painel trabalha no escopo do app, em Dispatchers.Default). */
-    private fun eventually(condition: suspend () -> Boolean) = runBlocking {
-        withContext(Dispatchers.Default) {
-            withTimeout(5_000) { while (!condition()) delay(10) }
-        }
-    }
 
     private fun allTasks() = runBlocking { testDb.db.taskDao().all() }
 
@@ -123,7 +106,7 @@ class NewTaskPanelTest {
     @Test
     fun `salvar duas vezes seguidas grava uma tarefa so e cria a lista nova uma vez`() {
         panel.open(today)
-        panel.update { it.copy(title = "Churrasco", list = NewTaskList.New("Churrasco")) }
+        panel.update { it.copy(title = "Churrasco", withList = true) }
 
         val first = panel.save()
         val second = panel.save()
@@ -179,9 +162,11 @@ class NewTaskPanelTest {
     }
 
     @Test
-    fun `salvar com lista nova cria a lista junto com a tarefa`() {
+    fun `salvar com Adicionar lista cria a lista junto com a tarefa e com o nome dela`() {
+        // v1.10.0 (ADR-0002 16.10.4, P46): o nome da lista é o da tarefa, no salvar.
         panel.open(today)
-        panel.update { it.copy(title = "Churrasco", list = NewTaskList.New("Churrasco de sábado")) }
+        panel.update { it.copy(title = "Churrasco", withList = true) }
+        panel.update { it.copy(title = "  Churrasco de sábado ") }
 
         runBlocking { panel.save().join() }
 
@@ -190,53 +175,4 @@ class NewTaskPanelTest {
         assertEquals(list.id, allTasks().single().shoppingListId)
     }
 
-    @Test
-    fun `salvar com lista existente valida o id e a excluida vira sem lista`() {
-        val kept = runBlocking { shopping.createList("Mercado") }
-        panel.open(today)
-        panel.update { it.copy(title = "Mercado", list = NewTaskList.Existing(kept)) }
-        runBlocking { panel.save().join() }
-        assertEquals(kept, allTasks().single().shoppingListId)
-
-        // Sem rascunho aberto não há observação: a lista sumida só é pega pela validação no salvar.
-        val gone = NewTaskList.Existing(999)
-        panel.open(today)
-        panel.update { it.copy(title = "Órfã", timing = TaskTiming(date = null), list = gone) }
-        runBlocking { panel.save().join() }
-        assertNull(allTasks().single { it.title == "Órfã" }.shoppingListId)
-    }
-
-    @Test
-    fun `lista excluida com o rascunho aberto some da escolha`() {
-        val listId = runBlocking { shopping.createList("Feira") }
-        panel.open(today)
-        panel.update { it.copy(title = "Feira", list = NewTaskList.Existing(listId)) }
-        eventually { listObservers.get() == 1 }
-        assertEquals(NewTaskList.Existing(listId), panel.draft.value!!.list)
-
-        runBlocking { shopping.deleteList(listId) }
-
-        eventually { panel.draft.value!!.list == null }
-        assertEquals("o resto do rascunho fica", "Feira", panel.draft.value!!.title)
-    }
-
-    @Test
-    fun `sem rascunho nao observa listas, e para de observar ao descartar`() {
-        runBlocking { delay(200) }
-        assertEquals("nada lido sem rascunho", 0, listObservers.get())
-
-        panel.open(today)
-        eventually { listObservers.get() == 1 }
-        panel.update { it.copy(title = "Digitando") }
-        panel.open(today)
-        runBlocking { delay(100) }
-        assertEquals("mexer no rascunho não abre outra observação", 1, listObservers.get())
-
-        panel.cancel()
-        eventually { listObservers.get() == 0 }
-        panel.open(today)
-        panel.update { it.copy(title = "De novo") }
-        panel.save()
-        eventually { listObservers.get() == 0 }
-    }
 }

@@ -1,5 +1,6 @@
 package com.kalendrys.app.ui.today
 
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.navigation.UndoOfferEffect
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import androidx.compose.runtime.remember
@@ -15,6 +16,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -67,7 +69,7 @@ class TodayContentSemanticsTest {
         // A oferta de Desfazer da Hoje roda no escopo do app de teste (o close espera; v1.9.0, E4).
         val repos = TodayRepositories(context, testDb.db, testDb.appScope())
         runBlocking {
-            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30))
+            repos.routines.add(Routine(title = "Treino", startMinute = 7 * 60, durationMinutes = 30, createdAt = TEST_CREATED_AT))
             repos.tasks.addTask("Ideias para o fim de semana")
             repos.tasks.addTask("Comprar pão", timing = TaskTiming(date = LocalDate.now()))
         }
@@ -114,7 +116,10 @@ class TodayContentSemanticsTest {
 
     /** A LINHA que mostra [text]: a que tem estado (o "A seguir" também pode citar o título). */
     private fun row(text: String): SemanticsNode =
-        node(hasText(text, substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+        node((hasText(text, substring = true) or hasContentDescription(text, substring = true)) and SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+
+    /** A linha de tarefa lê o título pela descrição (tipo, hora, título; v1.10.0, 16.10.8 item 6). */
+    private fun shows(text: String) = hasText(text, substring = true) or hasContentDescription(text, substring = true)
 
     private fun SemanticsNode.actionLabels(): List<String?> =
         config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
@@ -139,10 +144,10 @@ class TodayContentSemanticsTest {
         val header = node(heading and hasText("Sem data"))
         assertEquals("Recolhida", header.state())
         assertEquals("Mostrar Sem data", header.config[SemanticsActions.OnClick].label)
-        assertEquals(0, compose.onAllNodesWithText("Ideias para o fim de semana").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(shows("Ideias para o fim de semana")).fetchSemanticsNodes().size)
 
         compose.runOnUiThread { header.config[SemanticsActions.OnClick].action?.invoke() }
-        waitFor { compose.onAllNodesWithText("Ideias para o fim de semana").fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodes(shows("Ideias para o fim de semana")).fetchSemanticsNodes().isNotEmpty() }
 
         val opened = node(heading and hasText("Sem data"))
         assertEquals("Aberta", opened.state())

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.ViewModelTestDatabase
@@ -61,8 +62,8 @@ class TaskListEmptyLandscapeTest {
     private fun show(fontScale: Float) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = testDb.db
-        val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
-        val viewModel = testDb.track(TaskViewModel(repository, ShoppingRepository(db), testUndoOffers(testDb, tasks = repository)))
+        val repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
+        val viewModel = testDb.track(TaskViewModel(repository, ShoppingRepository(db, clock = SystemAppClock), testUndoOffers(testDb, tasks = repository), clock = SystemAppClock))
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {

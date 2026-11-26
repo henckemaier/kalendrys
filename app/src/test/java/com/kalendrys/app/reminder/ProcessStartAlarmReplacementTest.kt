@@ -11,6 +11,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.summary.DailyReceiver
@@ -18,6 +19,7 @@ import com.kalendrys.app.summary.DailyScheduler
 import com.kalendrys.app.summary.DailySummaryCatchUp
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.clockOf
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -87,11 +89,9 @@ class ProcessStartAlarmReplacementTest {
             db.routineOverrideDao(),
             RoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             deliverDueBlocks = { routines, _ -> delivered += routines.map { it.title } },
             mark = InMemoryRoutineCatchUpMark(),
-            zone = { zone },
-            clock = { millis(day.atTime(8, 0)) },
+            clock = clockOf(zone = { zone }) { millis(day.atTime(8, 0)) },
         )
     }
 
@@ -196,7 +196,7 @@ class ProcessStartAlarmReplacementTest {
 
     @Test
     fun `o catch-up do resumo no inicio do processo entrega o de hoje antes de trocar o alarme pelo de amanha`() = runTest {
-        val scheduler = DailyScheduler(context)
+        val scheduler = DailyScheduler(context, clock = SystemAppClock)
         val settings = SettingsRepository(
             PreferenceDataStoreFactory.create { File(context.cacheDir, "summary-${System.nanoTime()}.preferences_pb") },
         )
@@ -205,7 +205,7 @@ class ProcessStartAlarmReplacementTest {
             settings = settings,
             schedule = { s, now -> scheduler.scheduleAll(s, now) },
             show = { shown++ },
-            zone = { zone },
+            clock = clockOf(zone = { zone }) { System.currentTimeMillis() },
         )
         catchUp.run(millis(day.atTime(7, 50))) // resumo padrão às 8:00, ligado
         assertEquals(millis(day.atTime(8, 0)), summaryAlarm()?.triggerAtMs)
@@ -225,7 +225,7 @@ class ProcessStartAlarmReplacementTest {
 
     @Test
     fun `controle - resumo desligado nao deixa alarme pendente`() {
-        val scheduler = DailyScheduler(context)
+        val scheduler = DailyScheduler(context, clock = SystemAppClock)
         scheduler.scheduleAll(AppSettings(summaryEnabled = true), now = day.atTime(7, 50))
         scheduler.scheduleAll(AppSettings(summaryEnabled = false), now = day.atTime(7, 51))
 
@@ -246,6 +246,7 @@ class ProcessStartAlarmReplacementTest {
         routineRepository.add(Routine(title = "Aviso 9h", startMinute = 9 * 60, createdAt = 0L))
     }
 
+    /** Dia e minuto locais tirados do próprio horário do alarme (desde a v1.10.0 ele não leva extras). */
     private data class RoutineAlarm(val triggerAtMs: Long, val epochDay: Long, val minute: Int)
 
     private fun routineAlarms(): List<ShadowAlarmManager.ScheduledAlarm> =
@@ -256,11 +257,11 @@ class ProcessStartAlarmReplacementTest {
 
     private fun pendingRoutineAlarm(): RoutineAlarm {
         val alarm = routineAlarms().single()
-        val intent = savedIntent(checkNotNull(alarm.operation))
+        val local = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(alarm.triggerAtMs), zone)
         return RoutineAlarm(
             triggerAtMs = alarm.triggerAtMs,
-            epochDay = intent.getLongExtra(RoutineAlarmReceiver.EXTRA_EPOCH_DAY, -1L),
-            minute = intent.getIntExtra(RoutineAlarmReceiver.EXTRA_MINUTE, -1),
+            epochDay = local.toLocalDate().toEpochDay(),
+            minute = local.hour * 60 + local.minute,
         )
     }
 

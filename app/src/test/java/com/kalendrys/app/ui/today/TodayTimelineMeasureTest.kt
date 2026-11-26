@@ -26,7 +26,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.DayTimeline
 import com.kalendrys.app.domain.DurationFormat
-import com.kalendrys.app.domain.ShoppingProgress
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import java.time.LocalDate
@@ -88,7 +88,6 @@ class TodayTimelineMeasureTest {
         minutes: Int,
         columnWidth: Dp = 360.dp,
         remind: Boolean = false,
-        withList: Boolean = false,
     ) {
         val routine = Routine(
             id = minutes + 1L,
@@ -96,7 +95,7 @@ class TodayTimelineMeasureTest {
             startMinute = startMinute,
             durationMinutes = minutes,
             remind = remind,
-            shoppingListId = if (withList) LIST_ID else null,
+            createdAt = TEST_CREATED_AT,
         )
         val state = TodayViewModel.UiState(
             isLoaded = true,
@@ -105,8 +104,6 @@ class TodayTimelineMeasureTest {
             timeline = listOf(
                 DayTimeline.Block(routine, done = false, startMinute = routine.startMinute, linkAbove = DayTimeline.Link.SOLID, linkBelow = DayTimeline.Link.SOLID, occurrenceDate = LocalDate.now()),
             ),
-            // O "2/3" da lista anexada, ao lado do horário (M-1).
-            listProgress = if (withList) mapOf(LIST_ID to ShoppingProgress(picked = 2, total = 3)) else emptyMap(),
         )
         val actions = TrailActions({}, {}, { _, _ -> }, {}, { _, _ -> }, {}, {})
         compose.setContent {
@@ -236,7 +233,7 @@ class TodayTimelineMeasureTest {
     /** Vários blocos de título CURTO na mesma trilha (fonte em vigor); devolve a altura de cada um, em px. */
     private fun shortTitleHeights(fontScale: Float, durations: List<Int>): List<Float> {
         val blocks = durations.mapIndexed { i, minutes ->
-            val routine = Routine(id = i + 1L, title = "Bloco $minutes", startMinute = (6 + i * 3) * 60, durationMinutes = minutes)
+            val routine = Routine(id = i + 1L, title = "Bloco $minutes", startMinute = (6 + i * 3) * 60, durationMinutes = minutes, createdAt = TEST_CREATED_AT)
             DayTimeline.Block(
                 routine,
                 done = false,
@@ -327,12 +324,13 @@ class TodayTimelineMeasureTest {
         )
 
     @Test
-    fun `horario de duracao longa com sino e lista - terceiro degrau, nada desenhado`() {
-        // N-2 (antes NB-1, com reticências): 23h 59min em 320dp com fonte 2.0, sino e lista juntos:
-        // nem a forma curta cabe, então o horário NÃO aparece (nem cortado); a frase segue no leitor.
+    fun `horario de duracao longa com sino - terceiro degrau, nada desenhado`() {
+        // N-2 (antes NB-1, com reticências): 23h 59min em 320dp com fonte 2.0 e sino: nem a forma curta
+        // cabe, então o horário NÃO aparece (nem cortado); a frase segue no leitor. Desde a v1.10.0 o
+        // bloco não tem mais o "2/3" da lista (rotina não tem lista).
         val minutes = 23 * 60 + 59
-        show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true, withList = true)
-        val label = "fonte 2.0, 320dp, 23h59 com sino e lista"
+        show(fontScale = 2f, minutes = minutes, columnWidth = 320.dp, remind = true)
+        val label = "fonte 2.0, 320dp, 23h59 com sino"
 
         val range = rangeNode()
         assertPhraseOnce(label, minutes)
@@ -342,20 +340,17 @@ class TodayTimelineMeasureTest {
         drawnText(shortRange(minutes)).assertIsNotDisplayed()
 
         val bell = compose.onNode(hasContentDescription("Avisa no início"), useUnmergedTree = true).fetchSemanticsNode()
-        val tag = compose.onNode(hasContentDescription("2 de 3", substring = true), useUnmergedTree = true).fetchSemanticsNode()
         assertTrue(
             "$label: horário (${range.boundsInRoot.right}) passa por cima do sino (${bell.boundsInRoot.left})",
             range.boundsInRoot.right <= bell.boundsInRoot.left + 0.5f,
         )
-        assertTrue("$label: sino depois do horário e antes do 2/3", bell.boundsInRoot.right <= tag.boundsInRoot.left + 0.5f)
         assertWholeNode("$label, sino", bell)
-        assertWholeNode("$label, 2/3", tag)
     }
 
     /** N-2: em qualquer largura o horário é a faixa inteira, só a duração ou nada (largura zero). */
     private fun assertOneOfThreeSteps(width: Dp) {
         val minutes = 23 * 60 + 59
-        show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true, withList = true)
+        show(fontScale = 2f, minutes = minutes, columnWidth = width, remind = true)
         val label = "fonte 2.0, ${width.value.toInt()}dp"
         val w = rangeNode().size.width
         // N-8: em qualquer degrau, a frase inteira segue no bloco (árvore mesclada), uma vez.
@@ -400,6 +395,5 @@ class TodayTimelineMeasureTest {
     }
 
     private companion object {
-        const val LIST_ID = 7L
     }
 }

@@ -34,11 +34,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
@@ -47,9 +50,11 @@ import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.DayTimeline
+import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.ui.components.SectionHeader
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
+import com.kalendrys.app.ui.routines.routineTone
 import com.kalendrys.app.ui.shopping.ShoppingProgressTag
 import com.kalendrys.app.ui.theme.Spacing
 import com.kalendrys.app.ui.today.TodayViewModel.DayTask
@@ -192,6 +197,21 @@ internal fun TaskRow(
     val task = item.task
     val timeColumnWidth = timeColumnWidth()
     val toggleLabel = taskToggleLabel(item.done, task.title)
+    val time = minuteOfDayLabel(item.startMinute)
+    // Leitura (v1.10.0, 16.10.8 item 6): tipo, hora, título; o estado vem do stateDescription e o
+    // progresso da lista, se houver, do próprio selo. O título visível fica fora para não ler duas vezes.
+    // Dentro de um bloco (item 7): "..., dentro de <rotina>".
+    val container = item.container
+    val description = if (container == null) {
+        stringResource(R.string.today_task_row_description, time, task.title)
+    } else {
+        stringResource(R.string.today_task_row_description_inside, time, task.title, container.title)
+    }
+    // A faixa do bloco que contém a tarefa passa por trás do losango, sem recuo a mais na linha. Sobre a
+    // faixa, o losango usa o onFill da rotina (a cor de contraste da paleta, a mesma do ícone da
+    // pílula), com contraste de pelo menos 3:1 nos dois temas (N2 da Coruja na T3).
+    val bandTone = container?.let { routineTone(RoutineColor.fromKey(it.color)) }
+    val band = bandTone?.fill
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -202,6 +222,7 @@ internal fun TaskRow(
                 rowStateLabel(item.done),
                 if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
             )
+            .semantics { contentDescription = description }
             .clickable(onClick = onOpen),
     ) {
         Box(
@@ -211,7 +232,7 @@ internal fun TaskRow(
                 .padding(vertical = RowPadding + 2.dp)
                 .clearAndSetSemantics {},
         ) {
-            TimeLabel(minuteOfDayLabel(item.startMinute))
+            TimeLabel(time)
         }
         Box(
             contentAlignment = Alignment.Center,
@@ -220,9 +241,16 @@ internal fun TaskRow(
                 .fillMaxHeight()
                 // Mesma trilha dos blocos: a linha (cheia/tracejada) continua pela tarefa, sem duplicar —
                 // o losango só abre a folga no meio. Vazia (Link.NONE) quando a tarefa fica solta.
-                .drawBehind { drawLinks(item.linkAbove, item.linkBelow, DiamondTrackGap.toPx(), lineColor) },
+                .drawBehind {
+                    if (band != null) {
+                        val w = PillWidth.toPx()
+                        drawRect(band, topLeft = Offset((size.width - w) / 2f, 0f), size = Size(w, size.height))
+                    } else {
+                        drawLinks(item.linkAbove, item.linkBelow, DiamondTrackGap.toPx(), lineColor)
+                    }
+                },
         ) {
-            Diamond(filled = item.done, color = accent)
+            Diamond(filled = item.done, color = bandTone?.onFill ?: accent)
         }
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -239,6 +267,7 @@ internal fun TaskRow(
                 textDecoration = if (item.done) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics {},
             )
             if (listProgress != null) {
                 ShoppingProgressTag(progress = listProgress)
@@ -260,6 +289,8 @@ internal fun DayTaskRow(
     val accent = MaterialTheme.colorScheme.secondary
     val task = dayTask.task
     val toggleLabel = taskToggleLabel(dayTask.done, task.title)
+    // Sem horário: tipo e título (o estado vem do stateDescription).
+    val description = stringResource(R.string.today_task_row_description_untimed, task.title)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -269,6 +300,7 @@ internal fun DayTaskRow(
                 rowStateLabel(dayTask.done),
                 if (canComplete) listOf(rowAction(toggleLabel, onToggle)) else emptyList(),
             )
+            .semantics { contentDescription = description }
             .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
     ) {
@@ -282,7 +314,8 @@ internal fun DayTaskRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 12.dp),
+                .padding(start = 12.dp)
+                .clearAndSetSemantics {},
         )
         if (listProgress != null) {
             ShoppingProgressTag(progress = listProgress, modifier = Modifier.padding(start = 8.dp))

@@ -17,5 +17,5 @@ data class RoutineCompletion(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val routineId: Long,
     val epochDay: Long,
-    val completedAt: Long = System.currentTimeMillis(),
+    val completedAt: Long,
 )

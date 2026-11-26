@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testTaskRepository
@@ -60,7 +61,7 @@ class TaskListSemanticsTest {
             tasks.addTask("Pagar luz", timing = TaskTiming(date = LocalDate.now()))
         }
         val viewModel = testDb.track(
-            TaskViewModel(tasks, ShoppingRepository(testDb.db), testUndoOffers(testDb, tasks = tasks)),
+            TaskViewModel(tasks, ShoppingRepository(testDb.db, clock = SystemAppClock), testUndoOffers(testDb, tasks = tasks), clock = SystemAppClock),
         )
         compose.setContent {
             KalendrysTheme { TaskListScreen(onOpenTask = {}, onOpenSettings = {}, viewModel = viewModel) }

@@ -55,12 +55,7 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
                         // Reexibe só se o bloco ainda existe, é ativo, ocorre no dia e não foi concluído.
                         val date = LocalDate.ofEpochDay(epochDay)
                         app.routineRepository.routineForNotification(routineId, date)?.let { routine ->
-                            app.routineNotifications.show(
-                                routine,
-                                date,
-                                app.routineRepository.overridesFor(routineId),
-                                app.shoppingRepository.progressOf(routine.shoppingListId),
-                            )
+                            app.routineNotifications.show(routine, date, app.routineRepository.overridesFor(routineId))
                         }
                     }
                 }
@@ -75,7 +70,7 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
     // Alarme one-off do adiamento: exato quando possível, como os demais avisos do app.
     private fun scheduleSnooze(context: Context, routineId: Long, epochDay: Long) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        val triggerAt = RoutineSnooze.triggerAt(System.currentTimeMillis())
+        val triggerAt = RoutineSnooze.triggerAt((context.applicationContext as KalendrysApp).clock.nowMillis())
         val operation = PendingIntent.getBroadcast(
             context,
             routineId.toInt(),
@@ -100,7 +95,6 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
         const val ACTION_SNOOZE = "com.kalendrys.app.action.ROUTINE_SNOOZE"
         const val ACTION_SNOOZE_FIRE = "com.kalendrys.app.action.ROUTINE_SNOOZE_FIRE"
         const val EXTRA_EPOCH_DAY = "extra_epoch_day"
-        const val EXTRA_MINUTE = "extra_minute"
         const val EXTRA_ROUTINE_ID = "extra_routine_id"
     }
 }

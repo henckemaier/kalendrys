@@ -11,6 +11,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalTime
 import java.io.File
@@ -67,14 +68,14 @@ class BackupCompletionFieldsTest {
 
     @Test
     fun `ida e volta preserva os campos da conclusao adiantada e so os escreve quando preenchidos`() = runTest {
-        sourceDb.taskDao().insert(Task(id = 1, title = "Adiantada", dueDate = 20_400))
-        sourceDb.taskDao().insert(Task(id = 2, title = "Comum"))
+        sourceDb.taskDao().insert(Task(id = 1, title = "Adiantada", dueDate = 20_400, createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 2, title = "Comum", createdAt = TEST_CREATED_AT))
         sourceDb.completionLogDao().insertAll(listOf(early, plain))
 
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src")).serialize()
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src"), clock = SystemAppClock).serialize()
         val root = JSONObject(json)
-        assertEquals(6, root.getInt("schemaVersion"))
-        assertEquals(11, root.getInt("databaseVersion"))
+        assertEquals(7, root.getInt("schemaVersion"))
+        assertEquals(12, root.getInt("databaseVersion"))
         val logs = root.getJSONArray("completionLogs")
         val earlyJson = (0 until logs.length()).map { logs.getJSONObject(it) }.single { it.getLong("id") == 1L }
         val plainJson = (0 until logs.length()).map { logs.getJSONObject(it) }.single { it.getLong("id") == 2L }
@@ -83,7 +84,7 @@ class BackupCompletionFieldsTest {
         assertFalse(plainJson.has("previousReminderAt"))
         assertFalse(plainJson.has("rewrittenDueDate"))
 
-        BackupManager(destDb, context.contentResolver, settings("dst")).restore(json)
+        BackupManager(destDb, context.contentResolver, settings("dst"), clock = SystemAppClock).restore(json)
 
         assertEquals(listOf(early, plain), destDb.completionLogDao().all().sortedBy { it.id })
     }
@@ -103,7 +104,7 @@ class BackupCompletionFieldsTest {
             .put("shoppingItems", JSONArray())
             .toString()
 
-        BackupManager(destDb, context.contentResolver, settings("v171")).restore(json)
+        BackupManager(destDb, context.contentResolver, settings("v171"), clock = SystemAppClock).restore(json)
 
         val log = destDb.completionLogDao().all().single()
         assertEquals(CompletionLog(id = 7, taskId = 1, completedAt = 5_000), log)
@@ -115,13 +116,13 @@ class BackupCompletionFieldsTest {
     @Test
     fun `registro sem os campos no meio de outros com os campos`() = runTest {
         val third = early.copy(id = 3, taskId = 3, previousReminderAt = null)
-        sourceDb.taskDao().insert(Task(id = 1, title = "A"))
-        sourceDb.taskDao().insert(Task(id = 2, title = "B"))
-        sourceDb.taskDao().insert(Task(id = 3, title = "C"))
+        sourceDb.taskDao().insert(Task(id = 1, title = "A", createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 2, title = "B", createdAt = TEST_CREATED_AT))
+        sourceDb.taskDao().insert(Task(id = 3, title = "C", createdAt = TEST_CREATED_AT))
         sourceDb.completionLogDao().insertAll(listOf(early, plain, third))
 
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("mix-src")).serialize()
-        BackupManager(destDb, context.contentResolver, settings("mix-dst")).restore(json)
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("mix-src"), clock = SystemAppClock).serialize()
+        BackupManager(destDb, context.contentResolver, settings("mix-dst"), clock = SystemAppClock).restore(json)
 
         val restored = destDb.completionLogDao().all().sortedBy { it.id }
         assertEquals(listOf(early, plain, third), restored)
@@ -134,16 +135,16 @@ class BackupCompletionFieldsTest {
      */
     @Test
     fun `restaurar no aparelho novo e desfazer a conclusao adiantada devolve data e lembrete`() = runTest {
-        val source = TaskRepository(sourceDb.taskDao(), sourceDb.completionLogDao(), FakeReminderScheduler(context), sourceDb.shoppingItemDao())
+        val source = TaskRepository(sourceDb.taskDao(), sourceDb.completionLogDao(), FakeReminderScheduler(context), sourceDb.shoppingItemDao(), clock = SystemAppClock)
         val task = source.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
         val original = sourceDb.taskDao().byId(task.id)!!
         val logId = source.logCompletion(task.id)
         assertEquals(LocalDate.now().toEpochDay(), sourceDb.taskDao().byId(task.id)!!.dueDate)
 
-        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src")).serialize()
-        BackupManager(destDb, context.contentResolver, settings("dst")).restore(json)
+        val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src"), clock = SystemAppClock).serialize()
+        BackupManager(destDb, context.contentResolver, settings("dst"), clock = SystemAppClock).restore(json)
         val scheduler = FakeReminderScheduler(context)
-        val dest = TaskRepository(destDb.taskDao(), destDb.completionLogDao(), scheduler, destDb.shoppingItemDao())
+        val dest = TaskRepository(destDb.taskDao(), destDb.completionLogDao(), scheduler, destDb.shoppingItemDao(), clock = SystemAppClock)
 
         dest.undoCompletion(logId)
 

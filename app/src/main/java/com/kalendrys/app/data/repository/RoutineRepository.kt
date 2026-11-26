@@ -4,16 +4,14 @@ import android.util.Log
 import com.kalendrys.app.data.local.dao.RoutineCompletionDao
 import com.kalendrys.app.data.local.dao.RoutineDao
 import com.kalendrys.app.data.local.dao.RoutineOverrideDao
-import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
-import com.kalendrys.app.data.local.entity.ShoppingList
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineCatchUp
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineOverrideType
 import com.kalendrys.app.domain.RoutineSchedule
-import com.kalendrys.app.domain.ShoppingReset
 import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.reminder.RoutineNotifications
 import java.time.Instant
@@ -57,12 +55,11 @@ class RoutineRepository(
     private val overrideDao: RoutineOverrideDao,
     private val alarms: RoutineAlarms,
     private val notifications: RoutineNotifications,
-    private val shoppingItemDao: ShoppingItemDao,
     /** Obrigatória: uma marca esquecida em memória faria o app reavisar a cada início de processo. */
     private val mark: RoutineCatchUpMark,
     private val deliverDueBlocks: suspend (List<Routine>, LocalDate) -> Unit = { _, _ -> },
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3): agora e fuso de cada catch-up, agendamento e gravação. */
+    private val clock: AppClock,
 ) {
 
     /** Uma execução por vez: catch-up, alteração + agendamento e todo `alarms.schedule`. Não é reentrante. */
@@ -91,18 +88,19 @@ class RoutineRepository(
         completionDao.observeBetween(start.toEpochDay(), endExclusive.toEpochDay())
 
     /**
-     * Cria a rotina e agenda. Com [newListName] não em branco, cria TAMBÉM uma lista nova
-     * ([ShoppingList.named]) e vincula a rotina a ela numa transação só (v1.9.0, 15.5, como o painel
-     * de nova tarefa já faz): falhar a rotina não deixa lista avulsa. Nesse caso o
-     * [Routine.shoppingListId] de [routine] é ignorado.
+     * Cria a rotina e agenda. Com [exercises], grava TAMBÉM os exercícios dela, na ordem dada e numa
+     * transação só (v1.10.0, ADR-0002 16.10.5: montados já na criação, ou copiados pelo Duplicar). Os
+     * exercícios entram qualquer que seja o tipo: trocar para Nenhum só os esconde, nunca os perde
+     * (P2 da T2). Exercício sem nome não entra. Rotina não tem lista desde a v1.10.0.
      */
-    suspend fun add(routine: Routine, newListName: String? = null): Routine = change {
-        val newList = newListName?.takeIf { it.isNotBlank() }?.let(ShoppingList::named)
-        if (newList == null) {
-            routine.copy(id = routineDao.insert(routine))
-        } else {
-            checkNotNull(routineDao.byId(routineDao.insertRoutineWithNewList(newList, routine)))
-        }
+    suspend fun add(routine: Routine, exercises: List<ExerciseFields> = emptyList()): Routine = change {
+        val createdAt = clock.nowMillis()
+        val items = exercises.filter { it.isValid }
+            .mapIndexed { position, fields -> fields.toItem(routineId = 0, position = position, createdAt = createdAt) }
+        // Rotina não tem lista (v1.10.0): o que vier no objeto não é gravado.
+        val saved = routine.copy(shoppingListId = null)
+        val id = if (items.isEmpty()) routineDao.insert(saved) else routineDao.insertRoutineWithExercises(saved, items)
+        saved.copy(id = id)
     }
 
     /**
@@ -132,21 +130,6 @@ class RoutineRepository(
     private suspend fun editLocked(routineId: Long, change: RoutineChange): Boolean {
         val current = routineDao.byId(routineId) ?: return false
         val updated = change.applyTo(current) ?: return false
-        when (change) {
-            is RoutineChange.NewShoppingList -> {
-                routineDao.linkNewList(routineId, ShoppingList.named(change.name))
-                return true
-            }
-            is RoutineChange.ShoppingList -> {
-                if (updated.shoppingListId == current.shoppingListId) return false
-                val listId = updated.shoppingListId ?: run {
-                    routineDao.updateShoppingList(routineId, null)
-                    return true
-                }
-                return routineDao.linkExistingList(routineId, listId)
-            }
-            else -> Unit
-        }
         if (updated == current) return false
         when (change) {
             is RoutineChange.Title -> routineDao.updateTitle(routineId, updated.title)
@@ -158,10 +141,9 @@ class RoutineRepository(
             is RoutineChange.ValidFrom, is RoutineChange.ValidUntil ->
                 routineDao.updateValidity(routineId, updated.startEpochDay, updated.endEpochDay)
             is RoutineChange.Remind -> routineDao.updateRemind(routineId, updated.remind)
-            is RoutineChange.Category -> routineDao.updateCategory(routineId, updated.categoryId)
+            is RoutineChange.Kind -> routineDao.updateKind(routineId, updated.kind)
             is RoutineChange.Color -> routineDao.updateColor(routineId, updated.color)
             is RoutineChange.Icon -> routineDao.updateIcon(routineId, updated.icon)
-            is RoutineChange.NewShoppingList, is RoutineChange.ShoppingList -> Unit // tratados acima
         }
         return true
     }
@@ -170,7 +152,7 @@ class RoutineRepository(
      * "Excluir": some de hoje em diante, mas os dias passados mantêm o bloco e a conclusão. Grava só
      * a data de arquivamento (v1.9.0): uma edição feita depois de [routine] ter sido lida não se perde.
      */
-    suspend fun archive(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
+    suspend fun archive(routine: Routine, now: Long = clock.nowMillis()): Unit = change {
         routineDao.updateArchivedAt(routine.id, now)
         notifications.cancel(routine.id)
     }
@@ -192,7 +174,7 @@ class RoutineRepository(
      * da tela qualquer aviso já mostrado. Grava só a pausa (v1.9.0): pausar com o editor aberto e
      * editar depois, ou o contrário, não desfaz o outro lado.
      */
-    suspend fun pause(routine: Routine, now: Long = System.currentTimeMillis()): Unit = change {
+    suspend fun pause(routine: Routine, now: Long = clock.nowMillis()): Unit = change {
         routineDao.updatePausedAt(routine.id, now)
         notifications.cancel(routine.id)
     }
@@ -206,33 +188,25 @@ class RoutineRepository(
      * Idempotente: tocar duas vezes em "Concluir" (widget, notificação) não desfaz. Confere se a
      * rotina ainda existe, porque a notificação pode ser de uma rotina já excluída.
      *
-     * Concluir a ocorrência de HOJE de uma rotina (não arquivada) com lista anexada zera as marcações
-     * da lista (ADR-0001, P4), de forma reversível pelo [uncomplete]. Mora aqui, e não na tela, para
-     * valer também no widget e na ação "Concluir" da notificação. Só reinicia quando a conclusão é
-     * nova: um segundo toque não sobrescreve as marcações guardadas pelo primeiro.
+     * Rotina não tem lista desde a v1.10.0 (ADR-0002 16.10.1): concluir não mexe em lista nenhuma.
      *
      * Devolve se a conclusão foi GRAVADA agora (v1.9.0, E4): falso se já estava feita ou se a rotina não
      * existe. Quem oferece Desfazer só oferece quando gravou: um segundo toque (widget e Hoje juntos) não
      * pode gerar um Desfazer que apagaria a conclusão do primeiro. Widget e notificação ignoram o retorno.
      */
-    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = LocalDate.now()): Boolean = change {
-        val routine = routineDao.byId(routineId) ?: return@change false
-        val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay())) != -1L
+    suspend fun complete(routineId: Long, date: LocalDate, today: LocalDate = clock.today()): Boolean = change {
+        routineDao.byId(routineId) ?: return@change false
+        val inserted = completionDao.insert(RoutineCompletion(routineId = routineId, epochDay = date.toEpochDay(), completedAt = clock.nowMillis())) != -1L
         if (date == today) notifications.cancel(routineId)
-        val listId = routine.shoppingListId
-        if (inserted && listId != null && routine.archivedAt == null && ShoppingReset.routineResets(date, today)) {
-            shoppingItemDao.resetPicked(listId, ShoppingReset.routineKey(routineId, date.toEpochDay()))
-        }
         inserted
     }
 
     /**
-     * Desfaz a conclusão e devolve as marcações que ela tinha zerado (se ainda for o último reinício).
-     * O catch-up antes de gravar impede que desfazer às 9:20 a conclusão do bloco das 9:00 o avise.
+     * Desfaz a conclusão. O catch-up antes de gravar impede que desfazer às 9:20 a conclusão do bloco
+     * das 9:00 o avise.
      */
     suspend fun uncomplete(routineId: Long, date: LocalDate): Unit = change {
         completionDao.delete(routineId, date.toEpochDay())
-        shoppingItemDao.restoreReset(ShoppingReset.routineKey(routineId, date.toEpochDay()))
     }
 
     /**
@@ -240,7 +214,7 @@ class RoutineRepository(
      * ocorre em [date] e não foi concluída nesse dia — senão `null`. Só leitura; confere
      * existência/conclusão como paridade do T13 (não decide exceções — isso é do [RoutineSchedule]).
      */
-    suspend fun routineForNotification(routineId: Long, date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Routine? {
+    suspend fun routineForNotification(routineId: Long, date: LocalDate, zone: ZoneId = clock.zone()): Routine? {
         val routine = routineDao.byId(routineId) ?: return null
         if (routine.archivedAt != null) return null
         if (!RoutineSchedule.occursOn(routine, date, zone)) return null
@@ -269,17 +243,26 @@ class RoutineRepository(
     suspend fun occurrenceOverride(routineId: Long, epochDay: Long): RoutineOverride? =
         overrideDao.all().firstOrNull { it.routineId == routineId && it.epochDay == epochDay }
 
+    /** O que o [skipOccurrence] fez: [previous] é a exceção do dia que o `SKIP` substituiu (`null` = nenhuma). */
+    data class SkippedOccurrence(val previous: RoutineOverride?)
+
     /**
      * Pular a ocorrência daquele dia: a rotina não acontece ali, mas continua ativa. Uma exceção por
      * dia (índice único): o `SKIP` substitui a que houver. Devolve a exceção ANTERIOR do dia (ex.: uma
      * remarcação; `null` se não havia), lida no mesmo [change], para o Desfazer da mensagem recolocá-la
      * ([restoreOccurrenceException]). Mesmo caminho para a tela de exceção, a notificação e a Hoje.
+     *
+     * Rotina que não existe mais (excluída de vez, notificação ou tela antiga) ou ARQUIVADA ("Excluir":
+     * some de hoje em diante): nada é gravado e devolve `null`; quem oferece Desfazer não oferece
+     * (v1.10.0, E0; N2 da E4 da v1.9.0 e O-3 do Lince).
      */
-    suspend fun skipOccurrence(routineId: Long, epochDay: Long): RoutineOverride? = change {
+    suspend fun skipOccurrence(routineId: Long, epochDay: Long): SkippedOccurrence? = change {
+        val routine = routineDao.byId(routineId) ?: return@change null
+        if (routine.archivedAt != null) return@change null
         val previous = occurrenceOverride(routineId, epochDay)
-        overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP))
-        if (epochDay == LocalDate.now().toEpochDay()) notifications.cancel(routineId)
-        previous?.takeUnless { it.type == RoutineOverrideType.SKIP }
+        overrideDao.insert(RoutineOverride(routineId = routineId, epochDay = epochDay, type = RoutineOverrideType.SKIP, createdAt = clock.nowMillis()))
+        if (epochDay == clock.today().toEpochDay()) notifications.cancel(routineId)
+        SkippedOccurrence(previous?.takeUnless { it.type == RoutineOverrideType.SKIP })
     }
 
     /**
@@ -308,6 +291,7 @@ class RoutineRepository(
                 type = RoutineOverrideType.RESCHEDULE,
                 newStartMinute = newStartMinute,
                 newEpochDay = newEpochDay,
+                createdAt = clock.nowMillis(),
             ),
         )
     }
@@ -332,7 +316,7 @@ class RoutineRepository(
      * em ordem trocada e a segunda gravar a marca para trás.
      */
     suspend fun catchUp(nowOverride: Long? = null) = mutex.withLock {
-        catchUpLocked(nowOverride ?: clock(), schedule = true)
+        catchUpLocked(nowOverride ?: clock.nowMillis(), schedule = true)
     }
 
     /**
@@ -340,7 +324,7 @@ class RoutineRepository(
      * avisar nada do passado do backup.
      */
     suspend fun establishBaseline(nowOverride: Long? = null) = mutex.withLock {
-        val now = nowOverride ?: clock()
+        val now = nowOverride ?: clock.nowMillis()
         withContext(NonCancellable) {
             scheduleLocked(now)
             mark.set(now)
@@ -357,7 +341,7 @@ class RoutineRepository(
      * de uma notificação seria pior. No [catchUp] dos pontos de entrada a falha continua propagando.
      */
     private suspend fun <T> change(write: suspend () -> T): T = mutex.withLock {
-        val now = clock()
+        val now = clock.nowMillis()
         withContext(NonCancellable) {
             catchUpLocked(now, schedule = false, tolerateDeliveryFailure = true)
             val result = write()
@@ -392,7 +376,7 @@ class RoutineRepository(
     }
 
     private suspend fun plan(lastSeen: Long, now: Long): List<RoutineCatchUp.Due> {
-        val zone = zone()
+        val zone = clock.zone()
         val days = RoutineCatchUp.days(lastSeen, now, zone)
         if (days.isEmpty()) return emptyList()
         val doneByDay = days.associateWith { completionDao.doneOn(it.toEpochDay()).toSet() }
@@ -407,16 +391,17 @@ class RoutineRepository(
      *   próximo início já é o do aviso, ele não existe: o aviso também redesenha os widgets.
      * Com o limite de [MAX_DISCARDED_STARTS] esgotado não há aviso, e o dos widgets segue a corrente
      * (cada um agenda o seguinte), como até a v1.9.0.
+     * Os dois saem como INSTANTE, convertidos no mesmo fuso em que foram calculados (v1.10.0, OBS-1).
      */
     private suspend fun scheduleLocked(now: Long) {
-        val zone = zone()
+        val zone = clock.zone()
         val routines = routineDao.active()
         val overrides = overridesByRoutine()
-        val after = startingPoint(now)
+        val after = startingPoint(now, zone)
         val remindAt = nextReminding(routines, overrides, after, zone)
         val refreshAt = RoutineSchedule.nextStart(routines, after, zone, overrides)?.at
             ?.takeIf { remindAt == null || it < remindAt }
-        alarms.schedule(remindAt = remindAt, refreshAt = refreshAt)
+        alarms.schedule(remindAtMillis = remindAt?.toMillis(zone), refreshAtMillis = refreshAt?.toMillis(zone))
     }
 
     /**
@@ -429,10 +414,9 @@ class RoutineRepository(
      * inícios; além disso, `null`.
      * Só leitura: não passa pelo Mutex, não agenda nada e não mexe na marca do catch-up.
      */
-    suspend fun nextRemindingStart(now: Long = clock()): Long? {
-        val zone = zone()
-        return nextReminding(routineDao.active(), overridesByRoutine(), startingPoint(now), zone)
-            ?.atZone(zone)?.toInstant()?.toEpochMilli()
+    suspend fun nextRemindingStart(now: Long = clock.nowMillis()): Long? {
+        val zone = clock.zone()
+        return nextReminding(routineDao.active(), overridesByRoutine(), startingPoint(now, zone), zone)?.toMillis(zone)
     }
 
     /**
@@ -458,7 +442,9 @@ class RoutineRepository(
     }
 
     /** Ponto de partida do próximo início: o mesmo para o agendamento e para o diagnóstico. */
-    private fun startingPoint(now: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone())
+    private fun startingPoint(now: Long, zone: ZoneId): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(now), zone)
+
+    private fun LocalDateTime.toMillis(zone: ZoneId): Long = atZone(zone).toInstant().toEpochMilli()
 
     /** Exceções agrupadas por rotina, para o [RoutineSchedule] honrar skip/remarcação. */
     private suspend fun overridesByRoutine(): Map<Long, List<RoutineOverride>> =

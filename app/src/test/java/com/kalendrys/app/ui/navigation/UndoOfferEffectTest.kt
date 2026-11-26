@@ -23,6 +23,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.testutil.deletedTaskTarget
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
@@ -30,7 +32,9 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
+import com.kalendrys.app.testutil.clockOf
 import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.LocalAppSnackbarHostState
 import com.kalendrys.app.ui.components.showUndo
@@ -84,17 +88,17 @@ class UndoOfferEffectTest {
         testDb = ViewModelTestDatabase(context)
         appScope = testDb.appScope()
         val db = testDb.db
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
         routines = RoutineRepository(
             db.routineDao(),
             db.routineCompletionDao(),
             db.routineOverrideDao(),
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        offers = UndoOffers(repository, routines, appScope) { now }
+        offers = UndoOffers(repository, routines, appScope, clockOf { now })
         compose.setContent {
             KalendrysTheme {
                 // Tirar e pôr de volta (com geração nova) descarta o coletor, o estado da mensagem e a tela,
@@ -184,7 +188,7 @@ class UndoOfferEffectTest {
     fun `oferta mostra Tarefa excluida e Desfazer devolve a tarefa`() {
         val task = deleted("Pagar conta")
 
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
 
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
@@ -198,7 +202,7 @@ class UndoOfferEffectTest {
     fun `sem Desfazer a tarefa continua excluida`() {
         val task = deleted("Pagar conta")
 
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
         advance(11_000)
@@ -213,7 +217,7 @@ class UndoOfferEffectTest {
     @Test
     fun `girar com a mensagem visivel mostra de novo e Desfazer depois restaura`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
 
@@ -230,7 +234,7 @@ class UndoOfferEffectTest {
     @Test
     fun `ao voltar o tempo da mensagem recomeca`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         advance(5_000) // ~6 s dos 10 s
 
@@ -244,7 +248,7 @@ class UndoOfferEffectTest {
     @Test
     fun `tempo esgotado limpa e nao reaparece ao girar de novo`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         advance(11_000)
         assertNull(offers.pending.value)
@@ -261,10 +265,10 @@ class UndoOfferEffectTest {
         val first = deleted("Primeira")
         val second = deleted("Segunda")
 
-        offers.offer(UndoTarget.DeletedTask(first))
+        offers.offer(deletedTaskTarget(first))
         advance()
         val firstOffer = offers.pending.value!!
-        offers.offer(UndoTarget.DeletedTask(second))
+        offers.offer(deletedTaskTarget(second))
         advance()
         val secondOffer = offers.pending.value!!
 
@@ -282,7 +286,7 @@ class UndoOfferEffectTest {
     @Test
     fun `oferta do app e a mensagem da propria tela, cada Desfazer desfaz a sua`() {
         val task = deleted("Excluída pelo detalhe")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         // A tela à frente mostra a mensagem dela dentro dos 10 s (ex.: a Hoje, que segue com a própria;
         // a lista de Tarefas passou para a oferta do app na E5).
@@ -309,7 +313,7 @@ class UndoOfferEffectTest {
     @Test
     fun `oferta pendente com o coletor recriado depois do prazo nao mostra nada e some`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
 
         // Saiu do app pelo voltar com a mensagem na tela e voltou depois do prazo.
@@ -323,7 +327,7 @@ class UndoOfferEffectTest {
     @Test
     fun `dentro do prazo o coletor recriado mostra de novo`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
 
         // Faltando 5 s (NB-E1-A: a mensagem recriada vive só o que resta do prazo, e o recriar avança 1 s).
@@ -336,7 +340,7 @@ class UndoOfferEffectTest {
     @Test
     fun `recriada perto do fim do prazo, a mensagem dura so o que resta e limpa a oferta`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
 
         recreate { now += UndoOffers.VALIDITY_MS - 5_000 }
@@ -352,7 +356,7 @@ class UndoOfferEffectTest {
     @Test
     fun `Desfazer tocado com a mensagem visivel restaura, sem conferir o prazo no toque`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
 
@@ -368,7 +372,7 @@ class UndoOfferEffectTest {
     // --- P8: a oferta tem dois tipos; o texto sai do tipo, quem restaura é o objeto ---
 
     private fun deletedRoutine(title: String): Long = runBlocking {
-        val routine = routines.add(Routine(title = title, startMinute = 420))
+        val routine = routines.add(Routine(title = title, startMinute = 420, createdAt = TEST_CREATED_AT))
         routines.archive(routine)
         routine.id
     }
@@ -413,7 +417,7 @@ class UndoOfferEffectTest {
     @Test
     fun `excluir tarefa e logo depois rotina - a segunda mensagem substitui a primeira e Desfazer restaura so a rotina`() {
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()
 
@@ -440,7 +444,7 @@ class UndoOfferEffectTest {
         offers.offer(UndoTarget.DeletedRoutine(routineId))
         advance()
         val task = deleted("Pagar conta")
-        offers.offer(UndoTarget.DeletedTask(task))
+        offers.offer(deletedTaskTarget(task))
         advance()
 
         compose.onNodeWithText("Tarefa excluída").assertIsDisplayed()

@@ -10,6 +10,7 @@ import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.test.runTest
@@ -44,8 +45,8 @@ class TaskWithNewListTest {
             .allowMainThreadQueries()
             .build()
         scheduler = FakeReminderScheduler(context)
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao())
-        shopping = ShoppingRepository(db)
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), scheduler, db.shoppingItemDao(), clock = SystemAppClock)
+        shopping = ShoppingRepository(db, clock = SystemAppClock)
     }
 
     @After
@@ -61,16 +62,6 @@ class TaskWithNewListTest {
         assertEquals("Feira de sábado", list.name)
         assertEquals(list.id, task.shoppingListId)
         assertEquals(task, db.taskDao().byId(task.id))
-    }
-
-    @Test
-    fun `lista nova ignora o id de lista existente`() = runTest {
-        val existing = shopping.createList("Antiga")
-
-        val task = repository.addTask("Feira", shoppingListId = existing, newListName = "Nova")
-
-        val created = db.shoppingListDao().all().single { it.name == "Nova" }
-        assertEquals(created.id, task.shoppingListId)
     }
 
     @Test
@@ -93,7 +84,7 @@ class TaskWithNewListTest {
         assertEquals("Feira", byListsTab.name)
         // Tirando o que é de cada gravação (id e instante), são a mesma lista.
         assertEquals(byListsTab.copy(id = 0, createdAt = 0), byPanel.copy(id = 0, createdAt = 0))
-        assertEquals(ShoppingList.named("  Feira  ").copy(createdAt = 0), byPanel.copy(id = 0, createdAt = 0))
+        assertEquals(ShoppingList.named("  Feira  ", createdAt = TEST_CREATED_AT).copy(createdAt = 0), byPanel.copy(id = 0, createdAt = 0))
     }
 
     @Test
@@ -111,7 +102,7 @@ class TaskWithNewListTest {
 
         try {
             // Força a falha da tarefa DEPOIS da lista: id repetido viola a chave primária.
-            db.taskDao().insertTaskWithNewList(ShoppingList.named("Feira"), Task(id = existing.id, title = "Duplicada"))
+            db.taskDao().insertTaskWithNewList(ShoppingList.named("Feira", createdAt = TEST_CREATED_AT), Task(id = existing.id, title = "Duplicada", createdAt = TEST_CREATED_AT))
             fail("a tarefa duplicada devia falhar")
         } catch (expected: SQLiteConstraintException) {
             // A transação inteira volta.

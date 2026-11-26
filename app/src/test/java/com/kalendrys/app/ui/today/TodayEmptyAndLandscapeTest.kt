@@ -24,6 +24,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.TaskTiming
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.TodayRepositories
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -100,7 +101,7 @@ class TodayEmptyAndLandscapeTest {
     private fun aFullDay() = runBlocking {
         val today = LocalDate.now()
         listOf("Acordar", "Treino", "Trabalho", "Almoço", "Leitura", "Jantar").forEachIndexed { i, title ->
-            repos.routines.add(Routine(title = title, startMinute = (6 + i * 2) * 60, durationMinutes = 45))
+            repos.routines.add(Routine(title = title, startMinute = (6 + i * 2) * 60, durationMinutes = 45, createdAt = TEST_CREATED_AT))
         }
         repos.tasks.addTask("Pagar boleto", timing = TaskTiming(date = today.minusDays(2)))
         repos.tasks.addTask("Comprar pão", timing = TaskTiming(date = today))

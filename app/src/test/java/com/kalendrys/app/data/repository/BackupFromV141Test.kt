@@ -128,7 +128,7 @@ class BackupFromV141Test {
             PreferenceDataStoreFactory.create { File(context.cacheDir, "v141-${System.nanoTime()}.preferences_pb") },
         )
 
-        val stats = BackupManager(db, context.contentResolver, settings).restore(backupV141())
+        val stats = BackupManager(db, context.contentResolver, settings, clock = SystemAppClock).restore(backupV141())
 
         // Tarefas: recorrência personalizada e nulos preservados.
         val pagar = db.taskDao().byId(1)!!
@@ -140,23 +140,21 @@ class BackupFromV141Test {
         assertNull(db.taskDao().byId(2)!!.dueDate)
         assertEquals(1, db.completionLogDao().lastCompletions().size)
 
-        // Rotinas: os itens de compra por rotina (formato antigo) viram uma lista ligada à rotina.
+        // Rotinas (v1.10.0, ADR-0002 16.10.3): os itens de compra por rotina viravam a lista da rotina;
+        // rotina não tem mais lista e essa lista não tem tarefa, então sai com os itens. A rotina fica,
+        // com o tipo tirado da categoria (Casa = COMPRAS → Nenhum).
         val feira = db.routineDao().byId(3)!!
-        val lists = db.shoppingListDao().all()
-        assertEquals(1, lists.size)
-        assertEquals("Feira", lists.single().name)
-        assertEquals(lists.single().id, feira.shoppingListId)
-        val items = db.shoppingItemDao().all().sortedBy { it.id }
-        assertEquals(listOf("Banana", "Alface"), items.map { it.name })
-        assertTrue(items.all { it.listId == lists.single().id })
-        assertEquals(listOf(899L, null), items.map { it.priceCents })
-        assertTrue(items.first().picked)
+        assertNull(feira.shoppingListId)
+        assertEquals("NONE", feira.kind)
+        assertTrue(db.shoppingListDao().all().isEmpty())
+        assertTrue(db.shoppingItemDao().all().isEmpty())
 
         val treino = db.routineDao().byId(4)!!
         assertEquals(2, treino.weekInterval)
         assertEquals(1_762_500_000_000L, treino.pausedAt)
         assertEquals(20_700L, treino.endEpochDay)
         assertNull(treino.shoppingListId)
+        assertEquals("categoria Saúde do tipo EXERCICIO → Exercício", "EXERCISE", treino.kind)
         assertEquals(2, db.exerciseItemDao().all().size)
         assertEquals(2, db.routineOverrideDao().all().size)
 
@@ -171,8 +169,8 @@ class BackupFromV141Test {
         assertEquals(1, stats.routineCompletions)
         assertEquals(2, stats.routineCategories)
         assertEquals(2, stats.routineOverrides)
-        assertEquals(2, stats.shoppingItems)
+        assertEquals(0, stats.shoppingItems)
         assertEquals(2, stats.exerciseItems)
-        assertEquals(1, stats.shoppingLists)
+        assertEquals(0, stats.shoppingLists)
     }
 }

@@ -6,10 +6,12 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import java.time.LocalDate
@@ -61,7 +63,7 @@ class TaskDetailLegacyCustomTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     @After
@@ -75,7 +77,7 @@ class TaskDetailLegacyCustomTest {
 
     /** A personalizada quebrada, como uma versão antiga a deixava no banco. */
     private fun insertBroken(): Task = runBlocking {
-        val broken = TaskTiming(LocalDate.now().plusDays(4), LocalTime.of(9, 0)).applyTo(Task(title = "Regar as plantas"), zone)
+        val broken = TaskTiming(LocalDate.now().plusDays(4), LocalTime.of(9, 0)).applyTo(Task(title = "Regar as plantas", createdAt = TEST_CREATED_AT), zone)
             .copy(repeat = ReminderRepeat.CUSTOM, byWeekdays = 0, intervalUnit = null)
         broken.copy(id = testDb.db.taskDao().insert(broken))
     }
@@ -84,9 +86,10 @@ class TaskDetailLegacyCustomTest {
         TaskDetailViewModel(
             SavedStateHandle(mapOf(TASK_ID_ARG to id)),
             repository,
-            ShoppingRepository(testDb.db),
+            ShoppingRepository(testDb.db, clock = SystemAppClock),
             testUndoOffers(testDb, tasks = repository),
             testDb.appScope(),
+            clock = SystemAppClock,
         ),
     ).also { viewModels += it }
 

@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.kalendrys.app.KalendrysApp
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.HistoryExporter
+import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.ThemeMode
@@ -19,7 +21,6 @@ import com.kalendrys.app.update.UpdateChecker
 import com.kalendrys.app.update.UpdateInstaller
 import org.json.JSONException
 import java.io.IOException
-import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,8 @@ class SettingsViewModel(
     private val backupManager: BackupManager,
     private val updateChecker: UpdateChecker,
     private val updateInstaller: UpdateInstaller,
+    /** O relógio do app (v1.10.0, 16.3): a data no nome sugerido dos arquivos. */
+    private val clock: AppClock,
 ) : ViewModel() {
 
     /** Etapas da exportação do histórico que a tela precisa mostrar. */
@@ -117,7 +120,7 @@ class SettingsViewModel(
             val event = if (historyExporter.count() == 0) {
                 ExportEvent.NothingToExport
             } else {
-                ExportEvent.ChooseFile("kalendrys-historico-${LocalDate.now()}.csv")
+                ExportEvent.ChooseFile("kalendrys-historico-${clock.today()}.csv")
             }
             exportEvents.send(event)
         }
@@ -139,7 +142,7 @@ class SettingsViewModel(
     /** Backup completo é sempre útil para troca de aparelho: abre direto o seletor para criar o arquivo. */
     fun requestBackupExport() {
         viewModelScope.launch {
-            backupEvents.send(BackupEvent.ChooseExportFile("kalendrys-backup-${LocalDate.now()}.json"))
+            backupEvents.send(BackupEvent.ChooseExportFile("kalendrys-backup-${clock.today()}.json"))
         }
     }
 
@@ -232,6 +235,7 @@ class SettingsViewModel(
                     app.backupManager,
                     app.updateChecker,
                     app.updateInstaller,
+                    app.clock,
                 )
             }
         }

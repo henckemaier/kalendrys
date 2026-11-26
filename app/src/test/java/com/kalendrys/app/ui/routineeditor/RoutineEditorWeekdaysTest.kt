@@ -14,12 +14,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
 import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.components.assertWeekdayCellsFit
@@ -27,8 +28,8 @@ import com.kalendrys.app.ui.components.weekdayPillWidthsPx
 import com.kalendrys.app.ui.theme.KalendrysTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Test
 import org.junit.Rule
+import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -61,19 +62,19 @@ class RoutineEditorWeekdaysTest {
             db.routineOverrideDao(),
             FakeRoutineAlarms(context),
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
+            clock = SystemAppClock,
         )
-        val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420)) }
+        val routine = runBlocking { routineRepository.add(Routine(title = "Treino", startMinute = 420, createdAt = TEST_CREATED_AT)) }
         val viewModel = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routine.id)),
                 routineRepository,
-                RoutineCategoryRepository(db),
-                ShoppingRepository(db),
-                ExerciseRepository(db.exerciseItemDao()),
+                ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 testUndoOffers(testDb, routineRepository),
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         compose.setContent {

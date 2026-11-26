@@ -25,6 +25,7 @@ import com.kalendrys.app.ui.components.AppScaffold
 import com.kalendrys.app.ui.components.AppTopBar
 import com.kalendrys.app.ui.components.CollapsingFab
 import com.kalendrys.app.ui.components.EmptyState
+import com.kalendrys.app.ui.components.LocalAppClock
 import com.kalendrys.app.ui.components.TopBarAction
 import com.kalendrys.app.ui.components.WeekdayName
 import com.kalendrys.app.ui.components.plus
@@ -33,8 +34,8 @@ import com.kalendrys.app.ui.components.rememberFabExpanded
 import com.kalendrys.app.ui.components.weekdayDateLabel
 import com.kalendrys.app.ui.components.weekdayName
 import com.kalendrys.app.ui.theme.Spacing
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 
 /**
  * Tela Hoje (ADR-0002, 14.4; v1.8.0, E2 e E3). A tela inteira é UMA lista: a faixa da semana rola
@@ -130,7 +131,8 @@ fun TodayScreen(
             else -> {
                 val now = rememberCurrentMinute()
                 // Muda a cada minuto; cada linha recebe só um Boolean e só recompõe quando o bloco entra ou sai de andamento.
-                val nowMinute = remember(now) { LocalTime.now().let { it.hour * 60 + it.minute } }
+                val zone = LocalAppClock.current.zone()
+                val nowMinute = remember(now, zone) { Instant.ofEpochMilli(now).atZone(zone).let { it.hour * 60 + it.minute } }
                 val trailActions = TrailActions(
                     onOpenRoutine = onOpenRoutine,
                     onOpenTask = onOpenTask,

@@ -2,6 +2,7 @@ package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.domain.TaskSchedule.Status
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,7 +16,7 @@ class TaskScheduleTest {
     private val today = LocalDate.of(2026, 10, 28)
 
     private fun task(due: LocalDate?, repeat: ReminderRepeat = ReminderRepeat.NONE) =
-        Task(id = 1, title = "T", dueDate = due?.toEpochDay(), repeat = repeat)
+        Task(id = 1, title = "T", dueDate = due?.toEpochDay(), repeat = repeat, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `sem repeticao concluida em outro dia esta encerrada e nao volta`() {

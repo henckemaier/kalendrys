@@ -1,5 +1,6 @@
 package com.kalendrys.app.data.repository
 
+import androidx.annotation.VisibleForTesting
 import androidx.room.withTransaction
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.dao.ShoppingListOwnerRow
@@ -36,11 +37,14 @@ data class ShoppingListSummary(
  * leitura, nunca guardado. Os vínculos (`shoppingListId`) moram nos donos; aqui só se desfazem ao
  * excluir a lista.
  */
-class ShoppingRepository(private val database: AppDatabase) {
+class ShoppingRepository(
+    private val database: AppDatabase,
+    /** O relógio do app (v1.10.0, 16.3): o carimbo de criação de listas e itens. */
+    private val clock: AppClock,
+) {
 
     private val listDao = database.shoppingListDao()
     private val itemDao = database.shoppingItemDao()
-    private val routineDao = database.routineDao()
     private val taskDao = database.taskDao()
 
     // --- Listas ---------------------------------------------------------------------------------
@@ -51,8 +55,13 @@ class ShoppingRepository(private val database: AppDatabase) {
 
     suspend fun list(listId: Long): ShoppingList? = listDao.byId(listId)
 
-    /** Cria uma lista avulsa e devolve o id. Nome vazio não é aceito (a UI valida antes). */
-    suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name))
+    /**
+     * Cria uma lista SEM tarefa e devolve o id. Desde a v1.10.0 (ADR-0002 16.10.4) nenhum caminho do app
+     * faz isso: a lista nasce com a tarefa (TaskChange.NewShoppingList, addTask com newListName). Fica só
+     * para os testes montarem dados.
+     */
+    @VisibleForTesting
+    suspend fun createList(name: String): Long = listDao.insert(ShoppingList.named(name, clock.nowMillis()))
 
     suspend fun renameList(listId: Long, name: String) {
         if (name.isBlank()) return
@@ -60,12 +69,11 @@ class ShoppingRepository(private val database: AppDatabase) {
     }
 
     /**
-     * Exclui a lista, os itens dela e o vínculo de todas as tarefas e rotinas (inclusive arquivadas),
-     * numa transação só (padrão do [RoutineCategoryRepository.delete]).
+     * "Excluir lista" (v1.10.0, P45): apaga a lista, os itens e o vínculo da tarefa dona, numa transação
+     * só. Não sobra lista sem tarefa nem tarefa apontando para lista que não existe.
      */
     suspend fun deleteList(listId: Long) = database.withTransaction {
         itemDao.deleteByList(listId)
-        routineDao.clearShoppingList(listId)
         taskDao.clearShoppingList(listId)
         listDao.delete(listId)
     }
@@ -75,11 +83,10 @@ class ShoppingRepository(private val database: AppDatabase) {
         combine(
             listDao.observeAll(),
             itemDao.observeStats(),
-            routineDao.observeShoppingListOwners(),
             taskDao.observeShoppingListOwners(),
-        ) { lists, stats, routineOwners, taskOwners ->
+        ) { lists, stats, taskOwners ->
             val statsById = stats.associateBy { it.listId }
-            val owners = owners(routineOwners, taskOwners)
+            val owners = owners(taskOwners)
             lists.map { list ->
                 val s = statsById[list.id]
                 ShoppingListSummary(
@@ -115,14 +122,9 @@ class ShoppingRepository(private val database: AppDatabase) {
     fun observeSummary(listId: Long): Flow<ShoppingListSummary?> =
         observeSummaries().map { all -> all.firstOrNull { it.id == listId } }.distinctUntilChanged()
 
-    private fun owners(
-        routineOwners: List<ShoppingListOwnerRow>,
-        taskOwners: List<ShoppingListOwnerRow>,
-    ): Map<Long, List<ShoppingListOwner>> {
-        val routines = routineOwners.map { it.shoppingListId to ShoppingListOwner(ShoppingListOwner.Kind.ROUTINE, it.id, it.title) }
-        val tasks = taskOwners.map { it.shoppingListId to ShoppingListOwner(ShoppingListOwner.Kind.TASK, it.id, it.title) }
-        return (routines + tasks).groupBy({ it.first }, { it.second })
-    }
+    /** Donos de cada lista: só tarefas desde a v1.10.0 (rotina não tem lista; ADR-0002 16.10.1). */
+    private fun owners(taskOwners: List<ShoppingListOwnerRow>): Map<Long, List<ShoppingListOwner>> =
+        taskOwners.groupBy({ it.shoppingListId }, { ShoppingListOwner(ShoppingListOwner.Kind.TASK, it.id, it.title) })
 
     // --- Itens ----------------------------------------------------------------------------------
 
@@ -132,8 +134,13 @@ class ShoppingRepository(private val database: AppDatabase) {
      * Novo item no fim da lista (position após a maior atual). Quantidade mínima 1. Ler a maior e
      * inserir na mesma transação: duas inclusões ao mesmo tempo (adição rápida com Enter seguido) não
      * pegam a mesma posição (parecer do Esquadro, E4).
+     *
+     * Lista que não existe mais (excluída com a tela dela aberta): não grava e devolve null, conferido na
+     * MESMA transação (ajuste do Lince na T3, v1.10.0). Sem isso o item ficava sem lista e voltava junto
+     * no Desfazer da exclusão da tarefa.
      */
-    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long = database.withTransaction {
+    suspend fun add(listId: Long, name: String, quantity: Int, priceCents: Long?): Long? = database.withTransaction {
+        if (listDao.byId(listId) == null) return@withTransaction null
         val nextPosition = (itemDao.maxPosition(listId) ?: -1) + 1
         itemDao.insert(
             ShoppingItem(
@@ -142,6 +149,7 @@ class ShoppingRepository(private val database: AppDatabase) {
                 quantity = quantity.coerceAtLeast(1),
                 priceCents = priceCents,
                 position = nextPosition,
+                createdAt = clock.nowMillis(),
             ),
         )
     }

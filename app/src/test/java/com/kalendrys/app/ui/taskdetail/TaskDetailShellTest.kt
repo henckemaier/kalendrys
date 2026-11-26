@@ -21,8 +21,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.testutil.FakeReminderScheduler
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testUndoOffers
 import com.kalendrys.app.ui.theme.KalendrysTheme
@@ -61,7 +63,7 @@ class TaskDetailShellTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         testDb = ViewModelTestDatabase(context)
         val db = testDb.db
-        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao())
+        repository = TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
     }
 
     @After
@@ -73,7 +75,7 @@ class TaskDetailShellTest {
         testDb.close()
     }
 
-    private fun show(task: Task = Task(title = "Comprar pão"), completed: Boolean = false): Long {
+    private fun show(task: Task = Task(title = "Comprar pão", createdAt = TEST_CREATED_AT), completed: Boolean = false): Long {
         val db = testDb.db
         val id = runBlocking {
             db.taskDao().insert(task).also { if (completed) repository.logCompletion(it) }
@@ -82,9 +84,10 @@ class TaskDetailShellTest {
             TaskDetailViewModel(
                 SavedStateHandle(mapOf(TASK_ID_ARG to id)),
                 repository,
-                ShoppingRepository(db),
+                ShoppingRepository(db, clock = SystemAppClock),
                 testUndoOffers(testDb, tasks = repository),
                 testDb.appScope(),
+                clock = SystemAppClock,
             ),
         )
         viewModel = vm
@@ -173,14 +176,17 @@ class TaskDetailShellTest {
     }
 
     @Test
-    fun `Excluir tarefa no menu com rotulo pede confirmacao`() {
-        show()
+    fun `Excluir tarefa no menu com rotulo exclui sem confirmacao`() {
+        // P7 (v1.10.0, ADR-0002 16.10.4): a proteção é o Desfazer, que devolve tarefa, lista e itens.
+        val id = show()
         assertEquals(0, compose.onAllNodesWithText("Excluir tarefa").fetchSemanticsNodes().size)
 
         openMenu()
         compose.onNodeWithText("Excluir tarefa").performClick()
 
-        compose.onNodeWithText("Excluir tarefa?").assertIsDisplayed()
+        assertEquals(0, compose.onAllNodesWithText("Excluir tarefa?").fetchSemanticsNodes().size)
+        runBlocking { withTimeoutOrNull(TIMEOUT_MS) { viewModel!!.awaitPendingWrites() } }
+        assertEquals(null, runBlocking { testDb.db.taskDao().byId(id) })
     }
 
     @Test

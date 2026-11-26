@@ -18,6 +18,7 @@ import com.kalendrys.app.domain.ShoppingCompletionOffer
 import com.kalendrys.app.domain.ShoppingProgress
 import com.kalendrys.app.domain.ShoppingTotals
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Tela de uso de uma lista (ADR-0001, fatia 2). Só o `listId` vem da rota: listas e itens vêm do
@@ -190,6 +192,15 @@ class ShoppingListViewModel(
     fun rename(name: String) {
         if (name.isBlank()) return
         viewModelScope.launch { repository.renameList(listId, name) }
+    }
+
+    /**
+     * "Excluir lista" (v1.10.0, ADR-0002 16.10.4, P45; a tela confirma antes, sem Desfazer): apaga a
+     * lista, os itens e o vínculo da tarefa dona. A tela fecha logo depois; a exclusão termina mesmo
+     * assim (NonCancellable).
+     */
+    fun deleteList() {
+        viewModelScope.launch { withContext(NonCancellable) { repository.deleteList(listId) } }
     }
 
     companion object {

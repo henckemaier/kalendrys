@@ -1,13 +1,14 @@
 package com.kalendrys.app.domain
 
 import com.kalendrys.app.data.local.entity.ShoppingItem
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ShoppingTotalsTest {
 
     private fun item(quantity: Int, priceCents: Long?) =
-        ShoppingItem(listId = 1, name = "x", quantity = quantity, priceCents = priceCents, position = 0)
+        ShoppingItem(listId = 1, name = "x", quantity = quantity, priceCents = priceCents, position = 0, createdAt = TEST_CREATED_AT)
 
     @Test
     fun `soma quantity vezes priceCents dos itens com preco`() {

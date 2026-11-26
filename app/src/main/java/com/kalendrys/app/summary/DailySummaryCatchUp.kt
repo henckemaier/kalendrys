@@ -1,11 +1,11 @@
 package com.kalendrys.app.summary
 
+import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.domain.SummaryCatchUp
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -29,19 +29,19 @@ class DailySummaryCatchUp(
     private val schedule: (AppSettings, LocalDateTime) -> Unit,
     /** Mostra o resumo de hoje; no app, [DailySummaryNotifier.show] com o retrato do dia. */
     private val show: suspend () -> Unit,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
-    private val clock: () -> Long = { System.currentTimeMillis() },
+    /** O relógio do app (v1.10.0, 16.3). */
+    private val clock: AppClock,
 ) {
 
     private val mutex = Mutex()
 
     suspend fun run(nowOverride: Long? = null) = mutex.withLock {
-        val now = nowOverride ?: clock()
+        val now = nowOverride ?: clock.nowMillis()
         val current = settings.settings.first()
         val lastSeen = settings.summaryLastSeenAt()
         withContext(NonCancellable) {
             // Primeira execução (inclusive depois de atualizar da v1.6.0): só estabelece a marca.
-            if (lastSeen != null && SummaryCatchUp.due(current.summaryEnabled, current.summaryTime, lastSeen, now, zone()) != null) {
+            if (lastSeen != null && SummaryCatchUp.due(current.summaryEnabled, current.summaryTime, lastSeen, now, clock.zone()) != null) {
                 show()
             }
             schedule(current, localDateTime(now))
@@ -54,7 +54,7 @@ class DailySummaryCatchUp(
      * e só agenda. Trocar para um horário já passado não entrega um resumo "atrasado".
      */
     suspend fun establishBaseline(newSettings: AppSettings? = null, nowOverride: Long? = null) = mutex.withLock {
-        val now = nowOverride ?: clock()
+        val now = nowOverride ?: clock.nowMillis()
         val current = newSettings ?: settings.settings.first()
         withContext(NonCancellable) {
             schedule(current, localDateTime(now))
@@ -63,7 +63,7 @@ class DailySummaryCatchUp(
     }
 
     private fun localDateTime(millis: Long): LocalDateTime =
-        LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), zone())
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), clock.zone())
 }
 
 /**

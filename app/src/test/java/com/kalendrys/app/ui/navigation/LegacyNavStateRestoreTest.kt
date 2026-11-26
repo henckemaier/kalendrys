@@ -69,6 +69,7 @@ class LegacyNavStateRestoreTest {
     @Test
     fun `a Hoje e a primeira aba e o destino inicial`() {
         assertEquals(AppTab.Today, AppTab.entries.first())
-        assertEquals(listOf("Today", "Tasks", "Calendar", "Lists"), AppTab.entries.map { it.name })
+        // v1.10.0 (ADR-0002 16.10.1): três abas; a rota "lists" continua registrada e cai em Tarefas.
+        assertEquals(listOf("Today", "Tasks", "Calendar"), AppTab.entries.map { it.name })
     }
 }
