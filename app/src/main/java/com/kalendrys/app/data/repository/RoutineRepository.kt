@@ -141,7 +141,7 @@ class RoutineRepository(
             is RoutineChange.ValidFrom, is RoutineChange.ValidUntil ->
                 routineDao.updateValidity(routineId, updated.startEpochDay, updated.endEpochDay)
             is RoutineChange.Remind -> routineDao.updateRemind(routineId, updated.remind)
-            is RoutineChange.Category -> routineDao.updateCategory(routineId, updated.categoryId)
+            is RoutineChange.Kind -> routineDao.updateKind(routineId, updated.kind)
             is RoutineChange.Color -> routineDao.updateColor(routineId, updated.color)
             is RoutineChange.Icon -> routineDao.updateIcon(routineId, updated.icon)
         }

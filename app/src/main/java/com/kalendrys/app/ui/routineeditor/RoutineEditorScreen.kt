@@ -242,12 +242,8 @@ private fun EditorContent(
             )
         }
         item(key = "remind") { RemindSection(remind = fields.remind, onChange = viewModel::updateRemind) }
-        if (state.categories.isNotEmpty()) {
-            item(key = "category") {
-                CategorySection(categories = state.categories, selectedId = fields.categoryId, onSelect = viewModel::updateCategory)
-            }
-        }
-        if (state.isExerciseCategory) {
+        item(key = "kind") { KindSection(kind = fields.kind, onSelect = viewModel::updateKind) }
+        if (state.isExercise) {
             item(key = "exercise-title") { SectionTitle(stringResource(R.string.exercise_section_title)) }
             // Também na criação (v1.10.0, 16.10.5): o rascunho guarda e o "Criar rotina" grava junto.
             if (exerciseItems.isEmpty()) {

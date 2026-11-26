@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -31,18 +32,16 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.kalendrys.app.R
-import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.domain.DurationFormat
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
-import com.kalendrys.app.ui.components.Dot
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.ui.routines.minuteOfDayLabel
-import com.kalendrys.app.ui.routines.routineTone
 
 /*
- * Seções do editor de rotina (v1.9.0, ADR-0002 15.5), na ordem da P4: Título; Quando (início, término
- * ou duração, dias, a cada N semanas); Lembrar; Categoria; Lista; Exercícios (só na categoria de
- * exercício); Aparência (ícone e cor); e, recolhidos em "Mais opções", Vigência e Observações. Cada
+ * Seções do editor de rotina (v1.9.0, ADR-0002 15.5; ordem da 16.10.5 na v1.10.0): Título; Quando
+ * (início, término ou duração, dias, a cada N semanas); Lembrar; Tipo; Exercícios (só no tipo
+ * Exercício); Aparência (ícone e cor); e, recolhidos em "Mais opções", Vigência e Observações. Cada
  * seção recebe os campos mostrados ([RoutineDraft], só leitura) e devolve eventos; quem grava é o
  * ViewModel (rascunho na criação, mudança na edição).
  */
@@ -145,27 +144,33 @@ internal fun RemindSection(remind: Boolean, onChange: (Boolean) -> Unit) {
     RemindRow(checked = remind, onCheckedChange = onChange, modifier = Modifier.padding(top = 24.dp))
 }
 
+/**
+ * Tipo da rotina (v1.10.0, ADR-0002 16.10.5): Nenhum ou Exercício, um só escolhido. Só o Exercício mostra
+ * a seção Exercícios; voltar para Nenhum esconde e guarda os exercícios, sem perguntar.
+ */
 @Composable
-internal fun CategorySection(categories: List<RoutineCategory>, selectedId: Long?, onSelect: (Long?) -> Unit) {
-    SectionTitle(stringResource(R.string.routine_category))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(
-            selected = selectedId == null,
-            onClick = { onSelect(null) },
-            label = { Text(stringResource(R.string.routine_category_none)) },
-        )
-        categories.forEach { category ->
+internal fun KindSection(kind: RoutineKind, onSelect: (RoutineKind) -> Unit) {
+    SectionTitle(stringResource(R.string.routine_kind))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.selectableGroup(),
+    ) {
+        RoutineKind.entries.forEach { option ->
             FilterChip(
-                selected = selectedId == category.id,
-                onClick = { onSelect(category.id) },
-                label = { Text(category.name) },
-                leadingIcon = {
-                    Dot(color = routineTone(RoutineColor.fromKey(category.color)).accent, size = 10.dp, filled = true)
-                },
+                selected = kind == option,
+                onClick = { onSelect(option) },
+                label = { Text(stringResource(option.labelRes)) },
             )
         }
     }
 }
+
+/** Rótulo do tipo na tela. */
+private val RoutineKind.labelRes: Int
+    get() = when (this) {
+        RoutineKind.NONE -> R.string.routine_kind_none
+        RoutineKind.EXERCISE -> R.string.routine_kind_exercise
+    }
 
 /** Aparência: ícone e cor. */
 @Composable

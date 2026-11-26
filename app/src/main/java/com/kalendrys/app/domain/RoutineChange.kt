@@ -16,7 +16,7 @@ sealed interface RoutineChange {
     /**
      * Mexe no que decide QUANDO a rotina avisa ou acorda o app: horário de início, dias, intervalo de
      * semanas, vigência e lembrar. Só esses casos passam pelo catch-up e reagendam (15.2); texto,
-     * duração, cor, ícone, categoria e lista não tocam em alarme.
+     * duração, cor, ícone e tipo não tocam em alarme.
      */
     val touchesSchedule: Boolean get() = false
 
@@ -97,9 +97,12 @@ sealed interface RoutineChange {
         override fun applyTo(routine: Routine): Routine = routine.copy(remind = remind)
     }
 
-    /** Categoria ([com.kalendrys.app.data.local.entity.RoutineCategory.id]) ou `null`. */
-    data class Category(val categoryId: Long?) : RoutineChange {
-        override fun applyTo(routine: Routine): Routine = routine.copy(categoryId = categoryId)
+    /**
+     * Tipo da rotina (v1.10.0, ADR-0002 16.10.5). Só a coluna do tipo: trocar de Exercício para Nenhum
+     * GUARDA os exercícios (ficam no banco e voltam com o tipo), sem perguntar.
+     */
+    data class Kind(val kind: RoutineKind) : RoutineChange {
+        override fun applyTo(routine: Routine): Routine = routine.copy(kind = kind.name)
     }
 
     data class Color(val color: RoutineColor) : RoutineChange {

@@ -16,18 +16,16 @@ import com.kalendrys.app.KalendrysApp
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.ExerciseItem
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.AppClock
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.nowLocal
 import com.kalendrys.app.domain.ExerciseFields
-import com.kalendrys.app.domain.RoutineCategoryKind
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.ui.edit.EditQueue
 import com.kalendrys.app.ui.edit.TextFieldBuffer
 import com.kalendrys.app.ui.tasks.ReminderTime
@@ -35,7 +33,6 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -45,8 +42,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -73,7 +70,6 @@ import kotlinx.coroutines.launch
 class RoutineEditorViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: RoutineRepository,
-    private val categoryRepository: RoutineCategoryRepository,
     private val exerciseRepository: ExerciseRepository,
     /** Oferta de Desfazer do app (P8): "Excluir rotina" oferece aqui e a mensagem aparece na origem. */
     private val undoOffers: UndoOffers,
@@ -87,7 +83,7 @@ class RoutineEditorViewModel(
     val isNew: Boolean = routineId == NEW_ROUTINE_ID
 
     /** Campos do editor, para o Reverter saber o que foi mexido na sessão (N4 do Esquadro). */
-    enum class Field { TITLE, NOTES, START, DURATION, DAYS, WEEK_INTERVAL, VALIDITY, REMIND, CATEGORY, COLOR, ICON }
+    enum class Field { TITLE, NOTES, START, DURATION, DAYS, WEEK_INTERVAL, VALIDITY, REMIND, KIND, COLOR, ICON }
 
     data class UiState(
         val isNew: Boolean = true,
@@ -103,32 +99,28 @@ class RoutineEditorViewModel(
         val initialDraft: RoutineDraft? = null,
         /** O título no campo está vazio (não é gravado; ao sair volta ao último válido). */
         val titleError: Boolean = false,
-        val categories: List<RoutineCategory> = emptyList(),
-        /**
-         * Tipo da categoria selecionada. ÚNICO ponto de fallback: categoria desconhecida ou sem
-         * categoria → [RoutineCategoryKind.SIMPLE] (via [RoutineCategoryKind.fromKey]).
-         */
-        val selectedKind: RoutineCategoryKind = RoutineCategoryKind.SIMPLE,
-        /** Exercícios (só populado quando a rotina já existe e é do tipo EXERCICIO). */
+        /** Exercícios que a tela mostra: só com o tipo Exercício (os do banco, ou os do rascunho na criação). */
         val exerciseItems: List<ExerciseItem> = emptyList(),
         /** Exercícios como estavam ao abrir o editor; null até a 1ª leitura da lista. */
         val exerciseBaseline: List<ExerciseItem>? = null,
         /**
-         * Criação: TODOS os exercícios do rascunho, mesmo com o tipo sem exercícios (escondidos, mas
-         * gravados junto: P2 da T2). [exerciseItems] é o que a tela mostra.
+         * TODOS os exercícios da rotina, mostrados ou não: os do banco (edição) ou os do rascunho
+         * (criação). Com o tipo Nenhum ficam guardados, escondidos (e, na criação, gravados junto: P2
+         * da T2). [exerciseItems] é o que a tela mostra.
          */
-        val draftExercises: List<ExerciseItem> = emptyList(),
+        val allExercises: List<ExerciseItem> = emptyList(),
         /** Edição: campos mexidos na sessão (o Reverter só manda esses de volta). */
         val touched: Set<Field> = emptySet(),
         /** Criação: o "Criar rotina" já foi tocado e a gravação está em curso (botão e descarte desligados). */
         val creating: Boolean = false,
     ) {
         val exerciseItemsChanged: Boolean
-            get() = exerciseBaseline?.let { base -> exerciseItems != base } ?: false
+            // Contra TODOS (não só os mostrados): esconder pelo tipo não é mexer nos exercícios.
+            get() = exerciseBaseline?.let { base -> allExercises != base } ?: false
 
         /** Criação: algo mudou desde a abertura (voltar pede confirmação). */
         val hasDraftChanges: Boolean
-            get() = isNew && fields != null && (fields != initialDraft || draftExercises.isNotEmpty())
+            get() = isNew && fields != null && (fields != initialDraft || allExercises.isNotEmpty())
 
         /** Criação: o "Criar rotina" está liberado. */
         val canCreate: Boolean get() = isNew && fields?.isValid == true
@@ -136,7 +128,8 @@ class RoutineEditorViewModel(
         /** Edição: há o que reverter. */
         val canRevert: Boolean get() = !isNew && (touched.isNotEmpty() || exerciseItemsChanged)
 
-        val isExerciseCategory: Boolean get() = selectedKind == RoutineCategoryKind.EXERCICIO
+        /** Tipo Exercício: a seção Exercícios aparece (v1.10.0, 16.10.5). */
+        val isExercise: Boolean get() = fields?.kind == RoutineKind.EXERCISE
     }
 
     sealed interface Event {
@@ -198,34 +191,32 @@ class RoutineEditorViewModel(
             }
         }
 
-    private val selectedKind: Flow<RoutineCategoryKind> =
-        combine(fields, categoryRepository.categories) { f, categories -> kindOf(f, categories) }
-            .distinctUntilChanged()
+    private val selectedKind: Flow<RoutineKind> =
+        fields.map { it?.kind ?: RoutineKind.DEFAULT }.distinctUntilChanged()
 
-    // Só mostra exercícios quando o tipo é EXERCICIO; na criação, os do rascunho.
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val exerciseItems: Flow<List<ExerciseItem>> =
+    /**
+     * Todos os exercícios da rotina, qualquer que seja o tipo: o rascunho (criação) ou o banco (edição;
+     * a 1ª leitura vira o retrato do Reverter). Com o tipo Nenhum eles ficam guardados, só escondidos.
+     */
+    private val allExercises: Flow<List<ExerciseItem>> =
         if (isNew) {
-            selectedKind.flatMapLatest { kind -> if (kind == RoutineCategoryKind.EXERCICIO) newExercises else flowOf(emptyList()) }
+            newExercises
         } else {
-            selectedKind.flatMapLatest { kind ->
-                if (kind == RoutineCategoryKind.EXERCICIO) {
-                    exerciseRepository.observeItems(routineId)
-                        .onEach { if (exerciseBaseline.value == null) exerciseBaseline.value = it }
-                } else {
-                    flowOf(emptyList())
-                }
-            }
+            exerciseRepository.observeItems(routineId)
+                .onEach { if (exerciseBaseline.value == null) exerciseBaseline.value = it }
         }
 
     private data class ModuleItems(
         val exercise: List<ExerciseItem> = emptyList(),
         val exerciseBaseline: List<ExerciseItem>? = null,
-        val draft: List<ExerciseItem> = emptyList(),
+        val all: List<ExerciseItem> = emptyList(),
     )
 
+    // Só MOSTRA os exercícios com o tipo Exercício (16.10.5).
     private val moduleItems: Flow<ModuleItems> =
-        combine(exerciseItems, exerciseBaseline, newExercises) { e, base, draft -> ModuleItems(e, base, draft) }
+        combine(selectedKind, allExercises, exerciseBaseline) { kind, all, base ->
+            ModuleItems(exercise = if (kind == RoutineKind.EXERCISE) all else emptyList(), exerciseBaseline = base, all = all)
+        }
 
     private data class EditorState(
         val routine: Routine?,
@@ -245,7 +236,7 @@ class RoutineEditorViewModel(
         ) { (r, l, f), initial, t, c -> EditorState(r, l, f, initial, t, c) }
 
     val uiState: StateFlow<UiState> =
-        combine(editorState, categoryRepository.categories, moduleItems) { editor, categories, module ->
+        combine(editorState, moduleItems) { editor, module ->
             UiState(
                 isNew = isNew,
                 notFound = !isNew && editor.loaded && editor.routine == null,
@@ -253,21 +244,13 @@ class RoutineEditorViewModel(
                 fields = editor.fields,
                 initialDraft = editor.initial,
                 titleError = !isNew && editor.fields != null && editor.fields.title.isBlank(),
-                categories = categories,
-                selectedKind = kindOf(editor.fields, categories),
                 exerciseItems = module.exercise,
                 exerciseBaseline = module.exerciseBaseline,
-                draftExercises = module.draft,
+                allExercises = module.all,
                 touched = editor.touched,
                 creating = editor.creating,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(isNew = isNew))
-
-    private fun kindOf(fields: RoutineDraft?, categories: List<RoutineCategory>): RoutineCategoryKind =
-        fields?.categoryId
-            ?.let { id -> categories.firstOrNull { it.id == id } }
-            ?.let { RoutineCategoryKind.fromKey(it.kind) }
-            ?: RoutineCategoryKind.SIMPLE
 
     init {
         if (isNew) {
@@ -388,11 +371,15 @@ class RoutineEditorViewModel(
     fun updateRemind(remind: Boolean) =
         if (isNew) draft.update { it?.copy(remind = remind) } else send(Field.REMIND) { RoutineChange.Remind(remind) }
 
-    fun updateCategory(categoryId: Long?) =
+    /**
+     * Tipo (v1.10.0, 16.10.5). De Exercício para Nenhum, sem perguntar: os exercícios ficam guardados
+     * (no banco, ou no rascunho da criação) e voltam se o tipo voltar. Entra no Reverter.
+     */
+    fun updateKind(kind: RoutineKind) =
         if (isNew) {
-            draft.update { it?.copy(categoryId = categoryId) }
+            draft.update { it?.copy(kind = kind) }
         } else {
-            send(Field.CATEGORY) { RoutineChange.Category(categoryId) }
+            send(Field.KIND) { RoutineChange.Kind(kind) }
         }
 
     fun updateWeekInterval(weeks: Int) {
@@ -608,7 +595,7 @@ class RoutineEditorViewModel(
                     enqueue { RoutineChange.ValidUntil(base.endEpochDay) }
                 }
                 Field.REMIND -> enqueue { RoutineChange.Remind(base.remind) }
-                Field.CATEGORY -> enqueue { RoutineChange.Category(base.categoryId) }
+                Field.KIND -> enqueue { RoutineChange.Kind(base.kind) }
                 Field.COLOR -> enqueue { RoutineChange.Color(base.color) }
                 Field.ICON -> enqueue { RoutineChange.Icon(base.icon) }
             }
@@ -653,7 +640,6 @@ class RoutineEditorViewModel(
                 RoutineEditorViewModel(
                     createSavedStateHandle(),
                     app.routineRepository,
-                    app.routineCategoryRepository,
                     app.exerciseRepository,
                     app.undoOffers,
                     app.editScope,
