@@ -8,3 +8,10 @@ package com.kalendrys.app.testutil
  * passavam `createdAt = 0L`. Teste que depende do dia de criação passa o seu.
  */
 const val TEST_CREATED_AT: Long = 0L
+
+/**
+ * Liga a tarefa [taskId] à lista [listId] direto no banco, para montar dados de teste (v1.10.0: o app só
+ * dá lista a uma tarefa criando a lista junto; não há mais "vincular lista existente").
+ */
+suspend fun com.kalendrys.app.data.local.AppDatabase.linkList(taskId: Long, listId: Long?) =
+    taskDao().updateShoppingList(taskId, listId)

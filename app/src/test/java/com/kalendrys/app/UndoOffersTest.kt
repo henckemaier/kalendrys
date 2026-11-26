@@ -12,6 +12,7 @@ import com.kalendrys.app.data.repository.TaskRepository
 import com.kalendrys.app.domain.TaskChange
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.testutil.deletedTaskTarget
+import com.kalendrys.app.testutil.linkList
 import com.kalendrys.app.testutil.FakeReminderScheduler
 import com.kalendrys.app.testutil.FakeRoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineNotifications
@@ -88,7 +89,7 @@ class UndoOffersTest {
             "Feira",
             timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)),
         )
-        repository.edit(task.id, TaskChange.ShoppingList(listId))
+        testDb.db.linkList(task.id, listId)
         return task.id
     }
 

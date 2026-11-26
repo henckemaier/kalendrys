@@ -65,16 +65,6 @@ class TaskWithNewListTest {
     }
 
     @Test
-    fun `lista nova ignora o id de lista existente`() = runTest {
-        val existing = shopping.createList("Antiga")
-
-        val task = repository.addTask("Feira", shoppingListId = existing, newListName = "Nova")
-
-        val created = db.shoppingListDao().all().single { it.name == "Nova" }
-        assertEquals(created.id, task.shoppingListId)
-    }
-
-    @Test
     fun `tarefa com lista nova e lembrete agenda o alarme fora da transacao, como sempre`() = runTest {
         val task = repository.addTask(
             "Feira",

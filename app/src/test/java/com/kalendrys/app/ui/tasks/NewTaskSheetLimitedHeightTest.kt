@@ -61,7 +61,6 @@ class NewTaskSheetLimitedHeightTest {
                     onSave = {},
                     onCancel = {},
                     onDismiss = {},
-                    lists = emptyList(),
                 )
             }
         }

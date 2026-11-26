@@ -25,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 internal fun NewTaskHost(panel: NewTaskPanel, openOn: LocalDate?, onClose: () -> Unit) {
     if (openOn == null) return
     LaunchedEffect(openOn) { panel.open(openOn) }
-    val lists by panel.lists.collectAsStateWithLifecycle(initialValue = emptyList())
     // Main.immediate: o texto digitado volta ao campo no mesmo quadro, sem saltar o cursor.
     val draft by panel.draft.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     draft?.let {
@@ -41,7 +40,6 @@ internal fun NewTaskHost(panel: NewTaskPanel, openOn: LocalDate?, onClose: () ->
                 onClose()
             },
             onDismiss = onClose,
-            lists = lists,
         )
     }
 }

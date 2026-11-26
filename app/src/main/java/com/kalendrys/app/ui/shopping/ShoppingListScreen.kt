@@ -67,6 +67,7 @@ fun ShoppingListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
     var showRename by rememberSaveable { mutableStateOf(false) }
+    var showDelete by rememberSaveable { mutableStateOf(false) }
     // Texto da adição rápida (C1): sobrevive à rotação; Enter adiciona e o campo segue focado.
     var quickText by rememberSaveable { mutableStateOf("") }
     // Grupo "Marcados (n)": aberto ou recolhido é estado da tela, não vai para o banco (12.4, U6).
@@ -126,6 +127,7 @@ fun ShoppingListScreen(
 
     val clearPickedLabel = stringResource(R.string.shopping_list_clear_picked)
     val renameLabel = stringResource(R.string.shopping_list_rename)
+    val deleteLabel = stringResource(R.string.shopping_list_delete)
     AppScaffold(
         topBar = {
             AppTopBar(
@@ -138,6 +140,7 @@ fun ShoppingListScreen(
                     listOf(
                         TopBarAction(clearPickedLabel, enabled = state.hasPicked, onClick = viewModel::clearPicked),
                         TopBarAction(renameLabel, onClick = { showRename = true }),
+                        TopBarAction(deleteLabel, onClick = { showDelete = true }),
                     )
                 },
             )
@@ -243,6 +246,22 @@ fun ShoppingListScreen(
             },
             onDismiss = { editingItemId = null },
         )
+    }
+
+    // "Excluir lista" (P45): confirma; apaga lista e itens e volta ao detalhe da tarefa dona.
+    if (showDelete) {
+        state.list?.let { list ->
+            DeleteListDialog(
+                name = list.name,
+                itemCount = state.items.size,
+                onConfirm = {
+                    showDelete = false
+                    viewModel.deleteList()
+                    onBack()
+                },
+                onDismiss = { showDelete = false },
+            )
+        }
     }
 
     if (showRename) {

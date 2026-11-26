@@ -1,6 +1,5 @@
 package com.kalendrys.app
 
-import com.kalendrys.app.domain.NewTaskList
 import com.kalendrys.app.domain.TaskTiming
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -63,13 +62,4 @@ class NewTaskDraftStoreTest {
         assertNull(store.draft.value)
     }
 
-    @Test
-    fun `lista escolhida e excluida some do rascunho`() {
-        store.open(today)
-        store.update { it.copy(list = NewTaskList.Existing(5), timing = TaskTiming(date = today)) }
-        store.keepListsIn(setOf(5, 6))
-        assertEquals(NewTaskList.Existing(5), store.draft.value!!.list)
-        store.keepListsIn(setOf(6))
-        assertNull(store.draft.value!!.list)
-    }
 }

@@ -58,19 +58,6 @@ interface TaskDao {
         return insert(task.copy(shoppingListId = listId))
     }
 
-    /**
-     * Tarefa nova com uma lista EXISTENTE (o painel ainda oferece "usar lista existente" até a T3 da
-     * v1.10.0). Confere na MESMA transação que a lista existe e não é de outra tarefa (índice único):
-     * se não for o caso, grava a tarefa SEM lista em vez de derrubar a gravação (A1 da revisão da T1).
-     * Devolve o id da tarefa.
-     */
-    @Transaction
-    suspend fun insertTaskWithExistingList(task: Task): Long {
-        val listId = task.shoppingListId ?: return insert(task)
-        val usable = listExists(listId) && !listOwnedByAnother(listId, taskId = task.id)
-        return insert(if (usable) task else task.copy(shoppingListId = null))
-    }
-
     /** Reinsere em lote preservando os ids (restauro de backup); use dentro de uma transação. */
     @Insert
     suspend fun insertAll(tasks: List<Task>)
@@ -109,22 +96,6 @@ interface TaskDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM shopping_list WHERE id = :listId)")
     suspend fun listExists(listId: Long): Boolean
-
-    /**
-     * Vincula a tarefa a uma lista EXISTENTE, conferindo a lista na mesma transação: se ela foi
-     * excluída no meio, nada é gravado (sem vínculo com lista inexistente). Devolve se vinculou.
-     */
-    @Transaction
-    suspend fun linkExistingList(taskId: Long, listId: Long): Boolean {
-        if (!listExists(listId)) return false
-        // v1.10.0: a lista é de UMA tarefa (índice único): lista de outra tarefa não é vinculada.
-        if (listOwnedByAnother(listId, taskId)) return false
-        updateShoppingList(taskId, listId)
-        return true
-    }
-
-    @Query("SELECT EXISTS(SELECT 1 FROM tasks WHERE shoppingListId = :listId AND id != :taskId)")
-    suspend fun listOwnedByAnother(listId: Long, taskId: Long): Boolean
 
     /**
      * Cria a lista [list] (de [ShoppingList.named]) e vincula a tarefa a ela numa transação só (v1.9.0,

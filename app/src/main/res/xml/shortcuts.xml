@@ -19,12 +19,16 @@
             android:targetClass="com.kalendrys.app.MainActivity" />
     </shortcut>
 
+    <!-- v1.10.0 (ADR-0002 16.10.4): a aba Listas saiu. O atalho FICA com o mesmo id "lists": tirar um
+         atalho estático do arquivo faz o sistema desativar a cópia fixada na tela inicial (cinza, não
+         abre). Com o mesmo id, o fixado antigo continua valendo e abre a aba Tarefas (o kalendrys://lists
+         cai nela); no menu de toque longo ele aparece como "Tarefas". -->
     <shortcut
         android:shortcutId="lists"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_lists"
-        android:shortcutShortLabel="@string/shortcut_lists_short"
-        android:shortcutLongLabel="@string/shortcut_lists_long">
+        android:shortcutShortLabel="@string/shortcut_tasks_short"
+        android:shortcutLongLabel="@string/shortcut_tasks_long">
         <intent
             android:action="android.intent.action.VIEW"
             android:data="kalendrys://lists"

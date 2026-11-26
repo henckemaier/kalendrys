@@ -60,7 +60,6 @@ class NewTaskSheetSemanticsTest {
                     onSave = {},
                     onCancel = {},
                     onDismiss = {},
-                    lists = emptyList(),
                 )
             }
         }

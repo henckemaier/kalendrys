@@ -48,7 +48,6 @@ class NewTaskSheetFocusTest {
                     onSave = {},
                     onCancel = {},
                     onDismiss = {},
-                    lists = emptyList(),
                 )
             }
         }

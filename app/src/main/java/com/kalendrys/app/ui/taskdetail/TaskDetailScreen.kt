@@ -57,7 +57,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalendrys.app.R
 import com.kalendrys.app.data.local.entity.CompletionLog
-import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.today
 import com.kalendrys.app.domain.TaskTiming
 import com.kalendrys.app.ui.components.AppScaffold
@@ -69,8 +68,8 @@ import com.kalendrys.app.ui.components.groupedItemShape
 import com.kalendrys.app.ui.components.longDateLabel
 import com.kalendrys.app.ui.components.plus
 import com.kalendrys.app.ui.components.weekdayDateLabel
+import com.kalendrys.app.ui.shopping.DeleteListDialog
 import com.kalendrys.app.ui.shopping.ShoppingListCard
-import com.kalendrys.app.ui.shopping.ShoppingListPicker
 import com.kalendrys.app.ui.taskdetail.TaskDetailViewModel.Event
 import com.kalendrys.app.ui.tasks.LocationField
 import com.kalendrys.app.ui.tasks.TaskTimingField
@@ -97,7 +96,7 @@ fun TaskDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     // Seletor "Criar nova / Usar lista existente" da lista de compras.
-    var showListPicker by rememberSaveable { mutableStateOf(false) }
+    var showDeleteListDialog by rememberSaveable { mutableStateOf(false) }
     val currentOnBack by rememberUpdatedState(onBack)
 
     LaunchedEffect(viewModel) {
@@ -157,8 +156,8 @@ fun TaskDetailScreen(
                 onComplete = viewModel::complete,
                 onUndoCompletion = viewModel::undoCompletion,
                 onOpenShoppingList = { listId -> state.task?.let { onOpenShoppingList(listId, it.id) } },
-                onAddShoppingList = { showListPicker = true },
-                onDetachShoppingList = viewModel::detachShoppingList,
+                onAddShoppingList = viewModel::createShoppingList,
+                onDeleteShoppingList = { showDeleteListDialog = true },
                 // O safeDrawing do AppScaffold já inclui o teclado: a lista rola até o campo focado.
                 contentPadding = padding.plus(horizontal = Spacing.l, top = Spacing.s, bottom = Spacing.xl),
             )
@@ -186,19 +185,17 @@ fun TaskDetailScreen(
         )
     }
 
-    if (showListPicker) {
-        ShoppingListPicker(
-            lists = state.availableLists,
-            suggestedName = state.title,
-            onCreate = { name ->
-                viewModel.createShoppingList(name)
-                showListPicker = false
+    // "Excluir lista" (P45): confirma; sem Desfazer. A lista some do banco junto com os itens.
+    val listToDelete = state.shoppingList
+    if (showDeleteListDialog && listToDelete != null) {
+        DeleteListDialog(
+            name = listToDelete.name,
+            itemCount = listToDelete.progress.total,
+            onConfirm = {
+                showDeleteListDialog = false
+                viewModel.deleteShoppingList()
             },
-            onPick = { listId ->
-                viewModel.attachShoppingList(listId)
-                showListPicker = false
-            },
-            onDismiss = { showListPicker = false },
+            onDismiss = { showDeleteListDialog = false },
         )
     }
 }
@@ -219,7 +216,7 @@ private fun TaskDetailContent(
     onUndoCompletion: () -> Unit,
     onOpenShoppingList: (listId: Long) -> Unit,
     onAddShoppingList: () -> Unit,
-    onDetachShoppingList: () -> Unit,
+    onDeleteShoppingList: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val zone = state.zone
@@ -282,7 +279,6 @@ private fun TaskDetailContent(
         }
         item(key = "shopping-list") {
             val shoppingList = state.shoppingList
-            val taskId = state.task?.id
             Column(modifier = Modifier.padding(bottom = SectionSpacing)) {
                 Text(
                     text = stringResource(R.string.list_card_section_title),
@@ -294,8 +290,7 @@ private fun TaskDetailContent(
                     ShoppingListCard(
                         summary = shoppingList,
                         onOpen = { onOpenShoppingList(shoppingList.id) },
-                        onDetach = onDetachShoppingList,
-                        isCurrentOwner = { it.kind == ShoppingListOwner.Kind.TASK && it.id == taskId },
+                        onDelete = onDeleteShoppingList,
                     )
                 } else {
                     Text(
