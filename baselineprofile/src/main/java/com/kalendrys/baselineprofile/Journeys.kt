@@ -403,8 +403,9 @@ fun MacrobenchmarkScope.browseToday() {
  * "Todas as rotinas", pelo menu da Hoje, e o editor de rotina nos DOIS modos, com os dados que o
  * aparelho tiver (sem pm clear; a rotina de exemplo pode ou não existir):
  * - CRIAÇÃO: abre "Nova rotina". Sem a rotina de exemplo, digita o título e cria pelo "Criar rotina"
- *   (o editor fecha e volta à lista); com ela, sai pelo Voltar sem criar, para não duplicar a cada
- *   iteração. Nada digitado, o Voltar sai sem "Descartar?".
+ *   (o editor fecha e volta à lista); com ela, troca o Tipo para Exercício e de volta para Nenhum
+ *   (v1.10.0, 16.10.5: compõe a seção Exercícios com "Dos salvos") e sai pelo Voltar sem criar, para
+ *   não duplicar a cada iteração. O rascunho volta a ser o da abertura, então sai sem "Descartar?".
  * - EDIÇÃO: abre a rotina de exemplo (garantida acima), abre e recolhe "Mais opções", regrava o título
  *   com o mesmo texto e volta.
  * O bloco vale todos os dias, então aparece também na linha do tempo da Hoje.
@@ -421,6 +422,7 @@ fun MacrobenchmarkScope.browseRoutines() {
     requireShown(inApp().text("Criar rotina"), "browseRoutines: o editor de rotina nova não abriu")
     if (sampleExists) {
         hideKeyboard()
+        toggleKindToExerciseAndBack()
         backTo(listOf(ALL_ROUTINES_MARKER), "browseRoutines: o Voltar do editor novo não voltou a 'Todas as rotinas'")
     } else {
         typeAndConfirm(SAMPLE_ROUTINE, "browseRoutines: criar '$SAMPLE_ROUTINE'", confirm = "Criar rotina")
@@ -435,6 +437,23 @@ fun MacrobenchmarkScope.browseRoutines() {
 
     backTo(Tab.TODAY.markers, "browseRoutines: o Voltar de 'Todas as rotinas' não voltou à Hoje")
     openTab(Tab.TODAY)
+}
+
+/**
+ * No editor de rotina NOVA (v1.10.0, 16.10.5): toca em "Exercício" na seção Tipo, espera a seção
+ * Exercícios ("Dos salvos"), e volta ao "Nenhum" da abertura, sem deixar mudança no rascunho. Termina
+ * com a lista de volta ao topo.
+ */
+private fun MacrobenchmarkScope.toggleKindToExerciseAndBack() {
+    val step = "browseRoutines: Tipo no editor novo"
+    findInList("Exercício") ?: fail("$step: sem a opção 'Exercício'")
+    if (!actOnFresh(inApp().text("Exercício")) { it.click() }) fail("$step: não tocou em 'Exercício'")
+    device.waitForIdle()
+    findInList("Dos salvos") ?: fail("$step: o tipo Exercício não mostrou a seção Exercícios")
+    findInList("Nenhum") ?: fail("$step: sem a opção 'Nenhum'")
+    if (!actOnFresh(inApp().text("Nenhum")) { it.click() }) fail("$step: não tocou em 'Nenhum'")
+    device.waitForIdle()
+    scrollToTop()
 }
 
 /**
