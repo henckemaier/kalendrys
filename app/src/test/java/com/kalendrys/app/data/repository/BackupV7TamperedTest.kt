@@ -198,6 +198,23 @@ class BackupV7TamperedTest {
     }
 
     @Test
+    fun `OBS-2 - salvo adulterado entra pela regra do app - series e repeticoes no minimo 1, carga em branco e descanso negativo somem`() = withBackup { db, backup ->
+        val saved = listOf(
+            JSONObject().put("id", 3).put("name", "  Prancha  ").put("sets", 0).put("reps", -2).put("load", "   ")
+                .put("restSeconds", -30).put("createdAt", 11),
+        )
+        backup.restore(backup(version = 7, tasks = emptyList(), saved = saved))
+
+        val restored = db.savedExerciseDao().all().single()
+        assertEquals(3L, restored.id)
+        assertEquals("Prancha", restored.name)
+        assertEquals(1, restored.sets)
+        assertEquals(1, restored.reps)
+        assertNull(restored.load)
+        assertNull(restored.restSeconds)
+    }
+
+    @Test
     fun `restauro troca os salvos que havia pelos do backup`() = withBackup { db, backup ->
         db.savedExerciseDao().insert(com.kalendrys.app.data.local.entity.SavedExercise(name = "Local", sets = 1, reps = 1, createdAt = 1))
         db.taskDao().insert(Task(title = "local", createdAt = 1))
