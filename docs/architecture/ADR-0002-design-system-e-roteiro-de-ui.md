@@ -2186,3 +2186,14 @@ curta em paisagem com fonte 2.0 é da v1.12.0; o widget não intercala tarefas e
 é defeito e fica sem versão. Não são defeitos: a mensagem de Desfazer cobrir a linha de baixo, o
 botão flutuante cobrir o círculo de uma linha que passa por baixo ao rolar, e a quebra de palavra
 em 320dp com fonte 2.0 (limite aceito na 14.13).
+
+**Confirmado pelo usuário em 2026-11-25:** o desenho aninhado com os três ajustes acima; a leitura
+da tarefa na T3 mesmo que o aninhamento seja cortado; o indicador de repetição e a data e hora
+nas atrasadas na v1.11.0 (P52); e o widget como está, com a decisão sobre intercalar tarefas e
+rotinas adiada para depois de usar a v1.10.0 (P51).
+
+**Como ficou no código (revisão da T3, 03bb8ea).** A trilha continua uma lista plana: o cabeçalho
+do bloco, as tarefas marcadas com a rotina que as contém, e uma linha de fim do bloco depois da
+última, que não é lida nem conta no dia. Limite conhecido: como a ordem é pelo início, uma rotina
+curta inteira dentro da janela de outra, ou um bloco pulado, pode cair entre o cabeçalho e as
+tarefas de dentro; a faixa do bloco de fora fica interrompida nessa linha e retoma na tarefa.
