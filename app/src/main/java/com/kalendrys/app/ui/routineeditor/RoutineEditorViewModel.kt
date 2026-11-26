@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -243,7 +244,8 @@ class RoutineEditorViewModel(
         ) { (r, l, f), initial, t, c -> EditorState(r, l, f, initial, t, c) }
 
     val uiState: StateFlow<UiState> =
-        combine(editorState, moduleItems, savedExerciseRepository.saved) { editor, module, saved ->
+        // Os salvos começam vazios: a criação não espera o banco para mostrar a tela (o resto dela é só memória).
+        combine(editorState, moduleItems, savedExerciseRepository.saved.onStart { emit(emptyList()) }) { editor, module, saved ->
             UiState(
                 isNew = isNew,
                 notFound = !isNew && editor.loaded && editor.routine == null,

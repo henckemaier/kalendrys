@@ -2,6 +2,7 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import android.os.Looper
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -163,6 +165,8 @@ class RoutineEditorShellTest {
     @Test
     fun `criacao - Tipo com Nenhum e Exercicio, um so escolhido, e Exercicio abre a lista de exercicios`() {
         show(NEW_ROUTINE_ID)
+        // Na criação a prévia e os modelos vêm antes: rola até o Tipo para a LazyColumn compô-lo.
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
         compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsSelected()
         compose.onNode(hasText("Exercício") and hasClickAction()).assertIsNotSelected()
         assertEquals(0, compose.onAllNodesWithText("Adicionar exercício").fetchSemanticsNodes().size)
@@ -171,6 +175,7 @@ class RoutineEditorShellTest {
 
         compose.onNode(hasText("Exercício") and hasClickAction()).assertIsSelected()
         compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsNotSelected()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-add")
         compose.onNodeWithText("Adicionar exercício").assertExists()
     }
 
@@ -182,16 +187,18 @@ class RoutineEditorShellTest {
             )
         }
         show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
         compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
         compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
 
         compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
         waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isNotEmpty() }
         waitFor { compose.onAllNodesWithText("Agachamento").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNode(hasText("Agachamento") and hasClickAction()).performClick()
+        // A ação de clique da linha (não o toque por posição): o painel pode ainda estar entrando.
+        compose.onNode(hasText("Agachamento") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
 
-        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
         waitFor { viewModel!!.uiState.value.exerciseItems.map { it.name } == listOf("Agachamento") }
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
         assertEquals("o salvo fica", 1, runBlocking { testDb.db.savedExerciseDao().all() }.size)
     }
 
