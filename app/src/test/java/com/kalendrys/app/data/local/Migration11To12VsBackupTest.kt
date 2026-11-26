@@ -180,6 +180,27 @@ class Migration11To12VsBackupTest {
     }
 
     @Test
+    fun `exercicio salvo de backup adulterado entra pela regra do app`() {
+        // OBS-2 do Lince (T1): séries 0, repetições negativas, carga em branco e descanso negativo.
+        val json = JSONObject(backupV6())
+            .put("schemaVersion", 7)
+            .put(
+                "savedExercises",
+                JSONArray(listOf(JSONObject().put("id", 1).put("name", "  Remada ").put("sets", 0).put("reps", -2).put("load", "  ").put("restSeconds", -5).put("createdAt", 9))),
+            )
+            .toString()
+        withRestoredDb { db, backup ->
+            backup.restore(json)
+            val saved = db.savedExerciseDao().all().single()
+            assertEquals("Remada", saved.name)
+            assertEquals(1, saved.sets)
+            assertEquals(1, saved.reps)
+            assertEquals(null, saved.load)
+            assertEquals(null, saved.restSeconds)
+        }
+    }
+
+    @Test
     fun `ida e volta do backup v7 nao muda nada`() {
         withRestoredDb { db, backup ->
             backup.restore(backupV6())

@@ -18,6 +18,7 @@ import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.settings.AppSettings
 import com.kalendrys.app.data.settings.SettingsRepository
 import com.kalendrys.app.data.settings.ThemeMode
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.LegacyShoppingLists
 import com.kalendrys.app.domain.ListOwnership
 import com.kalendrys.app.domain.RecurrenceUnit
@@ -416,15 +417,29 @@ private fun SavedExercise.toJson() = JSONObject().apply {
     put("createdAt", createdAt)
 }
 
-private fun JSONObject.toSavedExercise() = SavedExercise(
-    id = getLong("id"),
-    name = getString("name"),
-    sets = optInt("sets", 1),
-    reps = optInt("reps", 1),
-    load = nullableString("load"),
-    restSeconds = nullableInt("restSeconds"),
-    createdAt = getLong("createdAt"),
-)
+/**
+ * Exercício salvo do backup, pela MESMA regra de gravação do app ([ExerciseFields.normalized]): um
+ * arquivo adulterado (séries 0, descanso negativo, carga em branco) não entra fora da regra (OBS-2 do
+ * Lince na T1).
+ */
+private fun JSONObject.toSavedExercise(): SavedExercise {
+    val fields = ExerciseFields(
+        name = getString("name"),
+        sets = optInt("sets", 1),
+        reps = optInt("reps", 1),
+        load = nullableString("load"),
+        restSeconds = nullableInt("restSeconds"),
+    ).normalized()
+    return SavedExercise(
+        id = getLong("id"),
+        name = fields.name,
+        sets = fields.sets,
+        reps = fields.reps,
+        load = fields.load,
+        restSeconds = fields.restSeconds,
+        createdAt = getLong("createdAt"),
+    )
+}
 
 private fun RoutineCategory.toJson() = JSONObject().apply {
     put("id", id)
