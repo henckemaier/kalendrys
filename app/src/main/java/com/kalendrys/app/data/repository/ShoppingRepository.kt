@@ -44,7 +44,6 @@ class ShoppingRepository(
 
     private val listDao = database.shoppingListDao()
     private val itemDao = database.shoppingItemDao()
-    private val routineDao = database.routineDao()
     private val taskDao = database.taskDao()
 
     // --- Listas ---------------------------------------------------------------------------------
@@ -69,7 +68,6 @@ class ShoppingRepository(
      */
     suspend fun deleteList(listId: Long) = database.withTransaction {
         itemDao.deleteByList(listId)
-        routineDao.clearShoppingList(listId)
         taskDao.clearShoppingList(listId)
         listDao.delete(listId)
     }
@@ -79,11 +77,10 @@ class ShoppingRepository(
         combine(
             listDao.observeAll(),
             itemDao.observeStats(),
-            routineDao.observeShoppingListOwners(),
             taskDao.observeShoppingListOwners(),
-        ) { lists, stats, routineOwners, taskOwners ->
+        ) { lists, stats, taskOwners ->
             val statsById = stats.associateBy { it.listId }
-            val owners = owners(routineOwners, taskOwners)
+            val owners = owners(taskOwners)
             lists.map { list ->
                 val s = statsById[list.id]
                 ShoppingListSummary(
@@ -119,14 +116,9 @@ class ShoppingRepository(
     fun observeSummary(listId: Long): Flow<ShoppingListSummary?> =
         observeSummaries().map { all -> all.firstOrNull { it.id == listId } }.distinctUntilChanged()
 
-    private fun owners(
-        routineOwners: List<ShoppingListOwnerRow>,
-        taskOwners: List<ShoppingListOwnerRow>,
-    ): Map<Long, List<ShoppingListOwner>> {
-        val routines = routineOwners.map { it.shoppingListId to ShoppingListOwner(ShoppingListOwner.Kind.ROUTINE, it.id, it.title) }
-        val tasks = taskOwners.map { it.shoppingListId to ShoppingListOwner(ShoppingListOwner.Kind.TASK, it.id, it.title) }
-        return (routines + tasks).groupBy({ it.first }, { it.second })
-    }
+    /** Donos de cada lista: só tarefas desde a v1.10.0 (rotina não tem lista; ADR-0002 16.10.1). */
+    private fun owners(taskOwners: List<ShoppingListOwnerRow>): Map<Long, List<ShoppingListOwner>> =
+        taskOwners.groupBy({ it.shoppingListId }, { ShoppingListOwner(ShoppingListOwner.Kind.TASK, it.id, it.title) })
 
     // --- Itens ----------------------------------------------------------------------------------
 

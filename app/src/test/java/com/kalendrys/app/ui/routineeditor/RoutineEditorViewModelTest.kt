@@ -7,34 +7,39 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
+import com.kalendrys.app.data.local.dao.SavedExerciseDao
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.SystemAppClock
-import com.kalendrys.app.domain.RoutineCategoryKind
-import com.kalendrys.app.reminder.RoutineAlarms
-import com.kalendrys.app.testutil.FakeRoutineNotifications
-import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
-import com.kalendrys.app.testutil.TEST_CREATED_AT
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.domain.ExerciseFields
 import com.kalendrys.app.domain.RoutineChange
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
+import com.kalendrys.app.reminder.RoutineAlarms
 import com.kalendrys.app.testutil.FakeRoutineAlarms
+import com.kalendrys.app.testutil.FakeRoutineNotifications
+import com.kalendrys.app.testutil.InMemoryRoutineCatchUpMark
+import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
 import com.kalendrys.app.testutil.testUndoOffers
 import java.time.DayOfWeek
 import java.time.LocalTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -43,7 +48,6 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,6 +78,7 @@ class RoutineEditorViewModelTest {
     private lateinit var routines: RoutineRepository
     private lateinit var shopping: ShoppingRepository
     private lateinit var exercises: ExerciseRepository
+    private lateinit var saved: SavedExerciseRepository
     private lateinit var undoOffers: UndoOffers
     private val viewModels = mutableListOf<RoutineEditorViewModel>()
 
@@ -87,6 +92,7 @@ class RoutineEditorViewModelTest {
         routines = testRoutineRepository(db, alarms)
         shopping = ShoppingRepository(db, clock = SystemAppClock)
         exercises = ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock)
+        saved = SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock)
         undoOffers = testUndoOffers(testDb, routines)
     }
 
@@ -102,14 +108,14 @@ class RoutineEditorViewModelTest {
     private fun TestScope.viewModel(
         routineId: Long = NEW_ROUTINE_ID,
         repository: RoutineRepository = routines,
+        savedRepository: SavedExerciseRepository = saved,
     ): RoutineEditorViewModel {
         val vm = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 repository,
-                RoutineCategoryRepository(db),
-                shopping,
                 exercises,
+                savedRepository,
                 undoOffers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -156,30 +162,26 @@ class RoutineEditorViewModelTest {
         vm.updateStart(LocalTime.of(7, 0))
         vm.toggleDay(DayOfWeek.SUNDAY)
         vm.updateColor(RoutineColor.entries.last())
-        vm.createShoppingList("Feira")
 
         assertTrue(db.routineDao().all().isEmpty())
-        assertTrue(db.shoppingListDao().all().isEmpty())
         assertTrue(alarms.calls.isEmpty())
-        val state = vm.awaitUi { it.pendingListName == "Feira" }
-        assertTrue(state.hasDraftChanges)
+        assertTrue(vm.awaitUi { it.hasDraftChanges }.hasDraftChanges)
     }
 
     @Test
-    fun `criacao - Criar rotina grava rotina e lista nova juntas, agenda e fecha`() = runTest {
+    fun `criacao - Criar rotina grava a rotina, sem lista, agenda e fecha`() = runTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.updateTitle("Feira")
-        vm.createShoppingList(" Hortifruti ")
 
         vm.create()
         vm.awaitClosed()
 
         val routine = db.routineDao().all().single()
-        val list = db.shoppingListDao().all().single()
         assertEquals("Feira", routine.title)
-        assertEquals("Hortifruti", list.name)
-        assertEquals(list.id, routine.shoppingListId)
+        // Rotina não tem lista desde a v1.10.0 (ADR-0002 16.10.1).
+        assertNull(routine.shoppingListId)
+        assertTrue(db.shoppingListDao().all().isEmpty())
         assertTrue(alarms.calls.isNotEmpty())
     }
 
@@ -223,29 +225,15 @@ class RoutineEditorViewModelTest {
     }
 
     @Test
-    fun `criacao - descartar fecha sem gravar nem criar lista`() = runTest {
+    fun `criacao - descartar fecha sem gravar`() = runTest {
         val vm = viewModel()
         vm.awaitLoaded()
         vm.updateTitle("Rascunho")
-        vm.createShoppingList("Feira")
 
         vm.discardDraft()
         vm.awaitClosed()
 
         assertTrue(db.routineDao().all().isEmpty())
-        assertTrue(db.shoppingListDao().all().isEmpty())
-    }
-
-    @Test
-    fun `criacao - modelo mantem a lista ja escolhida`() = runTest {
-        val listId = shopping.createList("Mercado")
-        val vm = viewModel()
-        vm.awaitLoaded()
-        vm.attachShoppingList(listId)
-
-        vm.applyDraft(RoutineDraft(title = "Treino", startMinute = 1080))
-
-        assertEquals(listId, vm.awaitUi { it.fields?.shoppingListId == listId }.fields!!.shoppingListId)
     }
 
     // --- Edição -------------------------------------------------------------------------------------
@@ -383,33 +371,6 @@ class RoutineEditorViewModelTest {
     }
 
     @Test
-    fun `edicao - lista existente, nova e desvincular`() = runTest {
-        val routine = saved()
-        val listId = shopping.createList("Mercado")
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        vm.attachShoppingList(listId)
-        eventually { row(routine.id).shoppingListId == listId }
-
-        vm.createShoppingList("Farmácia")
-        eventually { db.shoppingListDao().all().size == 2 && row(routine.id).shoppingListId != listId }
-
-        vm.detachShoppingList()
-        eventually { row(routine.id).shoppingListId == null }
-        assertEquals(2, db.shoppingListDao().all().size)
-    }
-
-    @Test
-    fun `edicao - vinculo orfao equivale a sem lista`() = runTest {
-        val routine = routines.add(Routine(title = "Feira", startMinute = 480, shoppingListId = 999, createdAt = TEST_CREATED_AT))
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        assertNull(vm.uiState.value.shoppingList)
-    }
-
-    @Test
     fun `edicao - excluir grava o pendente, arquiva, oferece Desfazer e fecha`() = runTest {
         val routine = saved()
         val vm = viewModel(routine.id)
@@ -428,6 +389,7 @@ class RoutineEditorViewModelTest {
 
     @Test
     fun `edicao - duplicar copia a linha gravada, sem lista nem pausa, e fecha`() = runTest {
+        // Vínculo de lista de antes da v1.10.0 (a coluna fica no banco): a cópia não o leva.
         val listId = shopping.createList("Mercado")
         val routine = routines.add(Routine(title = "Treino", startMinute = 600, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         routines.pause(routine, now = 1L)
@@ -472,23 +434,6 @@ class RoutineEditorViewModelTest {
         assertNull(row(routine.id).pausedAt)
     }
 
-    @Test
-    fun `edicao - Reverter depois de criar lista nova deixa a lista avulsa`() = runTest {
-        // N4 da revisão da E3: o vínculo volta ao do retrato; a lista criada continua na aba Listas.
-        val routine = saved()
-        val vm = viewModel(routine.id)
-        vm.awaitLoaded()
-
-        vm.createShoppingList("Feira")
-        eventually { row(routine.id).shoppingListId != null }
-
-        vm.revert()
-        vm.awaitPendingWrites()
-
-        assertNull(row(routine.id).shoppingListId)
-        assertEquals(listOf("Feira"), db.shoppingListDao().all().map { it.name })
-    }
-
     // --- NB-E3-B do Lince ---------------------------------------------------------------------------
 
     /** Repositório de rotinas cujo agendamento roda [onSchedule] (falhar ou segurar a criação). */
@@ -503,7 +448,6 @@ class RoutineEditorViewModelTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
@@ -571,8 +515,7 @@ class RoutineEditorViewModelTest {
 
     @Test
     fun `edicao - exercicios na ordem do toque e Reverter devolve a lista da abertura`() = runTest {
-        val categoryId = RoutineCategoryRepository(db).create("Força", RoutineColor.DEFAULT.name, RoutineCategoryKind.EXERCICIO)
-        val routine = routines.add(Routine(title = "Força", startMinute = 600, categoryId = categoryId, createdAt = TEST_CREATED_AT))
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
         exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
         val vm = viewModel(routine.id)
         vm.awaitLoaded()
@@ -662,6 +605,338 @@ class RoutineEditorViewModelTest {
 
         assertEquals("Treino", vm.titleInput)
         assertEquals("aquecer", vm.notesInput)
+    }
+
+    // --- Tipo (v1.10.0, T2, C2; ADR-0002 16.10.5) -------------------------------------------------
+
+    @Test
+    fun `edicao - tipo grava na hora, sem reagendar, e mostra ou esconde os exercicios`() = runTest {
+        val routine = saved()
+        exercises.add(routine.id, "Flexão", sets = 3, reps = 15, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        assertTrue("tipo Nenhum esconde", vm.awaitUi { it.fields != null }.exerciseItems.isEmpty())
+        alarms.reset()
+
+        vm.updateKind(RoutineKind.EXERCISE)
+
+        eventually { row(routine.id).kind == RoutineKind.EXERCISE.name }
+        assertEquals(listOf("Flexão"), vm.awaitUi { it.exerciseItems.isNotEmpty() }.exerciseItems.map { it.name })
+        vm.awaitPendingWrites()
+        assertTrue("tipo não mexe em alarme", alarms.calls.isEmpty())
+    }
+
+    @Test
+    fun `edicao - Exercicio para Nenhum guarda os exercicios, sem perguntar, e eles voltam com o tipo`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        exercises.add(routine.id, "A", sets = 1, reps = 1, load = null, restSeconds = null)
+        exercises.add(routine.id, "B", sets = 1, reps = 1, load = null, restSeconds = null)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        vm.awaitUi { it.exerciseItems.size == 2 }
+
+        vm.updateKind(RoutineKind.NONE)
+        eventually { row(routine.id).kind == RoutineKind.NONE.name }
+        val hidden = vm.awaitUi { it.exerciseItems.isEmpty() }
+        assertEquals("guardados no banco", listOf("A", "B"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+        assertFalse("esconder não é mexer nos exercícios", hidden.exerciseItemsChanged)
+
+        vm.updateKind(RoutineKind.EXERCISE)
+        assertEquals(listOf("A", "B"), vm.awaitUi { it.exerciseItems.size == 2 }.exerciseItems.map { it.name })
+    }
+
+    @Test
+    fun `edicao - Reverter devolve o tipo da abertura`() = runTest {
+        val routine = saved()
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.updateKind(RoutineKind.EXERCISE)
+        eventually { row(routine.id).kind == RoutineKind.EXERCISE.name }
+        assertTrue(vm.awaitUi { it.canRevert }.canRevert)
+
+        vm.revert()
+        vm.awaitPendingWrites()
+
+        assertEquals(RoutineKind.NONE.name, row(routine.id).kind)
+    }
+
+    @Test
+    fun `criacao - o tipo vai no rascunho e a rotina nasce com ele`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateTitle("Força")
+        vm.updateKind(RoutineKind.EXERCISE)
+        assertTrue(vm.awaitUi { it.isExercise }.hasDraftChanges)
+        assertTrue(db.routineDao().all().isEmpty())
+
+        vm.create()
+        vm.awaitClosed()
+
+        assertEquals(RoutineKind.EXERCISE.name, db.routineDao().all().single().kind)
+    }
+
+    @Test
+    fun `edicao - duplicar copia o tipo`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.duplicate("Força (cópia)")
+        vm.awaitClosed()
+
+        assertEquals(RoutineKind.EXERCISE.name, db.routineDao().all().single { it.id != routine.id }.kind)
+    }
+
+    // --- Exercícios já na criação (v1.10.0, T2, C3; ADR-0002 16.10.5) -----------------------------
+
+    /** Rotina nova com o tipo Exercício (o que mostra a seção Exercícios). */
+    private suspend fun RoutineEditorViewModel.chooseExerciseType() {
+        updateKind(RoutineKind.EXERCISE)
+        awaitUi { it.isExercise }
+    }
+
+    @Test
+    fun `criacao - exercicios montados no rascunho nao gravam antes e contam como mudanca`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        val initial = vm.awaitUi { it.isExercise }
+        assertTrue(initial.exerciseItems.isEmpty())
+
+        vm.addExerciseItem("Agachamento", sets = 3, reps = 10, load = "20kg", restSeconds = 60)
+
+        val state = vm.awaitUi { it.exerciseItems.size == 1 }
+        assertEquals("Agachamento", state.exerciseItems.single().name)
+        assertTrue(state.hasDraftChanges)
+        assertTrue(db.routineDao().all().isEmpty())
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `criacao - Criar rotina grava os exercicios junto, na ordem, normalizados`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Força")
+        vm.addExerciseItem(" Supino ", sets = 0, reps = 8, load = "  ", restSeconds = -5)
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = "30kg", restSeconds = 90)
+        vm.addExerciseItem("Prancha", sets = 2, reps = 1, load = null, restSeconds = null)
+        vm.awaitUi { it.exerciseItems.size == 3 }
+
+        vm.create()
+        vm.awaitClosed()
+
+        val routine = db.routineDao().all().single()
+        val items = db.exerciseItemDao().byRoutine(routine.id)
+        assertEquals(listOf("Supino", "Remada", "Prancha"), items.map { it.name })
+        assertEquals(listOf(0, 1, 2), items.map { it.position })
+        assertTrue(items.all { it.routineId == routine.id && it.id > 0 })
+        assertEquals(1, items[0].sets)
+        assertNull(items[0].load)
+        assertNull(items[0].restSeconds)
+        assertEquals("30kg", items[1].load)
+        assertEquals(90, items[1].restSeconds)
+    }
+
+    @Test
+    fun `criacao - editar, mover e remover mexem so no rascunho`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Pernas")
+        vm.addExerciseItem("A", 1, 1, null, null)
+        vm.addExerciseItem("B", 1, 1, null, null)
+        vm.addExerciseItem("C", 1, 1, null, null)
+        val three = vm.awaitUi { it.exerciseItems.size == 3 }.exerciseItems
+        assertEquals("ids provisórios distintos", 3, three.map { it.id }.distinct().size)
+
+        vm.moveExerciseItem(three[2], up = true) // A C B
+        vm.updateExerciseItem(three[0], "A2", 4, 6, "10kg", 30)
+        vm.removeExerciseItem(three[1]) // A2 C
+        val after = vm.awaitUi { it.exerciseItems.map { e -> e.name } == listOf("A2", "C") }.exerciseItems
+        assertEquals(listOf(0, 1), after.map { it.position })
+        assertEquals(4, after[0].sets)
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("A2", "C"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    @Test
+    fun `criacao - tipo sem exercicios esconde, mas Criar rotina grava os exercicios do rascunho (P2)`() = runTest {
+        // Decisão do Forja na T2 (P2): trocar para Nenhum nunca perde exercícios, na criação também.
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.updateTitle("Treino")
+        vm.addExerciseItem("Flexão", 3, 15, null, null)
+        vm.awaitUi { it.exerciseItems.size == 1 }
+
+        vm.updateKind(RoutineKind.NONE)
+        val hidden = vm.awaitUi { !it.isExercise }
+        assertTrue(hidden.exerciseItems.isEmpty())
+        assertEquals(1, hidden.allExercises.size)
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("Flexão"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    @Test
+    fun `criacao - descartar com exercicios nao grava nada`() = runTest {
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.chooseExerciseType()
+        vm.addExerciseItem("Flexão", 3, 15, null, null)
+        vm.awaitUi { it.exerciseItems.size == 1 }
+
+        vm.discardDraft()
+        vm.awaitClosed()
+
+        assertTrue(db.routineDao().all().isEmpty())
+        assertTrue(db.exerciseItemDao().all().isEmpty())
+    }
+
+    @Test
+    fun `edicao - duplicar copia os exercicios na ordem, com ids novos`() = runTest {
+        val routine = saved()
+        exercises.add(routine.id, "A", sets = 3, reps = 10, load = "20kg", restSeconds = 60)
+        exercises.add(routine.id, "B", sets = 2, reps = 8, load = null, restSeconds = null)
+        val originals = db.exerciseItemDao().byRoutine(routine.id)
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.duplicate("Cópia")
+        vm.awaitClosed()
+
+        val copy = db.routineDao().all().single { it.id != routine.id }
+        val copied = db.exerciseItemDao().byRoutine(copy.id)
+        assertEquals(listOf("A", "B"), copied.map { it.name })
+        assertEquals(listOf("20kg", null), copied.map { it.load })
+        assertTrue(copied.none { c -> originals.any { it.id == c.id } })
+        assertEquals("o original fica como estava", originals, db.exerciseItemDao().byRoutine(routine.id))
+    }
+
+    // --- Exercícios salvos (v1.10.0, T2, C4; ADR-0002 16.10.5) ---------------------------------------
+
+    @Test
+    fun `salvos - Salvar para reutilizar grava uma copia como salvo, alem do exercicio`() = runTest {
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+
+        vm.addExerciseItem(" Supino ", sets = 3, reps = 8, load = "40kg", restSeconds = 90, saveForReuse = true)
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = null, restSeconds = null)
+        vm.awaitPendingWrites()
+
+        val stored = db.savedExerciseDao().all()
+        assertEquals("só o marcado vira salvo", listOf("Supino"), stored.map { it.name })
+        assertEquals(ExerciseFields("Supino", 3, 8, "40kg", 90), stored.single().let { ExerciseFields(it.name, it.sets, it.reps, it.load, it.restSeconds) })
+        assertTrue(stored.single().createdAt > 0)
+        assertEquals(listOf("Supino", "Remada"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+        assertEquals(listOf("Supino"), vm.awaitUi { it.savedExercises.size == 1 }.savedExercises.map { it.name })
+    }
+
+    @Test
+    fun `salvos - aplicar copia, sem vinculo - editar ou excluir o salvo nao muda a rotina`() = runTest {
+        val savedId = saved.save(ExerciseFields("Agachamento", sets = 4, reps = 6, load = "60kg", restSeconds = 120))!!
+        val routine = routines.add(Routine(title = "Pernas", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id)
+        vm.awaitLoaded()
+        val savedExercise = vm.awaitUi { it.savedExercises.isNotEmpty() }.savedExercises.single()
+
+        vm.applySavedExercise(savedExercise)
+        vm.awaitPendingWrites()
+        val copy = db.exerciseItemDao().byRoutine(routine.id).single()
+        assertEquals(ExerciseFields("Agachamento", 4, 6, "60kg", 120), ExerciseFields.of(copy))
+
+        vm.updateSavedExercise(savedExercise, "Agachamento livre", 5, 5, "70kg", 180)
+        vm.awaitPendingWrites()
+        assertEquals("Agachamento livre", db.savedExerciseDao().byId(savedId)!!.name)
+        assertEquals("a cópia não muda", copy, db.exerciseItemDao().byRoutine(routine.id).single())
+
+        vm.deleteSavedExercise(db.savedExerciseDao().byId(savedId)!!)
+        vm.awaitPendingWrites()
+        assertTrue(db.savedExerciseDao().all().isEmpty())
+        assertEquals("a cópia fica", copy, db.exerciseItemDao().byRoutine(routine.id).single())
+    }
+
+    @Test
+    fun `salvos - na criacao, aplicar vai para o rascunho e Salvar para reutilizar grava ja o salvo`() = runTest {
+        saved.save(ExerciseFields("Prancha", sets = 3, reps = 1, restSeconds = 30))
+        val vm = viewModel()
+        vm.awaitLoaded()
+        vm.updateKind(RoutineKind.EXERCISE)
+        vm.updateTitle("Core")
+        val prancha = vm.awaitUi { it.savedExercises.isNotEmpty() }.savedExercises.single()
+
+        vm.applySavedExercise(prancha)
+        vm.addExerciseItem("Abdominal", sets = 3, reps = 20, load = null, restSeconds = null, saveForReuse = true)
+        vm.awaitUi { it.exerciseItems.size == 2 }
+        vm.awaitPendingWrites()
+        assertTrue("nada da rotina antes do Criar", db.exerciseItemDao().all().isEmpty())
+        assertEquals(listOf("Abdominal", "Prancha"), db.savedExerciseDao().all().map { it.name }.sorted())
+
+        vm.create()
+        vm.awaitClosed()
+        val routine = db.routineDao().all().single()
+        assertEquals(listOf("Prancha", "Abdominal"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    /** DAO dos salvos que só grava um salvo novo depois de [gate] abrir (gravação lenta, B1 do Esquadro). */
+    private class GatedSavedExerciseDao(
+        private val real: SavedExerciseDao,
+        val gate: CompletableDeferred<Unit> = CompletableDeferred(),
+    ) : SavedExerciseDao by real {
+        override suspend fun insert(exercise: SavedExercise): Long {
+            gate.await()
+            return real.insert(exercise)
+        }
+    }
+
+    @Test
+    fun `salvos - duplicar logo depois de Salvar para reutilizar espera a gravacao do salvo`() = runTest {
+        val gated = GatedSavedExerciseDao(db.savedExerciseDao())
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id, savedRepository = SavedExerciseRepository(gated, clock = SystemAppClock))
+        vm.awaitLoaded()
+
+        vm.addExerciseItem("Supino", sets = 3, reps = 8, load = null, restSeconds = null, saveForReuse = true)
+        vm.duplicate("Força (cópia)")
+
+        // Com o salvo ainda preso, o duplicar não termina (a barreira espera a gravação do salvo).
+        val early = withContext(Dispatchers.Default) { withTimeoutOrNull(300) { vm.events.first() } }
+        assertNull("duplicar fechou antes de gravar o salvo", early)
+        assertTrue(db.savedExerciseDao().all().isEmpty())
+
+        gated.gate.complete(Unit)
+        vm.awaitClosed()
+        assertEquals(listOf("Supino"), db.savedExerciseDao().all().map { it.name })
+        val copy = db.routineDao().all().single { it.id != routine.id }
+        assertEquals(listOf("Supino"), db.exerciseItemDao().byRoutine(copy.id).map { it.name })
+    }
+
+    @Test
+    fun `salvos - excluir a rotina logo depois de Salvar para reutilizar espera a gravacao do salvo`() = runTest {
+        val gated = GatedSavedExerciseDao(db.savedExerciseDao())
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id, savedRepository = SavedExerciseRepository(gated, clock = SystemAppClock))
+        vm.awaitLoaded()
+
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = null, restSeconds = null, saveForReuse = true)
+        vm.delete()
+
+        val early = withContext(Dispatchers.Default) { withTimeoutOrNull(300) { vm.events.first() } }
+        assertNull("excluir fechou antes de gravar o salvo", early)
+
+        gated.gate.complete(Unit)
+        vm.awaitClosed()
+        assertEquals(listOf("Remada"), db.savedExerciseDao().all().map { it.name })
+        eventually { row(routine.id).archivedAt != null }
     }
 
     private companion object {

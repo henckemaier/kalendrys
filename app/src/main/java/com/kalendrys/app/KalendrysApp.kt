@@ -10,8 +10,8 @@ import com.kalendrys.app.data.repository.BackupManager
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.HistoryExporter
 import com.kalendrys.app.data.repository.RoutineCatchUpMark
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
@@ -89,7 +89,6 @@ class KalendrysApp : Application() {
             database.routineOverrideDao(),
             RoutineAlarms(this),
             routineNotifications,
-            database.shoppingItemDao(),
             // Entrega do catch-up do aviso de bloco (ADR-0003, 4.3.1): o repositório decide, aqui mostra.
             deliverDueBlocks = { due, date ->
                 due.forEach { routine ->
@@ -110,10 +109,6 @@ class KalendrysApp : Application() {
         )
     }
 
-    val routineCategoryRepository: RoutineCategoryRepository by lazy {
-        RoutineCategoryRepository(database)
-    }
-
     /** Listas de compras independentes (ADR-0001): aba Listas, rotinas e tarefas. */
     val shoppingRepository: ShoppingRepository by lazy {
         ShoppingRepository(database, clock)
@@ -122,6 +117,11 @@ class KalendrysApp : Application() {
     /** Lista de exercícios das rotinas do tipo EXERCICIO (módulo T33/T34). */
     val exerciseRepository: ExerciseRepository by lazy {
         ExerciseRepository(database.exerciseItemDao(), clock)
+    }
+
+    /** Exercícios salvos para reutilizar no editor de rotina (v1.10.0, ADR-0002 16.10.5). */
+    val savedExerciseRepository: SavedExerciseRepository by lazy {
+        SavedExerciseRepository(database.savedExerciseDao(), clock)
     }
 
     /** Tarefas + rotinas de hoje, para o resumo e os widgets. */

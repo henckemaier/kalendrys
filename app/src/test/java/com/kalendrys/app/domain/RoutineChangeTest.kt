@@ -70,12 +70,10 @@ class RoutineChangeTest {
     }
 
     @Test
-    fun `aparencia, categoria e lista nao mexem no resto`() {
+    fun `aparencia e tipo nao mexem no resto`() {
         assertEquals(base.copy(color = RoutineColor.entries.last().name), RoutineChange.Color(RoutineColor.entries.last()).applyTo(base))
         assertEquals(base.copy(icon = RoutineIcon.entries.last().name), RoutineChange.Icon(RoutineIcon.entries.last()).applyTo(base))
-        assertEquals(base.copy(categoryId = 5), RoutineChange.Category(5).applyTo(base))
-        assertEquals(base.copy(shoppingListId = null), RoutineChange.ShoppingList(null).applyTo(base))
-        assertNull(RoutineChange.NewShoppingList("").applyTo(base))
+        assertEquals(base.copy(kind = RoutineKind.EXERCISE.name), RoutineChange.Kind(RoutineKind.EXERCISE).applyTo(base))
     }
 
     @Test
@@ -95,8 +93,7 @@ class RoutineChangeTest {
         ).forEach { assertTrue("$it", it.touchesSchedule) }
         listOf(
             RoutineChange.Title("x"), RoutineChange.Notes("x"), RoutineChange.Duration(5),
-            RoutineChange.Category(null), RoutineChange.Color(RoutineColor.DEFAULT), RoutineChange.Icon(RoutineIcon.DEFAULT),
-            RoutineChange.ShoppingList(null), RoutineChange.NewShoppingList("x"),
+            RoutineChange.Kind(RoutineKind.NONE), RoutineChange.Color(RoutineColor.DEFAULT), RoutineChange.Icon(RoutineIcon.DEFAULT),
         ).forEach { assertFalse("$it", it.touchesSchedule) }
     }
 }

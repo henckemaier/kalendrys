@@ -96,7 +96,6 @@ class AlarmDiagnosticsViewModelTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             deliverDueBlocks = deliverDueBlocks,
             clock = clockOf(zone = { zone }) { now },

@@ -7,7 +7,7 @@ import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.data.local.entity.Routine
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
+import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.testutil.FakeRoutineAlarms
@@ -46,7 +46,6 @@ class AllRoutinesViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var alarms: FakeRoutineAlarms
     private lateinit var repository: RoutineRepository
-    private lateinit var categories: RoutineCategoryRepository
     private lateinit var undoOffers: UndoOffers
 
     @Before
@@ -62,11 +61,9 @@ class AllRoutinesViewModelTest {
             db.routineOverrideDao(),
             alarms,
             FakeRoutineNotifications(context),
-            db.shoppingItemDao(),
             InMemoryRoutineCatchUpMark(),
             clock = SystemAppClock,
         )
-        categories = RoutineCategoryRepository(db)
         undoOffers = testUndoOffers(testDb, repository)
     }
 
@@ -76,7 +73,7 @@ class AllRoutinesViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = testDb.track(AllRoutinesViewModel(repository, categories, undoOffers))
+    private fun viewModel() = testDb.track(AllRoutinesViewModel(repository, undoOffers))
 
     private suspend fun ReceiveTurbine<AllRoutinesViewModel.UiState>.awaitState(
         predicate: (AllRoutinesViewModel.UiState) -> Boolean,
@@ -197,47 +194,19 @@ class AllRoutinesViewModelTest {
     }
 
     @Test
-    fun `filtro por categoria mostra so as dela e Todas volta tudo`() = runTest {
-        val academia = categories.create("Academia", "GREEN")
-        val estudo = categories.create("Estudo", "BLUE")
+    fun `sem categorias v1_10_0 - rotina com categoria antiga aparece como as outras, sem filtro`() = runTest {
+        // A coluna e a tabela ficam no banco (16.10.3), mas a tela não as usa mais (16.10.5).
+        val academia = db.routineCategoryDao().insert(RoutineCategory(name = "Academia", color = "GREEN"))
         repository.add(routine("Treino", 7, categoryId = academia))
         repository.pause(repository.add(routine("Corrida", 6, categoryId = academia)))
-        repository.add(routine("Inglês", 20, categoryId = estudo))
+        repository.add(routine("Inglês", 20, categoryId = 999L))
         repository.add(routine("Sem categoria", 12))
         val vm = viewModel()
 
         vm.uiState.test {
-            val all = awaitState { it.isLoaded && it.categories.size == 2 && it.active.size == 3 }
-            assertEquals("Academia", all.active.first { it.routine.title == "Treino" }.category?.name)
-            assertNull(all.active.first { it.routine.title == "Sem categoria" }.category)
-
-            vm.selectCategory(academia)
-            val filtered = awaitState { it.selectedCategoryId == academia }
-            assertEquals(listOf("Treino"), filtered.activeTitles)
-            assertEquals(listOf("Corrida"), filtered.pausedTitles)
-
-            vm.selectCategory(null)
-            val back = awaitState { it.selectedCategoryId == null && it.active.size == 3 }
-            assertEquals(listOf("Treino", "Sem categoria", "Inglês"), back.activeTitles)
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `categoria do filtro excluida volta para Todas`() = runTest {
-        val academia = categories.create("Academia", "GREEN")
-        repository.add(routine("Treino", 7, categoryId = academia))
-        repository.add(routine("Leitura", 21))
-        val vm = viewModel()
-
-        vm.uiState.test {
-            awaitState { it.categories.size == 1 }
-            vm.selectCategory(academia)
-            awaitState { it.selectedCategoryId == academia }
-            categories.delete(categories.categories.first().single())
-            val state = awaitState { it.categories.isEmpty() }
-            assertNull(state.selectedCategoryId)
-            assertEquals(listOf("Treino", "Leitura"), state.activeTitles)
+            val all = awaitState { it.isLoaded && it.active.size == 3 }
+            assertEquals(listOf("Treino", "Sem categoria", "Inglês"), all.activeTitles)
+            assertEquals(listOf("Corrida"), all.pausedTitles)
             cancelAndIgnoreRemainingEvents()
         }
     }

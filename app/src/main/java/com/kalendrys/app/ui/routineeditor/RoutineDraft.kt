@@ -4,6 +4,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
 
 /**
  * Campos do editor de rotina (v1.9.0, ADR-0002 15.2 e 15.5). Na CRIAÇÃO é o rascunho, que só vai para
@@ -20,20 +21,17 @@ data class RoutineDraft(
     val durationMinutes: Int = DEFAULT_DURATION_MINUTES,
     val daysOfWeek: Int = RoutineDays.ALL,
     val remind: Boolean = true,
-    /** Categoria à qual a rotina pertence ([RoutineCategory.id]), ou null se sem categoria. */
-    val categoryId: Long? = null,
+    /**
+     * Tipo (v1.10.0, ADR-0002 16.10.5). Só [RoutineKind.EXERCISE] mostra os exercícios; trocar para
+     * [RoutineKind.NONE] os esconde e guarda. A categoria antiga da linha não é do editor.
+     */
+    val kind: RoutineKind = RoutineKind.DEFAULT,
     /** "A cada N semanas"; 1 = toda semana. */
     val weekInterval: Int = 1,
     /** Dia (epoch day) a partir do qual a rotina vale, ou null para sem início definido. */
     val startEpochDay: Long? = null,
     /** Último dia (epoch day) em que a rotina vale (rotina temporária), ou null para sem fim. */
     val endEpochDay: Long? = null,
-    /**
-     * Lista de compras anexada ([com.kalendrys.app.data.local.entity.ShoppingList.id]), ou null.
-     * Na criação, uma lista existente escolhida; a lista NOVA fica fora daqui, no ViewModel, e é criada
-     * junto com a rotina. Os itens da lista nunca são do editor; persistem na hora.
-     */
-    val shoppingListId: Long? = null,
 ) {
     val hasDays: Boolean get() = daysOfWeek and RoutineDays.ALL != 0
 
@@ -66,11 +64,10 @@ data class RoutineDraft(
             durationMinutes = durationMinutes,
             daysOfWeek = daysOfWeek,
             remind = remind,
-            categoryId = categoryId,
+            kind = kind.name,
             weekInterval = weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = startEpochDay,
             endEpochDay = endEpochDay,
-            shoppingListId = shoppingListId,
         )
 
     /** [now]: o instante de criação, do relógio do app (v1.10.0, 16.3). */
@@ -94,11 +91,10 @@ data class RoutineDraft(
             durationMinutes = routine.durationMinutes,
             daysOfWeek = routine.daysOfWeek,
             remind = routine.remind,
-            categoryId = routine.categoryId,
+            kind = RoutineKind.fromKey(routine.kind),
             weekInterval = routine.weekInterval.coerceIn(1, MAX_WEEK_INTERVAL),
             startEpochDay = routine.startEpochDay,
             endEpochDay = routine.endEpochDay,
-            shoppingListId = routine.shoppingListId,
         )
     }
 }

@@ -17,7 +17,6 @@ fun testRoutineRepository(db: AppDatabase, alarms: FakeRoutineAlarms? = null): R
         db.routineOverrideDao(),
         alarms ?: FakeRoutineAlarms(context),
         FakeRoutineNotifications(context),
-        db.shoppingItemDao(),
         InMemoryRoutineCatchUpMark(),
         clock = SystemAppClock,
     )
@@ -41,3 +40,7 @@ fun testTaskRepository(db: AppDatabase): TaskRepository {
     val context = ApplicationProvider.getApplicationContext<Context>()
     return TaskRepository(db.taskDao(), db.completionLogDao(), FakeReminderScheduler(context), db.shoppingItemDao(), clock = SystemAppClock)
 }
+
+/** Alvo de Desfazer de uma tarefa excluída SEM lista (v1.10.0: a oferta guarda tarefa, lista e itens). */
+fun deletedTaskTarget(task: com.kalendrys.app.data.local.entity.Task): com.kalendrys.app.UndoTarget.DeletedTask =
+    com.kalendrys.app.UndoTarget.DeletedTask(com.kalendrys.app.data.local.dao.TaskWithList(task, null, emptyList()))

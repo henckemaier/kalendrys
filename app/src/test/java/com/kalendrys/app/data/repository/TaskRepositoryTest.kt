@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.test
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.AppDatabase
 import com.kalendrys.app.domain.ReminderRepeat
 import com.kalendrys.app.domain.TaskChange
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -125,7 +127,7 @@ class TaskRepositoryTest {
         val logId = failing.logCompletion(task.id)
         failing.undoCompletion(logId)
         failing.deleteTask(task.copy(title = "Treino forte"))
-        failing.restoreTask(task.copy(title = "Treino forte"))
+        failing.restoreTask(TaskWithList(task.copy(title = "Treino forte"), null, emptyList()))
         assertEquals(listOf("Treino forte"), db.taskDao().all().map { it.title })
         assertEquals(0, db.completionLogDao().count())
     }
@@ -142,7 +144,7 @@ class TaskRepositoryTest {
         hooked.edit(task.id, TaskChange.Timing(todayTiming(ReminderRepeat.DAILY).copy(time = LocalTime.of(10, 0))))
         hooked.edit(task.id, TaskChange.Title("Treino forte"))
         hooked.deleteTask(task.copy(title = "Treino forte"))
-        hooked.restoreTask(task.copy(title = "Treino forte"))
+        hooked.restoreTask(TaskWithList(task.copy(title = "Treino forte"), null, emptyList()))
         assertEquals(listOf(emptyList(), listOf("Treino"), emptyList<String>()), seen)
     }
 
@@ -228,16 +230,65 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun `excluir tarefa e restaurar mantem o vinculo e a lista`() = runTest {
+    fun `excluir tarefa apaga a lista e os itens, e restaurar devolve os tres com os mesmos ids`() = runTest {
+        // v1.10.0 (ADR-0002 16.10.4): a lista é da tarefa.
         val listId = listWithPickedItems()
         val task = repository.addTask("Feira", timing = todayTiming())
-        val linked = task.copy(shoppingListId = listId)
         repository.edit(task.id, TaskChange.ShoppingList(listId))
+        val list = db.shoppingListDao().byId(listId)!!
+        val items = db.shoppingItemDao().all().filter { it.listId == listId }.sortedBy { it.id }
 
-        repository.deleteTask(linked)
-        assertNotNull("excluir a tarefa não exclui a lista", db.shoppingListDao().byId(listId))
-        repository.restoreTask(linked)
+        val deleted = checkNotNull(repository.deleteTask(task))
+        assertNull(db.taskDao().byId(task.id))
+        assertNull("a lista sai com a tarefa", db.shoppingListDao().byId(listId))
+        assertTrue("os itens também", db.shoppingItemDao().all().none { it.listId == listId })
+        assertEquals(list, deleted.list)
+        assertEquals(items, deleted.items)
+
+        repository.restoreTask(deleted)
         assertEquals(listId, db.taskDao().byId(task.id)!!.shoppingListId)
+        assertEquals(list, db.shoppingListDao().byId(listId))
+        assertEquals(items, db.shoppingItemDao().all().filter { it.listId == listId }.sortedBy { it.id })
+    }
+
+    @Test
+    fun `excluir a tarefa que nao existe mais devolve null`() = runTest {
+        val task = repository.addTask("Feira", timing = todayTiming())
+        checkNotNull(repository.deleteTask(task))
+
+        assertNull(repository.deleteTask(task))
+    }
+
+    @Test
+    fun `criar tarefa com lista de outra tarefa nasce sem lista, sem derrubar a gravacao`() = runTest {
+        // A1 da revisão da T1: com o índice único, inserir direto derrubaria o app.
+        val listId = listWithPickedItems()
+        val owner = repository.addTask("Feira", timing = todayTiming(), shoppingListId = listId)
+        assertEquals(listId, db.taskDao().byId(owner.id)!!.shoppingListId)
+
+        val second = repository.addTask("Mercado", timing = todayTiming(), shoppingListId = listId)
+
+        assertNull(second.shoppingListId)
+        assertNull(db.taskDao().byId(second.id)!!.shoppingListId)
+        assertEquals("a dona continua com a lista", listId, db.taskDao().byId(owner.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `criar tarefa com lista que nao existe nasce sem lista`() = runTest {
+        val task = repository.addTask("Feira", timing = todayTiming(), shoppingListId = 404)
+
+        assertNull(db.taskDao().byId(task.id)!!.shoppingListId)
+    }
+
+    @Test
+    fun `lista de outra tarefa nao e vinculada (lista de uma tarefa so)`() = runTest {
+        val listId = listWithPickedItems()
+        val first = repository.addTask("Feira", timing = todayTiming())
+        val second = repository.addTask("Mercado", timing = todayTiming())
+        assertTrue(repository.edit(first.id, TaskChange.ShoppingList(listId)))
+
+        assertFalse(repository.edit(second.id, TaskChange.ShoppingList(listId)))
+        assertNull(db.taskDao().byId(second.id)!!.shoppingListId)
     }
 
     @Test
@@ -253,22 +304,22 @@ class TaskRepositoryTest {
 
     @Test
     fun `tarefas vinculadas trazem o estado pendente`() = runTest {
-        val listId = listWithPickedItems()
+        // v1.10.0: lista de UMA tarefa; cada lista traz a sua, com o estado dela.
+        val pendingList = listWithPickedItems()
+        val doneList = listWithPickedItems()
         val pending = repository.addTask("Pendente", timing = todayTiming())
         val done = repository.addTask("Feita", timing = todayTiming())
-        val other = repository.addTask("Outra lista", timing = todayTiming())
-        repository.edit(pending.id, TaskChange.ShoppingList(listId))
-        repository.edit(done.id, TaskChange.ShoppingList(listId))
-        db.taskDao().updateShoppingList(other.id, listId + 1)
+        repository.edit(pending.id, TaskChange.ShoppingList(pendingList))
+        repository.edit(done.id, TaskChange.ShoppingList(doneList))
         repository.logCompletion(done.id)
 
-        val linked = repository.linkedTasks(listId)
         assertEquals(
-            listOf(
-                com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(pending.id, pending = true),
-                com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(done.id, pending = false),
-            ),
-            linked,
+            listOf(com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(pending.id, pending = true)),
+            repository.linkedTasks(pendingList),
+        )
+        assertEquals(
+            listOf(com.kalendrys.app.domain.ShoppingCompletionOffer.LinkedTask(done.id, pending = false)),
+            repository.linkedTasks(doneList),
         )
     }
 
@@ -322,7 +373,7 @@ class TaskRepositoryTest {
         val current = db.taskDao().byId(task.id)!!
         repository.deleteTask(current)
         scheduler.reset()
-        repository.restoreTask(current)
+        repository.restoreTask(TaskWithList(current, null, emptyList()))
         assertEquals(listOf(task.id), scheduler.scheduled.map { it.task.id })
         assertTrue(scheduler.dismissed.isEmpty())
     }
@@ -335,17 +386,16 @@ class TaskRepositoryTest {
 
     @Test
     fun `tarefa unica de amanha conta como pendente e repetida concluida hoje nao`() = runTest {
-        val listId = listWithPickedItems()
+        val tomorrowList = listWithPickedItems()
+        val dailyList = listWithPickedItems()
         val tomorrow = repository.addTask("Amanhã", timing = TaskTiming(date = LocalDate.now().plusDays(1), time = LocalTime.of(9, 0)))
         val daily = repository.addTask("Diária", timing = todayTiming(ReminderRepeat.DAILY))
-        repository.edit(tomorrow.id, TaskChange.ShoppingList(listId))
-        repository.edit(daily.id, TaskChange.ShoppingList(listId))
+        repository.edit(tomorrow.id, TaskChange.ShoppingList(tomorrowList))
+        repository.edit(daily.id, TaskChange.ShoppingList(dailyList))
         repository.logCompletion(daily.id)
 
-        assertEquals(
-            mapOf(tomorrow.id to true, daily.id to false),
-            repository.linkedTasks(listId).associate { it.taskId to it.pending },
-        )
+        assertEquals(mapOf(tomorrow.id to true), repository.linkedTasks(tomorrowList).associate { it.taskId to it.pending })
+        assertEquals(mapOf(daily.id to false), repository.linkedTasks(dailyList).associate { it.taskId to it.pending })
     }
 
     @Test
@@ -956,7 +1006,7 @@ class TaskRepositoryTest {
         repository.deleteTask(stored)
         scheduler.reset()
 
-        repository.restoreTask(stored)
+        repository.restoreTask(TaskWithList(stored, null, emptyList()))
 
         assertEquals(listOf(at(day.plusDays(1), 10)), scheduler.scheduled.map { it.triggerAt })
         assertEquals(at(day.plusDays(1), 10), repository.nextReminderToDeliver())

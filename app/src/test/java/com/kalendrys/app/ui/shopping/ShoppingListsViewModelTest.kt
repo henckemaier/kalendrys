@@ -7,7 +7,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.kalendrys.app.data.local.AppDatabase
-import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.Task
 import com.kalendrys.app.data.repository.ShoppingListOwner
 import com.kalendrys.app.data.repository.ShoppingRepository
@@ -79,7 +78,8 @@ class ShoppingListsViewModelTest {
         repository.add(mercado, "Arroz", quantity = 2, priceCents = 1_000)
         repository.add(mercado, "Feijão", quantity = 1, priceCents = 800)
         repository.setPicked(repository.observeItems(mercado).first().first(), true)
-        db.routineDao().insert(Routine(title = "Compras do sábado", startMinute = 540, shoppingListId = mercado, createdAt = TEST_CREATED_AT))
+        // v1.10.0: a dona é a tarefa (rotina não tem lista).
+        db.taskDao().insert(Task(title = "Compras do sábado", shoppingListId = mercado, createdAt = TEST_CREATED_AT))
 
         val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
@@ -88,7 +88,7 @@ class ShoppingListsViewModelTest {
             assertEquals(ShoppingProgress(picked = 1, total = 2), first.progress)
             assertEquals(2_800L, first.totalCents)
             assertEquals(listOf("Compras do sábado"), first.owners.map { it.title })
-            assertEquals(ShoppingListOwner.Kind.ROUTINE, first.owners.single().kind)
+            assertEquals(ShoppingListOwner.Kind.TASK, first.owners.single().kind)
 
             val standalone = state.lists.first { it.id == avulsa }
             assertTrue(standalone.owners.isEmpty())
@@ -129,21 +129,19 @@ class ShoppingListsViewModelTest {
     }
 
     @Test
-    fun `excluir apaga a lista e os itens e desvincula rotina e tarefa`() = runTest {
+    fun `excluir apaga a lista e os itens e desvincula a tarefa`() = runTest {
         val listId = repository.createList("Mercado")
         repository.add(listId, "Arroz", quantity = 1, priceCents = null)
-        val routineId = db.routineDao().insert(Routine(title = "Compras", startMinute = 540, shoppingListId = listId, createdAt = TEST_CREATED_AT))
         val taskId = db.taskDao().insert(Task(title = "Ir ao mercado", shoppingListId = listId, createdAt = TEST_CREATED_AT))
 
         val vm = testDb.track(ShoppingListsViewModel(repository))
         vm.uiState.test {
-            awaitUntil { s -> s.lists.singleOrNull()?.owners?.size == 2 }
+            awaitUntil { s -> s.lists.singleOrNull()?.owners?.size == 1 }
             vm.delete(listId)
             assertTrue(awaitUntil { it.lists.isEmpty() }.lists.isEmpty())
         }
         assertNull(repository.list(listId))
         assertTrue(repository.observeItems(listId).first().isEmpty())
-        assertNull(db.routineDao().byId(routineId)?.shoppingListId)
         assertNull(db.taskDao().byId(taskId)?.shoppingListId)
     }
 }

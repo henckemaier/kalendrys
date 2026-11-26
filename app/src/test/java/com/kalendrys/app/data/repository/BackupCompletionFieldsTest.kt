@@ -74,8 +74,8 @@ class BackupCompletionFieldsTest {
 
         val (json, _) = BackupManager(sourceDb, context.contentResolver, settings("src"), clock = SystemAppClock).serialize()
         val root = JSONObject(json)
-        assertEquals(6, root.getInt("schemaVersion"))
-        assertEquals(11, root.getInt("databaseVersion"))
+        assertEquals(7, root.getInt("schemaVersion"))
+        assertEquals(12, root.getInt("databaseVersion"))
         val logs = root.getJSONArray("completionLogs")
         val earlyJson = (0 until logs.length()).map { logs.getJSONObject(it) }.single { it.getLong("id") == 1L }
         val plainJson = (0 until logs.length()).map { logs.getJSONObject(it) }.single { it.getLong("id") == 2L }

@@ -310,7 +310,7 @@ class AppDatabaseMigrationTest {
             "VALUES ($id, $routineId, '$name', 2, $priceCents, $picked, $position, $createdAt)"
 
     @Test
-    fun `migracao 9 para 10 e restauro de backup v5 dao a mesma saida sobre os mesmos dados`() = runBlocking {
+    fun `migracao 9 ate 12 e restauro de backup v5 dao a mesma saida sobre os mesmos dados`() = runBlocking {
         // Mesmos dados nos dois formatos antigos: banco v9 e backup v5 (itens presos a routineId).
         data class Seed(val id: Long, val routineId: Long, val name: String, val picked: Boolean, val position: Int, val createdAt: Long, val price: Long?)
         val routines = listOf(Triple(1L, "Mercado", true), Triple(2L, "Feira", false), Triple(3L, "Sem lista", false))
@@ -329,7 +329,9 @@ class AppDatabaseMigrationTest {
                 v9.execSQL(insertItem(s.id, s.routineId, s.name, if (s.picked) 1 else 0, s.position, s.createdAt, s.price?.toString() ?: "NULL"))
             }
         }
-        val migrated = helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10).use { v10 ->
+        // Desde a v1.10.0 o restauro de backup antigo aplica também as regras do banco 12 (ADR-0002
+        // 16.10.3): a comparação é com a cadeia inteira 9 → 12, que é o que um aparelho com o banco 9 faz.
+        val migrated = helper.runMigrationsAndValidate(name, 12, true, AppDatabase.MIGRATION_9_10, Migration11To12).use { v10 ->
             Triple(
                 v10.rows("SELECT id, name, createdAt, lastResetKey FROM shopping_list ORDER BY id") { c -> (0..3).map { if (c.isNull(it)) null else c.getString(it) } },
                 v10.rows("SELECT id, listId, name, quantity, priceCents, picked, position, createdAt, pickedBeforeReset FROM shopping_item ORDER BY id") { c ->
@@ -437,6 +439,23 @@ class AppDatabaseMigrationTest {
                 listOf<Any?>(c.getLong(0), c.getLong(1), c.getLong(2), if (c.isNull(3)) null else c.getLong(3))
             }.single()
             assertEquals(listOf<Any?>(3L, 1L, 777L, null), log)
+        }
+    }
+
+    @Test
+    fun `cadeia completa v1 ate v12 preserva tarefa e conclusao`() {
+        val name = "kalendrys-migration-v1-v12"
+        helper.createDatabase(name, 1).use { v1 ->
+            v1.execSQL("INSERT INTO tasks (id, title, notes, createdAt, reminderAt) VALUES (1, 'Tarefa v1', 'nota', 0, 1000)")
+            v1.execSQL("INSERT INTO completion_log (id, taskId, completedAt) VALUES (3, 1, 777)")
+        }
+
+        helper.runMigrationsAndValidate(
+            name, 12, true, AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_9_10, Migration11To12,
+        ).use { v12 ->
+            assertEquals(listOf("Tarefa v1"), v12.rows("SELECT title FROM tasks") { it.getString(0) })
+            assertEquals(listOf(3L), v12.rows("SELECT id FROM completion_log") { it.getLong(0) })
+            assertTrue(hasTable(v12, "saved_exercise"))
         }
     }
 

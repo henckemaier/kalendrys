@@ -1,5 +1,6 @@
 package com.kalendrys.app
 
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineOverride
 import com.kalendrys.app.data.local.entity.Task
@@ -24,7 +25,10 @@ sealed interface UndoTarget {
      * Tarefa excluída pelo detalhe (v1.8.0, E0-D) ou pelo deslize na lista de Tarefas (E5), com os
      * dados de antes da exclusão.
      */
-    data class DeletedTask(val task: Task) : UndoTarget
+    /** Tarefa excluída com a lista e os itens dela (v1.10.0), lidos na mesma transação da exclusão. */
+    data class DeletedTask(val deleted: TaskWithList) : UndoTarget {
+        val task: Task get() = deleted.task
+    }
 
     /** Rotina excluída (arquivada) pelo editor ou por Todas as rotinas (v1.8.0, P8, NB-E3-C). */
     data class DeletedRoutine(val routineId: Long) : UndoTarget
@@ -105,8 +109,9 @@ class UndoOffers(
      * nem a oferta. [task] vai como estava no banco (lembrete e vínculo de lista), para o Desfazer.
      */
     fun deleteTask(task: Task): Job = scope.launch {
-        tasks.deleteTask(task)
-        offer(UndoTarget.DeletedTask(task))
+        // Já não existia (excluída por outro caminho): nada foi apagado aqui, nada a desfazer.
+        val deleted = tasks.deleteTask(task) ?: return@launch
+        offer(UndoTarget.DeletedTask(deleted))
     }
 
     /**
@@ -200,7 +205,7 @@ class UndoOffers(
         // já está a caminho, sem depender do que o coletor fizer depois.
         val restore = scope.launch {
             when (val target = offer.target) {
-                is UndoTarget.DeletedTask -> tasks.restoreTask(target.task)
+                is UndoTarget.DeletedTask -> tasks.restoreTask(target.deleted)
                 is UndoTarget.DeletedRoutine -> routines.unarchive(target.routineId)
                 is UndoTarget.CompletedTask -> tasks.undoCompletion(target.logId)
                 is UndoTarget.CompletedRoutine -> routines.uncomplete(target.routineId, LocalDate.ofEpochDay(target.epochDay))

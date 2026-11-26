@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 import com.kalendrys.app.domain.RoutineColor
 import com.kalendrys.app.domain.RoutineDays
 import com.kalendrys.app.domain.RoutineIcon
+import com.kalendrys.app.domain.RoutineKind
 
 /**
  * Bloco de horário que se repete nos dias da semana escolhidos (ex.: Treino, 17:20–17:35, seg a sex).
@@ -34,8 +35,8 @@ data class Routine(
     val createdAt: Long,
     val archivedAt: Long? = null,
     /**
-     * Categoria à qual a rotina pertence ([RoutineCategory.id]), ou `null` se sem categoria. Só a
-     * coluna existe nesta versão; a lógica de categorias é da task seguinte. Sem foreign key.
+     * SEM USO nas telas desde a v1.10.0 (ADR-0002 16.10.1): a categoria só decidiu o [kind] na
+     * migração 11→12 e no restauro de backup antigo. Sem foreign key.
      */
     val categoryId: Long? = null,
     /** Momento em que a rotina foi pausada (epoch millis), ou `null` se ativa. Lógica virá depois. */
@@ -47,10 +48,15 @@ data class Routine(
     /** Último dia de vigência da rotina (epoch day), ou `null` para sem fim definido. */
     val endEpochDay: Long? = null,
     /**
-     * Lista de compras anexada ([ShoppingList.id]), ou `null`. Sem foreign key: lista inexistente
-     * equivale a "sem lista". Rotina arquivada mantém o vínculo, que só é ignorado na leitura.
+     * SEM USO desde a v1.10.0 (ADR-0002 16.10.3): rotina não tem lista. A migração 11→12 e o restauro
+     * apagam o vínculo; a coluna fica porque tirá-la exige recriar a tabela de rotinas.
      */
     @ColumnInfo(defaultValue = "NULL") val shoppingListId: Long? = null,
+    /**
+     * Tipo da rotina ([RoutineKind]: Nenhum ou Exercício), pelo nome (v1.10.0, banco 12). Os
+     * exercícios ([ExerciseItem]) continuam guardados com qualquer tipo e só aparecem no Exercício.
+     */
+    @ColumnInfo(defaultValue = "NONE") val kind: String = RoutineKind.DEFAULT.name,
 ) {
     val endMinute: Int get() = startMinute + durationMinutes
 }

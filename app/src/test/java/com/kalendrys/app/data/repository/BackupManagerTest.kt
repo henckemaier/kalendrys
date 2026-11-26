@@ -12,6 +12,7 @@ import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.local.entity.RoutineCategory
 import com.kalendrys.app.data.local.entity.RoutineCompletion
 import com.kalendrys.app.data.local.entity.RoutineOverride
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.local.entity.ShoppingItem
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
@@ -29,6 +30,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -95,7 +97,7 @@ class BackupManagerTest {
             Routine(
                 id = 5, title = "Treino", startMinute = 1040, durationMinutes = 15, remind = true, archivedAt = 999,
                 categoryId = 10, pausedAt = 4242, weekInterval = 2, startEpochDay = 19_000, endEpochDay = 21_000,
-                createdAt = TEST_CREATED_AT,
+                createdAt = TEST_CREATED_AT, kind = "EXERCISE",
             ),
         )
         sourceDb.routineCompletionDao().insert(RoutineCompletion(id = 7, routineId = 5, epochDay = 20_000, completedAt = 333))
@@ -109,15 +111,17 @@ class BackupManagerTest {
                 ),
             ),
         )
-        // Listas (schema v6): uma ligada à rotina 5 e à tarefa 1, com reinício pendente; uma avulsa.
+        // Listas (v7: cada uma de UMA tarefa, rotina sem lista): a da tarefa 1 com reinício pendente.
         sourceDb.shoppingListDao().insertAll(
             listOf(
                 ShoppingList(id = 50, name = "Mercado", createdAt = 100, lastResetKey = "routine:5:20000"),
                 ShoppingList(id = 51, name = "Farmácia", createdAt = 200),
             ),
         )
-        sourceDb.routineDao().updateShoppingList(5, 50)
         sourceDb.taskDao().updateShoppingList(1, 50)
+        sourceDb.taskDao().updateShoppingList(2, 51)
+        // Exercício salvo (v7).
+        sourceDb.savedExerciseDao().insert(SavedExercise(id = 60, name = "Remada", sets = 3, reps = 10, load = null, restSeconds = 45, createdAt = 321))
         // Itens de compras: preço nullable, picked, position e pickedBeforeReset têm que sobreviver.
         sourceDb.shoppingItemDao().insertAll(
             listOf(
@@ -140,7 +144,7 @@ class BackupManagerTest {
             BackupManager.Stats(
                 tasks = 4, completionLogs = 2, routines = 1, routineCompletions = 1,
                 routineCategories = 2, routineOverrides = 2, shoppingItems = 3, exerciseItems = 2,
-                shoppingLists = 2,
+                shoppingLists = 2, savedExercises = 1,
             ),
             stats,
         )
@@ -160,8 +164,11 @@ class BackupManagerTest {
         assertEquals(sourceDb.shoppingListDao().all(), destDb.shoppingListDao().all())
         assertEquals(sourceDb.shoppingItemDao().all(), destDb.shoppingItemDao().all())
         assertEquals(sourceDb.exerciseItemDao().all(), destDb.exerciseItemDao().all())
-        assertEquals(50L, destDb.routineDao().byId(5)!!.shoppingListId)
+        assertEquals(sourceDb.savedExerciseDao().all(), destDb.savedExerciseDao().all())
+        assertEquals("o tipo vai e volta", "EXERCISE", destDb.routineDao().byId(5)!!.kind)
+        assertNull(destDb.routineDao().byId(5)!!.shoppingListId)
         assertEquals(50L, destDb.taskDao().byId(1)!!.shoppingListId)
+        assertEquals(51L, destDb.taskDao().byId(2)!!.shoppingListId)
 
         val restoredSettings = dest.settings.first()
         assertEquals(false, restoredSettings.summaryEnabled)
@@ -300,15 +307,14 @@ class BackupManagerTest {
 
         val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v4-items"), clock = SystemAppClock).restore(root.toString())
 
-        assertEquals(listOf(ShoppingList(id = 1, name = "Mercado", createdAt = 200)), destDb.shoppingListDao().all())
-        assertEquals(1L, destDb.routineDao().byId(2)!!.shoppingListId)
-        val items = destDb.shoppingItemDao().all()
-        assertEquals(listOf(20L, 21L), items.map { it.id })
-        assertEquals(listOf(1L, 1L), items.map { it.listId })
-        assertEquals(listOf(true, false), items.map { it.picked })
-        assertEquals(listOf(150L, null), items.map { it.priceCents })
-        assertEquals(2, stats.shoppingItems)
-        assertEquals(1, stats.shoppingLists)
+        // v1.10.0 (ADR-0002 16.10.3): os itens viram a lista da rotina (como na migração 9→10), e a
+        // lista que só a rotina usava sai com os itens (passos 3 e 6, os mesmos da migração 11→12).
+        assertNotNull(destDb.routineDao().byId(2))
+        assertNull(destDb.routineDao().byId(2)!!.shoppingListId)
+        assertTrue(destDb.shoppingListDao().all().isEmpty())
+        assertTrue(destDb.shoppingItemDao().all().isEmpty())
+        assertEquals(0, stats.shoppingItems)
+        assertEquals(0, stats.shoppingLists)
     }
 
     @Test
@@ -328,25 +334,14 @@ class BackupManagerTest {
 
         val stats = BackupManager(destDb, context.contentResolver, settingsRepo("dest-v5"), clock = SystemAppClock).restore(root.toString())
 
-        // Uma lista por routineId em ordem crescente: 3 → 1, 7 → 2, 99 (inexistente) → 3 avulsa.
-        assertEquals(
-            listOf(
-                ShoppingList(id = 1, name = "Mercado", createdAt = 500),
-                ShoppingList(id = 2, name = "Feira", createdAt = 700),
-                ShoppingList(id = 3, name = LegacyShoppingLists.FALLBACK_NAME, createdAt = 800),
-            ),
-            destDb.shoppingListDao().all(),
-        )
-        assertEquals(3, stats.shoppingLists)
-        assertEquals(1L, destDb.routineDao().byId(3)!!.shoppingListId) // arquivada também mantém o vínculo
-        assertEquals(2L, destDb.routineDao().byId(7)!!.shoppingListId)
-        val items = destDb.shoppingItemDao().all().associateBy { it.id }
-        assertEquals(listOf(10L, 11L, 12L, 13L), items.keys.sorted())
-        assertEquals(2L, items.getValue(10).listId)
-        assertTrue(items.getValue(10).picked)
-        assertEquals(1L, items.getValue(11).listId)
-        assertEquals(3L, items.getValue(12).listId)
-        assertEquals(listOf("Banana", "Maçã"), items.values.filter { it.listId == 2L }.map { it.name })
+        // v1.10.0: a conversão por rotina continua (LegacyShoppingLists, testada à parte), mas nenhuma
+        // dessas listas tem tarefa: as duas das rotinas e a avulsa saem com os itens; as rotinas ficam,
+        // inclusive a arquivada, sem vínculo (o mesmo resultado da cadeia 9 → 12).
+        assertTrue(destDb.shoppingListDao().all().isEmpty())
+        assertTrue(destDb.shoppingItemDao().all().isEmpty())
+        assertEquals(0, stats.shoppingLists)
+        assertEquals(listOf(3L, 7L), destDb.routineDao().all().map { it.id }.sorted())
+        assertTrue(destDb.routineDao().all().all { it.shoppingListId == null })
     }
 
     // --- Aparência (ADR-0002, 12.3): campos opcionais no schema 6 ---------------------------------
@@ -361,7 +356,7 @@ class BackupManagerTest {
         val saved = JSONObject(json).getJSONObject("settings")
         assertEquals("LIGHT", saved.getString("themeMode"))
         assertEquals(true, saved.getBoolean("dynamicColor"))
-        assertEquals(6, JSONObject(json).getInt("schemaVersion"))
+        assertEquals(7, JSONObject(json).getInt("schemaVersion"))
 
         val dest = settingsRepo("dest-theme")
         BackupManager(destDb, context.contentResolver, dest, clock = SystemAppClock).restore(json)
@@ -438,7 +433,7 @@ class BackupManagerTest {
             BackupManager(destDb, context.contentResolver, settingsRepo("dest-new"), clock = SystemAppClock).restore(root.toString())
         }.exceptionOrNull()
         assertTrue(error is java.io.IOException)
-        assertEquals(6, BackupManager.SCHEMA_VERSION)
+        assertEquals(7, BackupManager.SCHEMA_VERSION)
     }
 
     @Test

@@ -9,19 +9,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.SavedStateHandle
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.data.local.entity.Routine
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.ShoppingRepository
 import com.kalendrys.app.data.repository.SystemAppClock
 import com.kalendrys.app.data.repository.TaskRepository
@@ -100,9 +100,8 @@ class RoutineDeleteFromEditorTest {
         RoutineEditorViewModel(
             SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
             routines,
-            RoutineCategoryRepository(testDb.db),
-            ShoppingRepository(testDb.db, clock = SystemAppClock),
             ExerciseRepository(testDb.db.exerciseItemDao(), clock = SystemAppClock),
+            SavedExerciseRepository(testDb.db.savedExerciseDao(), clock = SystemAppClock),
             offers,
             testDb.appScope(),
             clock = SystemAppClock,
@@ -180,7 +179,7 @@ class RoutineDeleteFromEditorTest {
 
     @Test
     fun `excluir pelo editor aberto a partir de Todas as rotinas mostra a mensagem la e Desfazer devolve`() {
-        val all = testDb.track(AllRoutinesViewModel(routines, RoutineCategoryRepository(testDb.db), offers))
+        val all = testDb.track(AllRoutinesViewModel(routines, offers))
         deleteFromEditorOver { AllRoutinesScreen(onBack = {}, onOpenRoutine = {}, onNewRoutine = {}, viewModel = all) }
     }
 

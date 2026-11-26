@@ -2,6 +2,7 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import android.os.Looper
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -9,6 +10,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToKeyAction
@@ -20,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -27,11 +31,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.repository.ExerciseRepository
-import com.kalendrys.app.data.repository.RoutineCategoryRepository
 import com.kalendrys.app.data.repository.RoutineRepository
-import com.kalendrys.app.data.repository.ShoppingRepository
+import com.kalendrys.app.data.repository.SavedExerciseRepository
 import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.domain.RoutineKind
 import com.kalendrys.app.testutil.TEST_CREATED_AT
 import com.kalendrys.app.testutil.ViewModelTestDatabase
 import com.kalendrys.app.testutil.testRoutineRepository
@@ -88,9 +93,8 @@ class RoutineEditorShellTest {
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 routines,
-                RoutineCategoryRepository(db),
-                ShoppingRepository(db, clock = SystemAppClock),
                 ExerciseRepository(db.exerciseItemDao(), clock = SystemAppClock),
+                SavedExerciseRepository(db.savedExerciseDao(), clock = SystemAppClock),
                 offers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -132,7 +136,13 @@ class RoutineEditorShellTest {
     @Test
     fun `edicao - secoes na ordem da P4`() {
         showSaved()
-        val order = listOf("Título", "Quando", "Avisar no início", "Lista de compras", "Aparência")
+        // Sem a seção Lista desde a v1.10.0 (ADR-0002 16.10.5): rotina não tem lista.
+        assertEquals(0, compose.onAllNodes(hasText("Lista de compras"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        // Ordem da 16.10.5 (v1.10.0): o Tipo depois do Lembrar; sem Categoria.
+        assertEquals(0, compose.onAllNodes(hasText("Categoria"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        // Tipo Nenhum: a seção Exercícios não aparece.
+        assertEquals(0, compose.onAllNodes(hasText("Lista de exercícios"), useUnmergedTree = true).fetchSemanticsNodes().size)
+        val order = listOf("Título", "Quando", "Avisar no início", "Tipo", "Aparência")
         val tops = order.map { label ->
             compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         }
@@ -140,6 +150,86 @@ class RoutineEditorShellTest {
         // "Mais opções" (cabeçalho da lista, não o menu) vem depois da Aparência.
         val more = compose.onAllNodes(hasText("Mais opções"), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         assertTrue(more > tops.last())
+    }
+
+    @Test
+    fun `edicao - tipo Exercicio mostra os exercicios entre o Tipo e a Aparencia`() {
+        showSaved(Routine(title = "Força", startMinute = 420, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val order = listOf("Avisar no início", "Tipo", "Lista de exercícios", "Aparência")
+        val tops = order.map { label ->
+            compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
+        }
+        assertEquals("ordem $order: $tops", tops.sorted(), tops)
+    }
+
+    @Test
+    fun `criacao - Tipo com Nenhum e Exercicio, um so escolhido, e Exercicio abre a lista de exercicios`() {
+        show(NEW_ROUTINE_ID)
+        // Na criação a prévia e os modelos vêm antes: rola até o Tipo para a LazyColumn compô-lo.
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsSelected()
+        compose.onNode(hasText("Exercício") and hasClickAction()).assertIsNotSelected()
+        assertEquals(0, compose.onAllNodesWithText("Adicionar exercício").fetchSemanticsNodes().size)
+
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+
+        compose.onNode(hasText("Exercício") and hasClickAction()).assertIsSelected()
+        compose.onNode(hasText("Nenhum") and hasClickAction()).assertIsNotSelected()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-add")
+        compose.onNodeWithText("Adicionar exercício").assertExists()
+    }
+
+    @Test
+    fun `criacao - Dos salvos abre o painel e tocar no salvo aplica uma copia e fecha`() {
+        runBlocking {
+            testDb.db.savedExerciseDao().insert(
+                SavedExercise(name = "Agachamento", sets = 4, reps = 6, load = "60kg", restSeconds = 120, createdAt = TEST_CREATED_AT),
+            )
+        }
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodesWithText("Agachamento").fetchSemanticsNodes().isNotEmpty() }
+        // A ação de clique da linha (não o toque por posição): o painel pode ainda estar entrando.
+        compose.onNode(hasText("Agachamento") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+
+        waitFor { viewModel!!.uiState.value.exerciseItems.map { it.name } == listOf("Agachamento") }
+        waitFor { compose.onAllNodesWithText("Exercícios salvos").fetchSemanticsNodes().isEmpty() }
+        assertEquals("o salvo fica", 1, runBlocking { testDb.db.savedExerciseDao().all() }.size)
+    }
+
+    @Test
+    fun `salvos - excluir no painel pede confirmacao - cancelar mantem, confirmar apaga`() {
+        // B2 do Esquadro (critério da P45): confirmação, sem Desfazer.
+        runBlocking {
+            testDb.db.savedExerciseDao().insert(
+                SavedExercise(name = "Agachamento", sets = 4, reps = 6, createdAt = TEST_CREATED_AT),
+            )
+        }
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
+        compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
+        waitFor { compose.onAllNodes(hasContentDescription("Excluir Agachamento dos salvos")).fetchSemanticsNodes().isNotEmpty() }
+        val storedCount = { runBlocking { testDb.db.savedExerciseDao().all() }.size }
+
+        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Cancelar") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
+        assertEquals("cancelar não apaga", 1, storedCount())
+
+        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Excluir") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
+
+        waitFor { storedCount() == 0 }
+        waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
     }
 
     @Test

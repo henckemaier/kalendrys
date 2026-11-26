@@ -5,6 +5,7 @@ import com.kalendrys.app.data.local.dao.CompletionLogDao
 import com.kalendrys.app.data.local.dao.DateRestore
 import com.kalendrys.app.data.local.dao.ShoppingItemDao
 import com.kalendrys.app.data.local.dao.TaskDao
+import com.kalendrys.app.data.local.dao.TaskWithList
 import com.kalendrys.app.data.local.entity.CompletionLog
 import com.kalendrys.app.data.local.entity.ShoppingList
 import com.kalendrys.app.data.local.entity.Task
@@ -77,7 +78,10 @@ class TaskRepository(
         notes: String = "",
         timing: TaskTiming = TaskTiming(date = null),
         location: String = "",
-        /** Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. */
+        /**
+         * Lista de compras existente anexada já na criação (ADR-0001, P2), ou null. Lista que não existe
+         * ou que já é de outra tarefa não é vinculada: a tarefa nasce sem lista (v1.10.0, A1). Sai na T3.
+         */
         shoppingListId: Long? = null,
         /** Nome da lista NOVA a criar junto com a tarefa ("Criar nova" no painel), ou null. */
         newListName: String? = null,
@@ -96,7 +100,8 @@ class TaskRepository(
         )
         return alarmLock.withLock {
             val saved = if (newList == null) {
-                task.copy(id = taskDao.insert(task))
+                // Relê: sem dono livre, a transação grava a tarefa sem a lista pedida.
+                checkNotNull(taskDao.byId(taskDao.insertTaskWithExistingList(task)))
             } else {
                 // A transação troca o vínculo pelo da lista gravada: relê para devolver a tarefa como ficou.
                 checkNotNull(taskDao.byId(taskDao.insertTaskWithNewList(newList, task)))
@@ -209,23 +214,26 @@ class TaskRepository(
         }
     }
 
-    /** Exclui a tarefa: cancela o alarme e tira da tela o lembrete já exibido dela. */
-    suspend fun deleteTask(task: Task) = alarmLock.withLock {
+    /**
+     * Exclui a tarefa com a lista dela e os itens, numa transação só (v1.10.0, ADR-0002 16.10.4: a lista
+     * é da tarefa), cancela o alarme e tira da tela o lembrete já exibido. Devolve as três como estavam,
+     * para o Desfazer ([restoreTask]); `null` se a tarefa já não existia (nada a desfazer).
+     */
+    suspend fun deleteTask(task: Task): TaskWithList? = alarmLock.withLock {
         scheduler.cancel(task.id)
         scheduler.dismissNotification(task.id)
-        taskDao.delete(task)
+        taskDao.deleteTaskWithList(task.id)
     }
 
     /**
-     * Reinsere uma tarefa excluída com o mesmo id, reconectando-a ao histórico de conclusões. O
-     * vínculo com a lista de compras ([Task.shoppingListId]) volta junto (ADR-0001, P5): excluir a
-     * tarefa nunca apagou a lista.
+     * Reinsere uma tarefa excluída com o mesmo id, reconectando-a ao histórico de conclusões, e com
+     * ela a lista e os itens que a exclusão apagou ([deleted], com os mesmos ids), numa transação só.
      */
-    suspend fun restoreTask(task: Task) {
+    suspend fun restoreTask(deleted: TaskWithList) {
         closeReminderWindow()
         alarmLock.withLock {
-            taskDao.insert(task)
-            if (!isFinished(task)) scheduleNext(task)
+            taskDao.restoreTaskWithList(deleted)
+            if (!isFinished(deleted.task)) scheduleNext(deleted.task)
         }
     }
 

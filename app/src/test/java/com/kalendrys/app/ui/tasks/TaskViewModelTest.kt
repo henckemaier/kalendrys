@@ -1,6 +1,7 @@
 package com.kalendrys.app.ui.tasks
 
 import com.kalendrys.app.data.repository.SystemAppClock
+import com.kalendrys.app.testutil.deletedTaskTarget
 import com.kalendrys.app.testutil.TEST_CREATED_AT
 import java.time.ZoneId
 import com.kalendrys.app.domain.TodayOverview
@@ -154,7 +155,7 @@ class TaskViewModelTest {
         viewModel().delete(task)
 
         val offer = awaitOffer()!!
-        assertEquals(UndoTarget.DeletedTask(task), offer.target)
+        assertEquals(deletedTaskTarget(task), offer.target)
         assertNull(db.taskDao().byId(task.id))
         undoOffers.undo(offer).join()
         assertEquals(task, db.taskDao().byId(task.id))
@@ -180,7 +181,7 @@ class TaskViewModelTest {
         vm.delete(task)
         vm.viewModelScope.cancel()
 
-        assertEquals(UndoTarget.DeletedTask(task), awaitOffer()!!.target)
+        assertEquals(deletedTaskTarget(task), awaitOffer()!!.target)
         assertNull(db.taskDao().byId(task.id))
     }
 
