@@ -1,7 +1,6 @@
 package com.kalendrys.app.ui.shopping
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.kalendrys.app.R
 import com.kalendrys.app.ui.components.ConfirmDialog
@@ -13,13 +12,13 @@ import com.kalendrys.app.ui.components.ConfirmDialog
 @Composable
 fun DeleteListDialog(
     name: String,
-    itemCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ConfirmDialog(
         title = stringResource(R.string.shopping_list_delete_title),
-        text = pluralStringResource(R.plurals.shopping_list_delete_message, itemCount, name, itemCount),
+        // Corpo explícito (achado da Coruja na T3): o que sai e que não volta.
+        text = stringResource(R.string.shopping_list_delete_message, name),
         confirmLabel = stringResource(R.string.delete),
         onConfirm = onConfirm,
         onDismiss = onDismiss,
