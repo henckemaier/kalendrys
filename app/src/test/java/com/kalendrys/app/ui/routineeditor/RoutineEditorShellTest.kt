@@ -2,6 +2,7 @@ package com.kalendrys.app.ui.routineeditor
 
 import android.content.Context
 import android.os.Looper
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -160,6 +161,25 @@ class RoutineEditorShellTest {
             compose.onAllNodes(hasText(label), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot.top
         }
         assertEquals("ordem $order: $tops", tops.sorted(), tops)
+    }
+
+    @Test
+    fun `tipo - cada opcao e botao de opcao num grupo, e a selecionada vem marcada`() {
+        // Achado 1 da Coruja: o leitor anunciava "caixa de seleção" (FilterChip). Agora é botão de opção.
+        show(NEW_ROUTINE_ID)
+        compose.onNode(hasScrollToKeyAction()).performScrollToKey("kind")
+        listOf("Nenhum" to true, "Exercício" to false).forEach { (label, selected) ->
+            val node = compose.onNode(hasText(label) and hasClickAction()).fetchSemanticsNode()
+            assertEquals(label, Role.RadioButton, node.config[SemanticsProperties.Role])
+            assertEquals(label, selected, node.config[SemanticsProperties.Selected])
+            assertEquals(label, null, node.config.getOrNull(SemanticsProperties.ToggleableState))
+        }
+        // As duas no mesmo grupo de seleção.
+        val groups = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+            .fetchSemanticsNodes()
+            .filter { group -> group.children.any { child -> child.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Exercício" } == true } }
+        assertEquals(1, groups.size)
+        assertEquals(2, groups.single().children.count { it.config.getOrNull(SemanticsProperties.Role) == Role.RadioButton })
     }
 
     @Test

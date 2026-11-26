@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -20,12 +21,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -151,16 +155,25 @@ internal fun RemindSection(remind: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 internal fun KindSection(kind: RoutineKind, onSelect: (RoutineKind) -> Unit) {
     SectionTitle(stringResource(R.string.routine_kind))
+    // Opções de escolha única (achado 1 da Coruja): cada uma é um botão de opção num grupo, como o ícone
+    // e a cor; o leitor anuncia "botão de opção, selecionado", não "caixa de seleção".
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.selectableGroup(),
     ) {
         RoutineKind.entries.forEach { option ->
-            FilterChip(
-                selected = kind == option,
-                onClick = { onSelect(option) },
-                label = { Text(stringResource(option.labelRes)) },
-            )
+            val selected = kind == option
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(option) })
+                    .padding(end = 12.dp),
+            ) {
+                RadioButton(selected = selected, onClick = null)
+                Text(stringResource(option.labelRes), style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
 }
