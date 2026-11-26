@@ -152,11 +152,14 @@ interface TaskDao {
     }
 
     /**
-     * Devolve uma tarefa excluída com a lista e os itens, com os mesmos ids, numa transação só. A
-     * lista só volta se ainda não existe (os ids não se repetem; é a defesa contra um Desfazer duplo).
+     * Devolve uma tarefa excluída com a lista e os itens, com os mesmos ids, numa transação só. Tarefa
+     * que já voltou (Desfazer duplo) não grava nada: sem isso o segundo insert lançaria
+     * SQLiteConstraintException no escopo do app e derrubaria o processo (OBS-1 do Lince na T1). A lista
+     * só volta se ainda não existe (os ids não se repetem).
      */
     @Transaction
     suspend fun restoreTaskWithList(deleted: TaskWithList) {
+        if (byId(deleted.task.id) != null) return
         val list = deleted.list
         if (list != null && !listExists(list.id)) {
             insertList(list)

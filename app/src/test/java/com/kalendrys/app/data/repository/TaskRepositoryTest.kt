@@ -266,6 +266,22 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `Desfazer duplo da exclusao nao grava de novo nem derruba`() = runTest {
+        // OBS-1 do Lince (T1): a segunda restauração do mesmo pacote não pode lançar.
+        val listId = listWithPickedItems()
+        val task = repository.addTask("Feira", timing = todayTiming())
+        db.linkList(task.id, listId)
+        val deleted = checkNotNull(repository.deleteTask(task))
+
+        repository.restoreTask(deleted)
+        repository.restoreTask(deleted)
+
+        assertEquals(listOf(task.id), db.taskDao().all().map { it.id })
+        assertEquals(listId, db.taskDao().byId(task.id)!!.shoppingListId)
+        assertEquals(deleted.items.size, db.shoppingItemDao().all().count { it.listId == listId })
+    }
+
+    @Test
     fun `excluir a tarefa que nao existe mais devolve null`() = runTest {
         val task = repository.addTask("Feira", timing = todayTiming())
         checkNotNull(repository.deleteTask(task))
