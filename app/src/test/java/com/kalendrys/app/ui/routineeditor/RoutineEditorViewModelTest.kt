@@ -7,7 +7,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kalendrys.app.UndoOffers
 import com.kalendrys.app.UndoTarget
 import com.kalendrys.app.data.local.AppDatabase
+import com.kalendrys.app.data.local.dao.SavedExerciseDao
 import com.kalendrys.app.data.local.entity.Routine
+import com.kalendrys.app.data.local.entity.SavedExercise
 import com.kalendrys.app.data.repository.ExerciseRepository
 import com.kalendrys.app.data.repository.RoutineRepository
 import com.kalendrys.app.data.repository.SavedExerciseRepository
@@ -31,6 +33,7 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -105,13 +108,14 @@ class RoutineEditorViewModelTest {
     private fun TestScope.viewModel(
         routineId: Long = NEW_ROUTINE_ID,
         repository: RoutineRepository = routines,
+        savedRepository: SavedExerciseRepository = saved,
     ): RoutineEditorViewModel {
         val vm = testDb.track(
             RoutineEditorViewModel(
                 SavedStateHandle(mapOf(ROUTINE_ID_ARG to routineId)),
                 repository,
                 exercises,
-                saved,
+                savedRepository,
                 undoOffers,
                 testDb.appScope(),
                 clock = SystemAppClock,
@@ -881,6 +885,58 @@ class RoutineEditorViewModelTest {
         vm.awaitClosed()
         val routine = db.routineDao().all().single()
         assertEquals(listOf("Prancha", "Abdominal"), db.exerciseItemDao().byRoutine(routine.id).map { it.name })
+    }
+
+    /** DAO dos salvos que só grava um salvo novo depois de [gate] abrir (gravação lenta, B1 do Esquadro). */
+    private class GatedSavedExerciseDao(
+        private val real: SavedExerciseDao,
+        val gate: CompletableDeferred<Unit> = CompletableDeferred(),
+    ) : SavedExerciseDao by real {
+        override suspend fun insert(exercise: SavedExercise): Long {
+            gate.await()
+            return real.insert(exercise)
+        }
+    }
+
+    @Test
+    fun `salvos - duplicar logo depois de Salvar para reutilizar espera a gravacao do salvo`() = runTest {
+        val gated = GatedSavedExerciseDao(db.savedExerciseDao())
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id, savedRepository = SavedExerciseRepository(gated, clock = SystemAppClock))
+        vm.awaitLoaded()
+
+        vm.addExerciseItem("Supino", sets = 3, reps = 8, load = null, restSeconds = null, saveForReuse = true)
+        vm.duplicate("Força (cópia)")
+
+        // Com o salvo ainda preso, o duplicar não termina (a barreira espera a gravação do salvo).
+        val early = withContext(Dispatchers.Default) { withTimeoutOrNull(300) { vm.events.first() } }
+        assertNull("duplicar fechou antes de gravar o salvo", early)
+        assertTrue(db.savedExerciseDao().all().isEmpty())
+
+        gated.gate.complete(Unit)
+        vm.awaitClosed()
+        assertEquals(listOf("Supino"), db.savedExerciseDao().all().map { it.name })
+        val copy = db.routineDao().all().single { it.id != routine.id }
+        assertEquals(listOf("Supino"), db.exerciseItemDao().byRoutine(copy.id).map { it.name })
+    }
+
+    @Test
+    fun `salvos - excluir a rotina logo depois de Salvar para reutilizar espera a gravacao do salvo`() = runTest {
+        val gated = GatedSavedExerciseDao(db.savedExerciseDao())
+        val routine = routines.add(Routine(title = "Força", startMinute = 600, kind = RoutineKind.EXERCISE.name, createdAt = TEST_CREATED_AT))
+        val vm = viewModel(routine.id, savedRepository = SavedExerciseRepository(gated, clock = SystemAppClock))
+        vm.awaitLoaded()
+
+        vm.addExerciseItem("Remada", sets = 3, reps = 12, load = null, restSeconds = null, saveForReuse = true)
+        vm.delete()
+
+        val early = withContext(Dispatchers.Default) { withTimeoutOrNull(300) { vm.events.first() } }
+        assertNull("excluir fechou antes de gravar o salvo", early)
+
+        gated.gate.complete(Unit)
+        vm.awaitClosed()
+        assertEquals(listOf("Remada"), db.savedExerciseDao().all().map { it.name })
+        eventually { row(routine.id).archivedAt != null }
     }
 
     private companion object {

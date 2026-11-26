@@ -36,6 +36,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -296,15 +297,19 @@ class RoutineEditorViewModel(
      */
     internal suspend fun awaitPendingWrites() {
         writes.awaitIdle()
-        savedWrites.toList().joinAll()
+        // children é um retrato seguro entre threads (B1 do Esquadro na T2): nada de lista mutável
+        // partilhada entre a main, que lança, e o editScope, que espera.
+        savedWritesJob.children.toList().joinAll()
     }
 
-    /** Gravações dos exercícios salvos em curso (no escopo do app; não dependem da linha da rotina). */
-    private val savedWrites = mutableListOf<Job>()
+    /**
+     * Pai das gravações dos exercícios salvos (no escopo do app; não dependem da linha da rotina, então
+     * correm fora da fila). Supervisor: uma gravação que falha não cancela as outras.
+     */
+    private val savedWritesJob = SupervisorJob()
 
     private fun launchSavedWrite(write: suspend () -> Unit) {
-        savedWrites.removeAll { it.isCompleted }
-        savedWrites += editScope.launch { write() }
+        editScope.launch(savedWritesJob) { write() }
     }
 
     /** Edição: marca o campo como mexido e enfileira a mudança. */
