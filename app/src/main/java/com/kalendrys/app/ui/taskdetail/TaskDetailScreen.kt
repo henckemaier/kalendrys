@@ -168,7 +168,6 @@ fun TaskDetailScreen(
     if (showDeleteListDialog && listToDelete != null) {
         DeleteListDialog(
             name = listToDelete.name,
-            itemCount = listToDelete.progress.total,
             onConfirm = {
                 showDeleteListDialog = false
                 viewModel.deleteShoppingList()

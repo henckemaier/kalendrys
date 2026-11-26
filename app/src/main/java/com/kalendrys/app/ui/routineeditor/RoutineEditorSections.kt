@@ -2,6 +2,7 @@
 
 package com.kalendrys.app.ui.routineeditor
 
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -172,11 +173,17 @@ internal fun KindSection(kind: RoutineKind, onSelect: (RoutineKind) -> Unit) {
                     .padding(end = 12.dp),
             ) {
                 RadioButton(selected = selected, onClick = null)
+                // Sem o onClick, o botão perde a folga de toque e o círculo colava no rótulo ("oNenhum" em
+                // 320dp com fonte 2.0, achado da Coruja na T3): o espaço entre os dois é explícito.
+                Spacer(Modifier.width(RadioLabelGap))
                 Text(stringResource(option.labelRes), style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
 }
+
+/** Espaço entre o círculo do botão de opção e o rótulo, no seletor de Tipo. */
+internal val RadioLabelGap = 8.dp
 
 /** Rótulo do tipo na tela. */
 private val RoutineKind.labelRes: Int

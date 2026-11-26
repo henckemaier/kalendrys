@@ -253,7 +253,6 @@ fun ShoppingListScreen(
         state.list?.let { list ->
             DeleteListDialog(
                 name = list.name,
-                itemCount = state.items.size,
                 onConfirm = {
                     showDelete = false
                     viewModel.deleteList()

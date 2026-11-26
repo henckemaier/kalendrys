@@ -16,7 +16,6 @@ private const val TIMEOUT_MS = 5_000L
 private const val STARTUP_TIMEOUT_MS = 10_000L
 private val SAMPLE_TASKS = listOf("Perfil: revisar e-mails", "Perfil: reunião semanal", "Perfil: pagar contas")
 private const val SAMPLE_ROUTINE = "Perfil: treino"
-private const val SAMPLE_LIST = "Perfil: mercado"
 
 /** Limite de rolagens por busca: cobre listas longas sem prender a jornada numa tela inesperada. */
 private const val MAX_SCROLLS = 40
@@ -80,8 +79,16 @@ private enum class Tab(val label: String, val markers: List<BySelector>) {
     TODAY("Hoje", listOf(inApp().text("Progresso do dia"), inApp().text("Nada no seu dia ainda"))),
     TASKS("Tarefas", listOf(inApp().text("Buscar tarefas"), inApp().text("Nenhuma tarefa"))),
     CALENDAR("Calendário", listOf(inApp().desc("Próximo mês"))),
-    LISTS("Listas", listOf(inApp().desc("Nova lista"))),
 }
+
+/** O detalhe da tarefa aberto (o título da barra). */
+private val TASK_DETAIL_MARKER: BySelector = inApp().text("Detalhes da tarefa")
+
+/**
+ * O cartão da lista no detalhe da tarefa (T3, v1.10.0): sem itens diz "Lista vazia"; com itens, o
+ * progresso ("1 de 2 marcados"). A jornada não adiciona itens, mas os dados do aparelho podem ter.
+ */
+private val LIST_CARD_MARKERS: List<BySelector> = listOf(inApp().text("Lista vazia"), inApp().textContains(" marcad"))
 
 /** O FAB de "Todas as rotinas" (a descrição; o editor novo tem "Nova rotina" só como TEXTO, no título). */
 private val ALL_ROUTINES_MARKER: BySelector = inApp().desc("Nova rotina")
@@ -159,7 +166,10 @@ private fun MacrobenchmarkScope.openTab(tab: Tab) {
         if (waitForAny(tab.markers, timeoutMs = 0)) return
         scrollToTop()
         if (waitForAny(tab.markers, timeoutMs = 0)) return
-        val label = device.findObject(inApp().text(tab.label))
+        // O rótulo da aba é o MAIS BAIXO com esse texto (a barra fica no rodapé): desde a T3 (v1.10.0) a
+        // aba Tarefas tem a seção "Hoje" (Atrasadas, Hoje, Próximas), e o primeiro achado era ela.
+        val label = device.findObjects(inApp().text(tab.label))
+            .maxByOrNull { runCatching { it.visibleBounds.top }.getOrDefault(Int.MIN_VALUE) }
         if (label != null) {
             runCatching { label.click() }
         } else {
@@ -322,7 +332,14 @@ private fun MacrobenchmarkScope.editAndLeave(title: String, backMarker: BySelect
 
 /** Fecha o teclado, se aberto (o Voltar com ele aberto só o fecha; sem ele, sairia da tela). */
 private fun MacrobenchmarkScope.hideKeyboard() {
-    if (isKeyboardShown()) pressBackInApp("hideKeyboard")
+    if (!isKeyboardShown()) return
+    pressBackInApp("hideKeyboard")
+    // Se o Voltar passou do teclado para a tela (editor com rascunho), volta a editar: o passo seguinte
+    // é o do editor. Derruba se o diálogo não fechar.
+    if (device.wait(Until.hasObject(DISCARD_DIALOG), 600)) {
+        requireClick(inApp().text("Continuar editando"), "hideKeyboard: sem 'Continuar editando' no 'Descartar alterações?'")
+        if (!device.wait(Until.gone(DISCARD_DIALOG), TIMEOUT_MS)) fail("hideKeyboard: o 'Descartar alterações?' não fechou")
+    }
 }
 
 /**
@@ -365,12 +382,20 @@ fun MacrobenchmarkScope.browseTasks() {
  * Na dúvida (dump sem o campo esperado), diz que não está, e a jornada não aperta Voltar.
  */
 private fun MacrobenchmarkScope.isKeyboardShown(): Boolean {
+    // T4 da v1.10.0: no emulador (API 37) o mIsInputViewShown=true fica ligado COM O TECLADO FECHADO, e
+    // o Voltar "de fechar o teclado" caía no editor ("Descartar alterações?"). Só conta como aberto com a
+    // janela do teclado VISÍVEL na tela, e o serviço de entrada dizendo que mostrou.
+    val window = runCatching { device.executeShellCommand("dumpsys window InputMethod") }.getOrDefault("")
+    if ("isVisible=true" !in window || "isOnScreen=true" !in window) return false
     val dump = runCatching { device.executeShellCommand("dumpsys input_method") }.getOrDefault("")
     return KEYBOARD_SHOWN_MARKERS.any { it in dump }
 }
 
 /** Como o dumpsys do input_method diz que o teclado está aberto, conforme a versão do Android. */
 private val KEYBOARD_SHOWN_MARKERS = listOf("mInputShown=true", "isInputViewShown=true", "mIsInputViewShown=true")
+
+/** O diálogo do editor de rotina ao sair com alteração não gravada. */
+private val DISCARD_DIALOG: BySelector = inApp().text("Descartar alterações?")
 
 /** A faixa da semana da Hoje: a área rolável mais baixa (a lista principal é a mais alta). */
 private fun MacrobenchmarkScope.weekStrip(): UiObject2? =
@@ -450,6 +475,11 @@ private fun MacrobenchmarkScope.toggleKindToExerciseAndBack() {
     if (!actOnFresh(inApp().text("Exercício")) { it.click() }) fail("$step: não tocou em 'Exercício'")
     device.waitForIdle()
     findInList("Dos salvos") ?: fail("$step: o tipo Exercício não mostrou a seção Exercícios")
+    // O painel dos exercícios salvos (v1.10.0, T2): abre e fecha pelo Voltar, sem aplicar nada.
+    if (!actOnFresh(inApp().text("Dos salvos")) { it.click() }) fail("$step: não tocou em 'Dos salvos'")
+    requireShown(inApp().text("Exercícios salvos"), "$step: o painel 'Exercícios salvos' não abriu")
+    pressBackInApp("$step: fechar o painel dos salvos")
+    if (!device.wait(Until.gone(inApp().text("Exercícios salvos")), TIMEOUT_MS)) fail("$step: o painel dos salvos não fechou")
     findInList("Nenhum") ?: fail("$step: sem a opção 'Nenhum'")
     if (!actOnFresh(inApp().text("Nenhum")) { it.click() }) fail("$step: não tocou em 'Nenhum'")
     device.waitForIdle()
@@ -490,22 +520,36 @@ private fun MacrobenchmarkScope.toggleMoreOptions() {
 }
 
 /**
- * Abre a aba Listas, garante uma lista (criada pela própria aba, só se não achar rolando), abre a
- * tela da lista e volta. Perfila a aba e a tela de uso da lista (v1.5.0).
+ * A lista de compras é da tarefa (T3, v1.10.0: sem a aba Listas). Abre a segunda tarefa de exemplo,
+ * cria a lista dela pelo "Adicionar lista" só se o cartão ainda não existe (rodar de novo não cria
+ * outra: o app recusa a segunda lista, A1), abre a lista pelo cartão e volta ao detalhe e à aba
+ * Tarefas. Perfila o cartão da lista no detalhe e a tela de uso da lista. Não adiciona itens.
  */
 fun MacrobenchmarkScope.browseLists() {
-    openTab(Tab.LISTS)
-    if (!clickInList(SAMPLE_LIST)) {
-        // Criar pela aba já abre a lista nova.
-        requireClick(inApp().desc("Nova lista"), "browseLists: sem o botão 'Nova lista'")
-        typeAndConfirm(SAMPLE_LIST, "browseLists: criar '$SAMPLE_LIST'")
+    val task = SAMPLE_TASKS[1]
+    openTab(Tab.TASKS)
+    if (!clickInList(task)) fail("browseLists: sem a tarefa '$task' na lista")
+    requireShown(TASK_DETAIL_MARKER, "browseLists: o detalhe da tarefa não abriu")
+    findInList("Lista de compras") ?: fail("browseLists: o detalhe não mostrou a seção 'Lista de compras'")
+    if (findListCard() == null) {
+        findInList("Adicionar lista") ?: fail("browseLists: sem o cartão da lista e sem 'Adicionar lista'")
+        if (!actOnFresh(inApp().text("Adicionar lista")) { it.click() }) fail("browseLists: não tocou em 'Adicionar lista'")
+        device.waitForIdle()
+        if (!waitForAny(LIST_CARD_MARKERS)) fail("browseLists: 'Adicionar lista' não mostrou o cartão")
     }
-    // Tela da lista (v1.7.0): o campo de adição rápida no rodapé, com a dica "Adicionar item", no
-    // lugar do FAB. Não adiciona nada: a jornada não pode criar itens a cada rodada.
+    findListCard() ?: fail("browseLists: o cartão da lista não está na tela")
+    val card = LIST_CARD_MARKERS.firstOrNull { device.hasObject(it) } ?: fail("browseLists: o cartão da lista sumiu")
+    if (!actOnFresh(card) { it.click() }) fail("browseLists: não tocou no cartão da lista")
+    // Tela da lista (v1.7.0): o campo de adição rápida no rodapé, com a dica "Adicionar item".
     requireShown(inApp().text("Adicionar item"), "browseLists: a tela da lista não abriu")
-    backTo(Tab.LISTS.markers, "browseLists: o Voltar da lista não voltou à aba Listas")
-    openTab(Tab.LISTS)
+    backTo(listOf(TASK_DETAIL_MARKER), "browseLists: o Voltar da lista não voltou ao detalhe")
+    backTo(Tab.TASKS.markers, "browseLists: o Voltar do detalhe não voltou à aba Tarefas")
+    openTab(Tab.TASKS)
 }
+
+/** O cartão da lista no detalhe, rolando até ele (vazio pelo texto; com itens, pelo progresso). */
+private fun MacrobenchmarkScope.findListCard(): UiObject2? =
+    findInList("Lista vazia") ?: device.findObject(LIST_CARD_MARKERS[1])
 
 /** Abre o calendário e troca de mês para frente e para trás. */
 fun MacrobenchmarkScope.browseCalendar() {
