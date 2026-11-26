@@ -65,26 +65,24 @@ class TaskListOwnershipExtrasTest {
     )
 
     /**
-     * O segundo restauro da MESMA exclusão não duplica nada: a lista não volta duas vezes (defesa do
-     * restoreTaskWithList) e a tarefa repetida é recusada pela chave, com a transação inteira desfeita.
-     * OBS (Lince, v1.10.0 T1): hoje esse segundo restauro LANÇA (SQLiteConstraintException no insert da
-     * tarefa); no app só não acontece porque a mensagem chama o Desfazer uma vez por oferta.
+     * O segundo restauro da MESMA exclusão não faz nada e não lança (OBS-1 do Lince na T1, corrigido
+     * no bdfc185: o restoreTaskWithList volta sem gravar se a tarefa já existe).
      */
     @Test
-    fun `Desfazer duas vezes pelo repositorio - nada duplica e o banco fica como antes`() = runBlocking {
+    fun `Desfazer duas vezes pelo repositorio - nada duplica, nada lanca`() = runBlocking {
         val (id, _) = taskWithList()
         val before = snapshot()
         val deleted = checkNotNull(tasks.deleteTask(tasks.observeTask(id).first()!!))
 
         tasks.restoreTask(deleted)
-        runCatching { tasks.restoreTask(deleted) }
+        tasks.restoreTask(deleted)
 
         assertEquals(before, snapshot())
     }
 
     @Test
     fun `Desfazer duas vezes a mesma oferta - nada duplica`() = runBlocking {
-        // O erro do segundo restauro (OBS acima) fica registrado aqui em vez de escapar da thread.
+        // Um erro no restauro fica registrado aqui em vez de escapar da thread.
         val errors = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
         val scope = testDb.appScope() + kotlinx.coroutines.CoroutineExceptionHandler { _, e -> errors += e }
         val offers = UndoOffers(tasks, testRoutineRepository(testDb.db), scope, clockOf(now = { System.currentTimeMillis() }))
@@ -94,10 +92,11 @@ class TaskListOwnershipExtrasTest {
         val offer = checkNotNull(offers.pending.value)
 
         offers.undo(offer).join()
-        // A oferta já foi limpa pelo primeiro; o segundo undo ainda dispara um restauro (ver a OBS acima).
+        // A oferta já foi limpa pelo primeiro; o segundo undo ainda dispara um restauro, que não grava.
         offers.undo(offer).join()
 
         assertNull(offers.pending.value)
+        assertEquals("o segundo restauro não lança", emptyList<Throwable>(), errors.toList())
         assertEquals(before, snapshot())
     }
 
