@@ -1,5 +1,6 @@
 package com.kalendrys.app
 
+import com.kalendrys.app.testutil.KotlinSourceText
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -36,8 +37,11 @@ class SourceClockReadsTest {
     private val sourceRoot: File = listOf(File("src/main/java/com/kalendrys/app"), File("app/src/main/java/com/kalendrys/app"))
         .first { it.isDirectory }
 
-    private fun withoutComments(text: String): String =
-        text.replace(Regex("""/\*[\s\S]*?\*/"""), " ").replace(Regex("""//[^\n]*"""), " ")
+    /**
+     * Só o código: sem comentários e sem o texto das strings; o código de dentro de template continua
+     * ([KotlinSourceText]; antes eram duas regex, e uma string com "/" + "*" escondia código).
+     */
+    private fun withoutComments(text: String): String = KotlinSourceText.codeOnly(text)
 
     @Test
     fun `nenhuma leitura direta do relogio fora da peca e das excecoes`() {
@@ -80,5 +84,24 @@ class SourceClockReadsTest {
             "val n = System.nanoTime()",
         ).forEach { assertTrue(it, !forbidden.containsMatchIn(it)) }
         assertEquals("", withoutComments("// LocalDate.now()").trim())
+    }
+
+    @Test
+    fun `strings nao abrem comentario, URL nao apaga a linha e template conta como codigo`() {
+        val q = "\""
+        val slashStar = "/" + "*"
+        val starSlash = "*" + "/"
+        // "/" + "*" dentro de string escondia o resto (buraco apontado pelo Lince na E0).
+        assertTrue(forbidden.containsMatchIn(withoutComments("val m = ${q}image$slashStar$q\nval d = LocalDate.now()\nval e = $q$starSlash$q")))
+        // "//" de URL não apaga o resto da linha.
+        assertTrue(forbidden.containsMatchIn(withoutComments("val u = ${q}https://x$q; val t = System.currentTimeMillis()")))
+        // Dentro de template é código; o texto da string, não.
+        assertTrue(forbidden.containsMatchIn(withoutComments("val n = ${q}b-\${LocalDate.now()}.json$q")))
+        assertTrue(!forbidden.containsMatchIn(withoutComments("val s = ${q}LocalDate.now()$q")))
+        assertTrue(!forbidden.containsMatchIn(withoutComments("val r = $q$q$q\nLocalDate.now()\n$q$q$q")))
+        // Comentário de bloco aninhado e char literal de aspas.
+        assertTrue(!forbidden.containsMatchIn(withoutComments("$slashStar a $slashStar LocalDate.now() $starSlash b $starSlash val c = '$q'")))
+        // As linhas ficam no lugar: a falha aponta a linha certa.
+        assertEquals(3, withoutComments("a\n$slashStar x\n$starSlash b").lines().size)
     }
 }
