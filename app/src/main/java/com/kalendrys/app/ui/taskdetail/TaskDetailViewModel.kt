@@ -282,11 +282,12 @@ class TaskDetailViewModel(
 
     /**
      * "Excluir lista" (P45: a tela confirma antes; sem Desfazer): apaga a lista e os itens e tira o
-     * vínculo. No escopo do app, para valer mesmo fechando a tela logo depois.
+     * vínculo. Pela MESMA fila das outras gravações do detalhe (regra 15.3, A2 da revisão da T3), com a
+     * linha mais recente: "excluir e adicionar em seguida" sai nessa ordem. A fila roda no escopo do app,
+     * então vale mesmo fechando a tela logo depois.
      */
     fun deleteShoppingList() {
-        val listId = uiState.value.shoppingList?.id ?: return
-        editScope.launch { shoppingRepository.deleteList(listId) }
+        writes.enqueue { latest -> latest.shoppingListId?.let { shoppingRepository.deleteList(it) } }
     }
 
     /** Grava já a digitação pendente (a tela chama ao ir para segundo plano). */

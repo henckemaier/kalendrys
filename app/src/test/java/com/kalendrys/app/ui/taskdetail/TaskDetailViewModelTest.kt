@@ -492,6 +492,27 @@ class TaskDetailViewModelTest {
     }
 
     @Test
+    fun `excluir e adicionar lista em seguida saem na ordem - fica uma lista nova`() = runBlocking {
+        // A2 da revisão da T3: excluir passa pela mesma fila do editor.
+        val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
+        val vm = viewModel(id)
+        vm.awaitUi { it.task != null }
+        vm.createShoppingList()
+        vm.awaitPendingWrites()
+        val first = checkNotNull(stored(id).shoppingListId)
+        vm.awaitUi { it.shoppingList?.id == first }
+
+        vm.deleteShoppingList()
+        vm.createShoppingList()
+        vm.awaitPendingWrites()
+
+        val second = checkNotNull(stored(id).shoppingListId)
+        assertTrue("a lista nova é outra", second != first)
+        assertNull("a primeira foi excluída", shoppingRepository.list(first))
+        assertEquals(listOf(second), db.shoppingListDao().all().map { it.id })
+    }
+
+    @Test
     fun `Excluir lista apaga lista e itens e tira o vinculo`() = runBlocking {
         val id = db.taskDao().insert(Task(title = "Mercado", createdAt = TEST_CREATED_AT))
         val vm = viewModel(id)
