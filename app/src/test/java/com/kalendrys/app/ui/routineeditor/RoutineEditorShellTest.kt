@@ -112,6 +112,13 @@ class RoutineEditorShellTest {
         return saved.id
     }
 
+    /** Roda a ação de acessibilidade [label] da linha com o texto [rowText] (a do menu da linha). */
+    private fun rowAction(rowText: String, label: String) {
+        val node = compose.onNode(hasText(rowText) and hasClickAction()).fetchSemanticsNode()
+        val action = node.config[SemanticsActions.CustomActions].first { it.label == label }
+        compose.runOnIdle { action.action() }
+    }
+
     /** O Room volta ao Main a cada consulta: drena o looper enquanto espera. */
     private fun waitFor(condition: () -> Boolean) = compose.waitUntil(TIMEOUT_MS) {
         shadowOf(Looper.getMainLooper()).idle()
@@ -249,16 +256,17 @@ class RoutineEditorShellTest {
         compose.onNode(hasText("Exercício") and hasClickAction()).performClick()
         compose.onNode(hasScrollToKeyAction()).performScrollToKey("exercise-from-saved")
         compose.onNode(hasText("Dos salvos") and hasClickAction()).performClick()
-        waitFor { compose.onAllNodes(hasContentDescription("Excluir Agachamento dos salvos")).fetchSemanticsNodes().isNotEmpty() }
+        waitFor { compose.onAllNodes(hasText("Agachamento") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
         val storedCount = { runBlocking { testDb.db.savedExerciseDao().all() }.size }
 
-        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        // Excluir pela ação da linha (a mesma do menu de três pontos; achado 2 da Coruja).
+        rowAction("Agachamento", "Excluir Agachamento dos salvos")
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("Cancelar") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isEmpty() }
         assertEquals("cancelar não apaga", 1, storedCount())
 
-        compose.onNode(hasContentDescription("Excluir Agachamento dos salvos")).performSemanticsAction(SemanticsActions.OnClick)
+        rowAction("Agachamento", "Excluir Agachamento dos salvos")
         waitFor { compose.onAllNodesWithText("Excluir exercício salvo?").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasText("Excluir") and hasClickAction()).performSemanticsAction(SemanticsActions.OnClick)
 

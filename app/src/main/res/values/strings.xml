@@ -242,6 +242,8 @@
     <string name="exercise_item_delete">Remover exercício</string>
     <string name="exercise_item_move_up">Mover para cima</string>
     <string name="exercise_item_move_down">Mover para baixo</string>
+    <string name="exercise_item_edit_named">Editar %1$s</string>
+    <string name="exercise_item_more">Ações de %1$s</string>
     <string name="routine_icon_option">Ícone %1$s</string>
     <string name="routine_color_option">Cor %1$s</string>
     <!-- Na ordem de RoutineIcon. -->
